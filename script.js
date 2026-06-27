@@ -1,3 +1,5 @@
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyNCcQKOaR9B-DfYlPKGLWHWCfNOKM44R66ZYQBKqvUvo8AfywgrMUhBfs-7Mfmji3nLw/exec';
+
 // ========================================
 // ⭐ 請將這裡換成你的 GAS Web App 網址
 // ========================================
