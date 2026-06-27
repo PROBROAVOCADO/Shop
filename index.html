@@ -2,63 +2,33 @@
 <html>
   <head>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <base target="_top">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-<!-- 🥑 Open Graph 社群分享御覽圖 -->
-<meta property="og:title" content="🥑 波波酪梨｜新鮮現採・安心品質" />
-<meta property="og:description" content="台灣在地果園，嚴選酪梨，產地直送。" />
-<meta property="og:image" content="https://drive.google.com/uc?id=1yuawe8xX2j3_IL0K_xT_2Q5Ncg7bcBp0" />
-<meta property="og:url" content="https://script.google.com/macros/s/AKfycbyaycYgDcliw2IH7tsuJ_Lr-IF8UOg0ifa5lRycxR_1RVlnf26an9mpBBjtWA6LrekSlQ/exec" />
-<meta property="og:type" content="website" />
+    <!-- 🥑 Open Graph 社群分享預覽圖 -->
+    <meta property="og:title" content="🥑 波波酪梨｜新鮮現採・安心品質" />
+    <meta property="og:description" content="台灣在地果園，嚴選酪梨，產地直送。" />
+    <meta property="og:image" content="https://drive.google.com/uc?id=1yuawe8xX2j3_IL0K_xT_2Q5Ncg7bcBp0" />
+    <meta property="og:url" content="https://probroavocado.github.io/Pro_Bro_Avo/" />
+    <meta property="og:type" content="website" />
 
-<!-- X / Twitter -->
-<meta name="twitter:card" content="summary_large_image" />
+    <!-- X / Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
 
-
-
-    <?!= include('Styles') ?>
+    <title>波波酪梨｜線上訂購</title>
+    <link rel="stylesheet" href="style.css">
   </head>
 
   <body>
 
-<script>
-  // 🌟 核心資料載入：確保新增了 LINE Pay 的讀取邏輯
-
-  window.allVarieties = <?!= JSON.stringify(設定['品種']) ?>;
-  window.paymentConfig = <?!= JSON.stringify(設定['匯款'] || {}) ?>;
-  
-  window.APP_CONFIG = {
-    mainTitle: <?!= JSON.stringify(設定['首頁']['網頁大標題'] || "波波酪梨") ?>,
-    orderSwitch: <?!= JSON.stringify(設定['首頁']['訂單開關'] || "開") ?>,   // ⭐⭐⭐ 新增這行 ⭐⭐⭐    
-    bankName: <?!= JSON.stringify(設定['匯款']['匯款銀行'] || "") ?>,
-    bankAcc: <?!= JSON.stringify(設定['匯款']['匯款帳號'] || "") ?>,
-    bankUser: <?!= JSON.stringify(設定['匯款']['戶名'] || "") ?>,
-    linePayMsg: <?!= JSON.stringify(設定['匯款']['LINE_PAY公告'] || "") ?>,
-    linePayImgId: <?!= JSON.stringify(設定['匯款']['LINE_PAY圖片ID'] || "") ?>,
-
-    successMsg: <?!= JSON.stringify(設定['匯款']['成功頁提醒文字'] || "") ?>,
-    stockData: <?!= JSON.stringify(設定['庫存'] || {}) ?>,
-    orderConfig: <?!= JSON.stringify(設定['訂購'] || {}) ?>,
-    addressMap: <?!= JSON.stringify(設定['地址對照'] || {}) ?>
-  };
-
-</script>
-
-    <div id="raw-data-store" style="display:none;">
-      <?!= JSON.stringify(設定['訂購'] || {}) ?>
-    </div>
+    <!-- ✅ 資料由 script.js 啟動時向 GAS API fetch，填入 window.APP_CONFIG -->
 
     <div class="main-wrapper">
 
-      <div class="banner-container" style="width: 100%; margin-bottom: 25px; overflow: hidden; border-radius: 25px; box-shadow: 0 8px 25px rgba(0,0,0,0.15);">
-        <? 
-          var bannerId = 設定['首頁']['網頁頂部橫幅網址'] || ""; 
-          var bannerUrl = bannerId ? "https://lh3.googleusercontent.com/d/" + bannerId : "";
-        ?>
-        <img src="<?= bannerUrl ?>" 
-             style="width: 100%; aspect-ratio: 3 / 1; object-fit: cover; display: <?= bannerId ? 'block' : 'none' ?>;" 
+      <!-- 頂部橫幅（由 JS 動態填入） -->
+      <div class="banner-container" id="banner-container" style="width: 100%; margin-bottom: 25px; overflow: hidden; border-radius: 25px; box-shadow: 0 8px 25px rgba(0,0,0,0.15); display:none;">
+        <img id="banner-img" src=""
+             style="width: 100%; aspect-ratio: 3 / 1; object-fit: cover; display: block;"
              referrerpolicy="no-referrer"
              onerror="this.parentElement.style.display='none';">
       </div>
@@ -67,23 +37,15 @@
 
 <!-- ------ 第1頁 : 公告頁面 ------ -->
 <div id="step1-announcement" class="page-content">
-  <h2 class="main-title" style="margin-top: 0;"><?= 設定['首頁']['網頁大標題'] || "波波酪梨" ?></h2>
+  <h2 class="main-title" id="main-title" style="margin-top: 0;">波波酪梨</h2>
   <div class="sub-title">Pro-Bro Avo. | Earth to Table</div>
   <div class="origin-slogan">| 來自南投名間 小農自產自銷．現採現送 |</div>
-  <div class="title-divider"></div> 
-  
+  <div class="title-divider"></div>
+
   <div class="info-block">
-
-    <h3 class="section-title">
-      <?= 設定['首頁']['公告區標題'] || "最新公告" ?>
-    </h3>
-
+    <h3 class="section-title" id="announcement-title">最新公告</h3>
     <div class="product-divider"></div>
-
-    <p class="text-story">
-      <?= 設定['首頁']['公告內容'] ?>
-    </p>
-
+    <p class="text-story" id="announcement-content"></p>
   </div>
 
   <div class="button-group">
@@ -95,9 +57,10 @@
 
 <!-- ------ 第2頁 : 品種介紹頁面 ------ -->
 <div id="step2-varieties" class="page-content" style="display:none;">
-  <h2 class="main-title" style="margin-top: 0;"><?= 設定['首頁']['品種分頁大標題'] || "我們的當季酪梨" ?></h2>
+  <h2 class="main-title" id="variety-title" style="margin-top: 0;">我們的當季酪梨</h2>
   <div class="sub-title">Pro-Bro's Seasonal Picks!</div>
-  <div class="title-divider"></div> <div id="varieties-container">
+  <div class="title-divider"></div>
+  <div id="varieties-container">
     <p style="text-align:center; color:var(--avo-dark);">正在準備當季品種資訊...🥑</p>
   </div>
   <div class="button-group">
@@ -106,42 +69,29 @@
   </div>
 </div>
 
-
 <!-- ------ 第3頁 : 價格表頁面 ------ -->
 <div id="step3-price-list" class="page-content" style="display:none;">
-
-  <!-- 標題區 -->  
   <h2 class="main-title">🥑 酪梨價目表</h2>
   <div class="sub-title">Seasonal Price Menu</div>
   <div class="title-divider"></div>
-  
-  <!-- 備註 -->  
+
   <div class="price-note-warm">
     ＊ 價格以「斤」為單位，實際金額將依訂購量自動計算
   </div>
 
-  <!-- 價目表內容 -->
   <div id="price-menu-container"></div>
 
-  <!-- 運費說明 -->
   <div class="info-block">
-  <h3 style="text-align:center;">🚚 配送方式與運費</h3>
-  <div class="product-divider"></div>
-
-  <!-- 內容對齊容器 -->
-  <div class="shipping-content">
-
-    <p class="shipping-title">📫 <strong>中華郵政宅配</strong></p>
-    <p class="shipping-item">3/5斤　$<span id="ship-post-small"></span></p>
-    <p class="shipping-item">7/10斤　$<span id="ship-post-large"></span></p>
-
-    <p class="shipping-title">
-      🏪 <strong>7-11 超商取件</strong>
-    </p>
-    <p class="shipping-item">單筆固定　$<span id="ship-711"></span></p>
-
+    <h3 style="text-align:center;">🚚 配送方式與運費</h3>
+    <div class="product-divider"></div>
+    <div class="shipping-content">
+      <p class="shipping-title">📫 <strong>中華郵政宅配</strong></p>
+      <p class="shipping-item">3/5斤　$<span id="ship-post-small"></span></p>
+      <p class="shipping-item">7/10斤　$<span id="ship-post-large"></span></p>
+      <p class="shipping-title">🏪 <strong>7-11 超商取件</strong></p>
+      <p class="shipping-item">單筆固定　$<span id="ship-711"></span></p>
+    </div>
   </div>
-</div>
 
   <div class="button-group">
     <button class="btn-secondary" onclick="goToStep(2)">⬅️ 返回品種介紹</button>
@@ -151,127 +101,105 @@
 
 <!-- ------ 第4頁 : 訂購頁面 ------ -->
 <div id="step4-order-form" class="page-content" style="display:none;">
-    <h2 class="main-title" style="margin-top: 0;"><?= 設定['首頁']['訂購分頁大標題'] || "訂購資訊" ?></h2>
-    <div class="sub-title">Harvested for You by Pro-Bro Avo.</div>
-    <div class="title-divider"></div>
+  <h2 class="main-title" id="order-title" style="margin-top: 0;">訂購資訊</h2>
+  <div class="sub-title">Harvested for You by Pro-Bro Avo.</div>
+  <div class="title-divider"></div>
 
-    <div class="info-block">
-        <p><strong>🚚 1. 配送方式選擇</strong></p>
-        <div class="hint-warm-text">
-            <?= 設定['訂購']['配送方式備註'] ?>
-        </div>
-        
-        <select id="shipping-method" onchange="handleShippingChange(); updateAddressSection();">
-            <option value="" selected disabled>--- 請選擇配送方式 ---</option>
-            
-            <option value="post" <?= 設定['訂購']['中華郵政配送'] === '開' ? '' : 'disabled' ?>>
-                <?= 設定['訂購']['中華郵政配送'] === '開' ? '📫 中華郵政 (限重10斤內)' : '📫 中華郵政（目前不支援）' ?>
-            </option>
+  <div class="info-block">
+    <p><strong>🚚 1. 配送方式選擇</strong></p>
+    <div class="hint-warm-text" id="shipping-note"></div>
 
-            <option value="711" <?= 設定['訂購']['7-11超取配送'] === '開' ? '' : 'disabled' ?>>
-                <?= 設定['訂購']['7-11超取配送'] === '開' ? '🏪 7-11 超商取件 ($80 / 限重7斤內)' : '🏪 7-11（目前不支援）' ?>
-            </option>
-        </select>
+    <select id="shipping-method" onchange="handleShippingChange(); updateAddressSection();">
+      <option value="" selected disabled>--- 請選擇配送方式 ---</option>
+      <option value="post" id="opt-post">📫 中華郵政 (限重10斤內)</option>
+      <option value="711" id="opt-711">🏪 7-11 超商取件 ($80 / 限重7斤內)</option>
+    </select>
 
-        <p style="margin-top: 25px;"><strong>📦 2. 規格選擇</strong></p>
-        <div id="product-list-container"></div>
+    <p style="margin-top: 25px;"><strong>📦 2. 規格選擇</strong></p>
+    <div id="product-list-container"></div>
+  </div>
+
+  <!-- 懸浮購物車 -->
+  <div id="floating-cart">
+    <div id="floating-cart-handle">
+      🛒 購物車&nbsp;&nbsp;&nbsp;<span class="cart-hint">點我開闔</span>
     </div>
-
-    <!-- 懸浮購物車 -->
-    <!-- 購物車容器（包含把手） -->
-    <div id="floating-cart">
-      <!-- 把手 -->
-      <div id="floating-cart-handle">
-        🛒 購物車&nbsp;&nbsp;&nbsp;<span class="cart-hint">點我開闔</span>
-      </div>
-
-      <!-- 購物車內容 -->
-      <div id="floating-cart-content">
-        <div id="cart-note">
-        ⚠️ 本購物車為一箱出貨!
-        </div>
-        <div id="floating-cart-items"></div>
-
-        <div id="floating-cart-totals">
-          <div class="totals-divider"></div>
-          <div id="floating-subtotal">小計: $0</div>
-          <div id="floating-shipping">運費: $0</div>
-          <div id="floating-total">總計: $0</div>
-        </div>
+    <div id="floating-cart-content">
+      <div id="cart-note">⚠️ 本購物車為一箱出貨!</div>
+      <div id="floating-cart-items"></div>
+      <div id="floating-cart-totals">
+        <div class="totals-divider"></div>
+        <div id="floating-subtotal">小計: $0</div>
+        <div id="floating-shipping">運費: $0</div>
+        <div id="floating-total">總計: $0</div>
       </div>
     </div>
+  </div>
 
+  <!-- 訂購頁面圖片 -->
+  <div id="order-middle-card" class="info-block" style="display: none; padding: 25px !important;">
+    <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 15px;">
+      <div id="container-img1" class="variety-img-container" style="margin-bottom: 0;">
+        <img id="order-card-img1" src="" class="variety-img" onclick="showLightbox(this.src)" style="cursor: zoom-in; height: 220px; object-fit: contain; background-color: #fff;">
+      </div>
+      <div id="container-img2" class="variety-img-container" style="margin-bottom: 0;">
+        <img id="order-card-img2" src="" class="variety-img" onclick="showLightbox(this.src)" style="cursor: zoom-in; height: 220px; object-fit: contain; background-color: #fff;">
+      </div>
+    </div>
+    <div id="order-card-text" class="variety-grading-note" style="text-align: center; display: none;"></div>
+  </div>
 
+  <!-- 訂購資料填寫 -->
+  <div class="info-block">
+    <p><strong>👤 收件人姓名</strong></p>
+    <input type="text" id="cust-name" placeholder="請輸入姓名">
 
+    <p style="margin-top: 20px;"><strong>📞 連絡電話</strong></p>
+    <input type="tel" id="cust-phone" placeholder="請輸入手機號碼" inputmode="numeric">
 
-    <!-- ------ 訂購頁面圖片 ------ -->
-    <div id="order-middle-card" class="info-block" style="display: none; padding: 25px !important;">
-        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 15px;">
-            <div id="container-img1" class="variety-img-container" style="margin-bottom: 0;">
-                <img id="order-card-img1" src="" class="variety-img" onclick="showLightbox(this.src)" style="cursor: zoom-in; height: 220px; object-fit: contain; background-color: #fff;">
-            </div>
-            <div id="container-img2" class="variety-img-container" style="margin-bottom: 0;">
-                <img id="order-card-img2" src="" class="variety-img" onclick="showLightbox(this.src)" style="cursor: zoom-in; height: 220px; object-fit: contain; background-color: #fff;">
-            </div>
-        </div>
-        <div id="order-card-text" class="variety-grading-note" style="text-align: center; display: none;"></div>
+    <div id="store-address-section" style="display:none;">
+      <p style="margin-top: 20px;"><strong>🏪 7-11 取件門市</strong></p>
+      <input type="text" id="store-name" placeholder="請填寫 7-11 門市名稱或門市編號">
     </div>
 
-    <!-- ------ 訂購頁面資料填寫 ------ -->
-    <div class="info-block">
-        <p><strong>👤 收件人姓名</strong></p>
-        <input type="text" id="cust-name" placeholder="請輸入姓名">
-
-        <p style="margin-top: 20px;"><strong>📞 連絡電話</strong></p>
-        <input type="tel" id="cust-phone" placeholder="請輸入手機號碼" inputmode="numeric">
-
-        <div id="store-address-section" style="display:none;">
-            <p style="margin-top: 20px;"><strong>🏪 7-11 取件門市</strong></p>
-            <input type="text" id="store-name" placeholder="請填寫 7-11 門市名稱或門市編號">
+    <div id="post-address-section" style="display:none;">
+      <p style="margin-top: 20px;"><strong>🏠 收件地址</strong></p>
+      <div class="address-grid">
+        <div class="grid-item">
+          <select id="county"><option value="">選擇縣市</option></select>
         </div>
-
-        <div id="post-address-section" style="display:none;">
-            <p style="margin-top: 20px;"><strong>🏠 收件地址</strong></p>
-            <div class="address-grid">
-                <div class="grid-item">
-                    <select id="county"><option value="">選擇縣市</option></select>
-                </div>
-                <div class="grid-item">
-                    <select id="district" disabled><option value="">選擇區域</option></select>
-                </div>
-                <div class="grid-item zip-box">
-                    <input type="text" id="zipcode" readonly class="readonly-input" placeholder="區號">
-                </div>
-            </div>
-            <div id="address-error-hint" class="address-error-hint" style="display:none; margin-bottom: 10px;">
-                請先選擇縣市與行政區
-            </div>
-            <input type="text" id="delivery-address" placeholder="請輸入詳細道路、巷弄、號樓">
+        <div class="grid-item">
+          <select id="district" disabled><option value="">選擇區域</option></select>
         </div>
-
-        <p style="margin-top: 20px;"><strong>✨ 小小許願區 (備註)</strong></p>
-        <textarea id="order-note" placeholder="如欲購買同地址、兩箱(含)以上&#10;請與我們聯繫~" style="min-height: 100px; width: 100%; box-sizing: border-box;"></textarea>
+        <div class="grid-item zip-box">
+          <input type="text" id="zipcode" readonly class="readonly-input" placeholder="區號">
+        </div>
+      </div>
+      <div id="address-error-hint" class="address-error-hint" style="display:none; margin-bottom: 10px;">
+        請先選擇縣市與行政區
+      </div>
+      <input type="text" id="delivery-address" placeholder="請輸入詳細道路、巷弄、號樓">
     </div>
 
-    <div class="button-group">
-        <button class="btn-secondary" onclick="goToStep(3)">🥑 返回價格表</button>
-        <button class="btn-primary" id="submit-btn" onclick="submitOrder()">✅ 確認訂購</button>
-    </div>
+    <p style="margin-top: 20px;"><strong>✨ 小小許願區 (備註)</strong></p>
+    <textarea id="order-note" placeholder="如欲購買同地址、兩箱(含)以上&#10;請與我們聯繫~" style="min-height: 100px; width: 100%; box-sizing: border-box;"></textarea>
+  </div>
+
+  <div class="button-group">
+    <button class="btn-secondary" onclick="goToStep(3)">🥑 返回價格表</button>
+    <button class="btn-primary" id="submit-btn" onclick="submitOrder()">✅ 確認訂購</button>
+  </div>
 </div>
 
-
-<!-- ------ 第5頁:匯款成功頁面 ------ -->
+<!-- ------ 第5頁：匯款成功頁面 ------ -->
 <div id="step5-payment-info" class="page-content" style="display: none;">
   <h2 class="main-title" style="margin-top: 0;">✨ 已收到資料 謝謝您 ✨</h2>
   <div class="sub-title">Your Trust, Our Harvest. Thank You.</div>
   <div class="title-divider"></div>
 
   <div id="order-summary-card" class="info-block" style="margin-top:20px;">
-
     <h3 style="text-align:center;">🧾 本次訂購內容</h3>
     <div id="order-summary-content"></div>
-
-    <!-- ✅ 新增：卡片內的總金額區 -->
     <div class="order-total-inside">
       本次購買總金額為：
       <span id="final-amount-display">$0</span>
@@ -299,28 +227,24 @@
     <div id="content-linepay" class="payment-content">
       <div class="payment-detail-card">
         <h3 style="margin-top: 0; color: #00b900;">🟢 LINE Pay 付款</h3>
-      
         <p id="lp-announcement" style="font-size: 0.95rem; color: var(--avo-dark); margin-bottom: 15px; font-weight: 600;"></p>
-      
-      <div class="variety-img-container" style="max-width: 250px; margin: 0 auto 15px auto; padding: 10px;">
-        <img id="lp-qrcode" src="" style="width: 100%; display: block; border-radius: 10px;" onclick="showLightbox(this.src)">
-      </div>
-      
+        <div class="variety-img-container" style="max-width: 250px; margin: 0 auto 15px auto; padding: 10px;">
+          <img id="lp-qrcode" src="" style="width: 100%; display: block; border-radius: 10px;" onclick="showLightbox(this.src)">
+        </div>
         <p style="font-size: 0.85rem; color: #888;">( 點擊圖片可放大掃描 )</p>
       </div>
     </div>
 
     <hr style="border: none; border-top: 1px dashed #ddd; margin: 15px 0;">
     <p id="success-reminder-msg" class="success-warm-text"></p>
-  
+
     <div class="button-group">
       <a id="final-line-btn" href="javascript:void(0)" onclick="handleLineJump()" class="btn-primary" style="flex: 2;">
-        <?= 設定['匯款']['跳轉按鈕名稱'] || "確認匯款回報" ?>
+        確認匯款回報
       </a>
       <button type="button" onclick="goToStep(1)" class="btn-secondary" style="flex: 1;">回首頁</button>
     </div>
   </div>
-
 </div>
 
 <!-- ------ 燈箱效果 ------ -->
@@ -339,19 +263,18 @@
   </div>
 </div>
 
-
 <!-- 🌱 波波酪梨 版權聲明 -->
 <footer class="site-footer">
   © <span id="year"></span> 波波酪梨 Pro-Bro Avocado. All Rights Reserved.
 </footer>
 
 <script>
-  // 自動帶入當前年份
   document.getElementById('year').textContent = new Date().getFullYear();
 </script>
 
+      </div><!-- end app-container -->
+    </div><!-- end main-wrapper -->
 
-    <?!= include('Scripts'); ?>
-
+    <script src="script.js"></script>
   </body>
 </html>
