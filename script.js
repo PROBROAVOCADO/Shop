@@ -205,13 +205,82 @@ function showLoadingScreen(show) {
     if (!el) {
       el = document.createElement('div');
       el.id = 'loading-screen';
-      el.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:var(--avo-green);display:flex;align-items:center;justify-content:center;z-index:99999;font-size:2rem;';
-      el.innerHTML = '🥑 載入中...';
+      el.innerHTML = `
+        <style>
+          @keyframes avoBounce {
+            0%, 100% { transform: translateY(0) scale(1); }
+            40% { transform: translateY(-30px) scale(1.1); }
+            60% { transform: translateY(-15px) scale(1.05); }
+          }
+          @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes dotPulse {
+            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1.2); }
+          }
+          #loading-screen {
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: linear-gradient(160deg, #e9edc9 0%, #d4e09b 100%);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 99999;
+            transition: opacity 0.5s ease;
+          }
+          .avo-bounce {
+            font-size: 5rem;
+            animation: avoBounce 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            filter: drop-shadow(0 10px 8px rgba(0,0,0,0.15));
+          }
+          .loading-brand {
+            margin-top: 20px;
+            font-size: 1.4rem;
+            font-weight: 900;
+            color: #576e37;
+            letter-spacing: 4px;
+            animation: fadeInUp 0.8s ease both;
+          }
+          .loading-sub {
+            margin-top: 6px;
+            font-size: 0.75rem;
+            color: #76944a;
+            letter-spacing: 3px;
+            opacity: 0.8;
+            animation: fadeInUp 0.8s ease 0.2s both;
+          }
+          .loading-dots {
+            display: flex;
+            gap: 6px;
+            margin-top: 24px;
+            animation: fadeInUp 0.8s ease 0.4s both;
+          }
+          .loading-dots span {
+            width: 8px; height: 8px;
+            background: #76944a;
+            border-radius: 50%;
+            animation: dotPulse 1.2s ease infinite;
+          }
+          .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+          .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+        </style>
+        <div class="avo-bounce">🥑</div>
+        <div class="loading-brand">波波酪梨</div>
+        <div class="loading-sub">Pro-Bro Avo. | Earth to Table</div>
+        <div class="loading-dots">
+          <span></span><span></span><span></span>
+        </div>
+      `;
       document.body.appendChild(el);
     }
+    el.style.opacity = '1';
     el.style.display = 'flex';
   } else {
-    if (el) el.style.display = 'none';
+    if (el) {
+      el.style.opacity = '0';
+      setTimeout(() => { el.style.display = 'none'; }, 500);
+    }
   }
 }
 
