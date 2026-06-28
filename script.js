@@ -758,10 +758,15 @@ async function submitOrder(e) {
   const shippingMethodEl = document.getElementById('shipping-method');
   const shippingMethod = shippingMethodEl ? shippingMethodEl.value : '';
 
-  if (!n || !p) {
-    customAlert('☝️請填寫收件人姓名與電話！');
-    return;
-  }
+if (!n || !p) {
+  customAlert('☝️請填寫收件人姓名與電話！');
+  return;
+}
+
+if (!/^09\d{8}$/.test(p)) {
+  customAlert('☝️ 請填寫正確的手機號碼格式！\n例如：0912345678');
+  return;
+}
 
   let fullAddress = '';
   if (shippingMethod === 'post') {
