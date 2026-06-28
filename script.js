@@ -621,8 +621,8 @@ function renderPriceMenu() {
       <h4 class="price-subtitle">．優級．</h4>
       <div class="price-divider">✦ ✦ ✦</div>
       ${[1,2,3].map(w => {
-        const price = (Number(cfg['平克頓哈斯【優級】單價']) || 0) * w;
-        const key = ('平克頓哈斯【優級】-' + w).replace(/\s+/g,'');
+        const price = (Number(cfg['平克頓/哈斯【優級】單價']) || 0) * w;
+        const key = ('平克頓/哈斯【優級】-' + w).replace(/\s+/g,'');
         const count = stockMap[key] || 0;
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${count > 0 ? `（剩 ${count} 份）` : '（售罄）'}</div></div>`;
       }).join('')}
@@ -630,8 +630,8 @@ function renderPriceMenu() {
       <h4 class="price-subtitle">．次級．</h4>
       <div class="price-divider">✦ ✦ ✦</div>
       ${[1,2,3].map(w => {
-        const price = (Number(cfg['平克頓哈斯【次級】單價']) || 0) * w;
-        const key = ('平克頓哈斯【次級】-' + w).replace(/\s+/g,'');
+        const price = (Number(cfg['平克頓/哈斯【次級】單價']) || 0) * w;
+        const key = ('平克頓/哈斯【次級】-' + w).replace(/\s+/g,'');
         const count = stockMap[key] || 0;
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${count > 0 ? `（剩 ${count} 份）` : '（售罄）'}</div></div>`;
       }).join('')}
