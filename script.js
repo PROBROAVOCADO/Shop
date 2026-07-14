@@ -82,7 +82,9 @@ window.onload = async function () {
     運費表 = {
       郵寄小: Number(data['郵寄七斤(不含)以下']) || 100,
       郵寄大: Number(data['郵寄七斤(包含)以上']) || 120,
-      '711運費': Number(data['711運費']) || 80
+      '711運費': Number(data['711運費']) || 80,
+      黑貓小: Number(data['黑貓配送七斤(不含)以下']) || 100,
+      黑貓大: Number(data['黑貓配送七斤(包含)以上']) || 120
     };
 
     // 訂購頁插圖卡片
@@ -178,6 +180,14 @@ function applyConfigToPage(cfg) {
     opt711.textContent = 訂購['7-11超取配送'] === '開'
       ? '🏪 7-11 超商取件 ($80 / 限重7斤內)'
       : '🏪 7-11（目前不支援）';
+  }
+
+  const optBlackcat = document.getElementById('opt-blackcat');
+  if (optBlackcat) {
+    optBlackcat.disabled = 訂購['黑貓配送'] !== '開';
+    optBlackcat.textContent = 訂購['黑貓配送'] === '開'
+      ? '🐈\u200d⬛ 黑貓宅急便 (限重10斤內)'
+      : '🐈\u200d⬛ 黑貓宅急便（目前不支援）';
   }
 
   // 匯款跳轉按鈕名稱
@@ -442,11 +452,15 @@ function updateCart(key, deltaQty, weight, displayName) {
   let overweight = false;
   if (method === '711' && totalWeight > 7) overweight = true;
   if (method === 'post' && totalWeight > 10) overweight = true;
+  if (method === 'blackcat' && totalWeight > 10) overweight = true;
 
   if (overweight) {
-    customAlert(method === '711'
-      ? '❌ 7-11配送總重不能超過7斤喔！'
-      : '❌ 郵寄配送總重不能超過10斤喔！');
+    const overweightMsgMap = {
+      '711': '❌ 7-11配送總重不能超過7斤喔！',
+      post: '❌ 郵寄配送總重不能超過10斤喔！',
+      blackcat: '❌ 黑貓宅急便配送總重不能超過10斤喔！'
+    };
+    customAlert(overweightMsgMap[method] || '❌ 總重已超過此配送方式的限重！');
     if (prevQty === 0) {
       delete cart[key];
     } else {
@@ -496,6 +510,8 @@ function handleShippingChange() {
       customAlert('⚠️ 7-11 限重 7 斤，目前已超過！請減少品項。');
     } else if (method === 'post' && totalWeight > 10) {
       customAlert('⚠️ 郵寄限重 10 斤，目前已超過！');
+    } else if (method === 'blackcat' && totalWeight > 10) {
+      customAlert('⚠️ 黑貓宅急便限重 10 斤，目前已超過！');
     }
   }
   calculateCartTotal();
@@ -510,9 +526,11 @@ function calculateCartTotal() {
 
   let shippingFee = 0;
   if (method === 'post') {
-    shippingFee = (totalWeight < 7) ? 100 : 120;
+    shippingFee = (totalWeight < 7) ? 運費表.郵寄小 : 運費表.郵寄大;
   } else if (method === '711') {
-    shippingFee = 80;
+    shippingFee = 運費表['711運費'];
+  } else if (method === 'blackcat') {
+    shippingFee = (totalWeight < 7) ? 運費表.黑貓小 : 運費表.黑貓大;
   }
 
   finalSubtotal = subtotal;
@@ -573,7 +591,8 @@ function renderSuccessPage() {
 
   const shippingEl = document.querySelector('.js-summary-shipping');
   if (shippingEl) {
-    shippingEl.textContent = o.shippingMethod === 'post' ? '中華郵政配送' : '7-11超商配送';
+    const shippingNameMap = { post: '中華郵政配送', '711': '7-11超商配送', blackcat: '黑貓宅急便配送' };
+    shippingEl.textContent = shippingNameMap[o.shippingMethod] || '';
   }
 
   const addressEl = document.querySelector('.js-summary-address');
@@ -642,6 +661,8 @@ function renderPriceMenu() {
   document.getElementById('ship-post-small').innerText = cfg['郵寄七斤(不含)以下'] || 0;
   document.getElementById('ship-post-large').innerText = cfg['郵寄七斤(包含)以上'] || 0;
   document.getElementById('ship-711').innerText = cfg['711運費'] || 0;
+  document.getElementById('ship-blackcat-small').innerText = cfg['黑貓配送七斤(不含)以下'] || 0;
+  document.getElementById('ship-blackcat-large').innerText = cfg['黑貓配送七斤(包含)以上'] || 0;
 }
 
 function initAddressSelector() {
@@ -689,7 +710,7 @@ function updateAddressSection() {
   if (!postSection || !storeSection) return;
   postSection.style.display = 'none';
   storeSection.style.display = 'none';
-  if (method === 'post') postSection.style.display = 'block';
+  if (method === 'post' || method === 'blackcat') postSection.style.display = 'block';
   if (method === '711') storeSection.style.display = 'block';
 }
 
@@ -769,7 +790,7 @@ if (!/^09\d{8}$/.test(p)) {
 }
 
   let fullAddress = '';
-  if (shippingMethod === 'post') {
+  if (shippingMethod === 'post' || shippingMethod === 'blackcat') {
     if (!countyEl.value || !districtEl.value) {
       countyEl.classList.add('address-error');
       districtEl.classList.add('address-error');
