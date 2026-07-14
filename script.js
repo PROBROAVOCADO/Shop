@@ -329,6 +329,10 @@ function goToStep(step) {
     setTimeout(() => { fireConfetti(); }, 200);
   }
 
+  if (step === 3) {
+    setTimeout(() => { renderPriceMenu(); }, 0);
+  }
+
   if (step === 4) {
     setTimeout(() => {
       renderProductList();
@@ -850,6 +854,19 @@ if (!/^09\d{8}$/.test(p)) {
     });
     const json = await res.json();
     if (!json.success) throw new Error(json.error || '送單失敗');
+
+    // ✅ 下單成功：本地同步扣除庫存快照，避免回首頁/價目表顯示舊庫存
+    const stockMap = window.APP_CONFIG.stockMap || {};
+    Object.keys(cart).forEach(key => {
+      if (stockMap[key] !== undefined) {
+        stockMap[key] = Math.max(0, stockMap[key] - cart[key].qty);
+      }
+    });
+
+    // ✅ 清空購物車，避免下次進訂購頁殘留舊品項
+    cart = {};
+    totalWeight = 0;
+
     submitBtn.disabled = false;
     submitBtn.innerText = '✅ 確認訂購';
     goToStep(5);
