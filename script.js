@@ -1,7 +1,7 @@
 // ========================================
 // ⭐ 請將這裡換成你的 GAS Web App 網址
 // ========================================
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyNCcQKOaR9B-DfYlPKGLWHWCfNOKM44R66ZYQBKqvUvo8AfywgrMUhBfs-7Mfmji3nLw/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwbkKqipfPrimFs7-d6ZorySDv0g5yhq_vbGGp2xmWZm2diNsblTfMjwP8kz-Hx9iRDTQ/exec';
 
 // ========================================
 // 🌟 核心變數與狀態
