@@ -782,22 +782,26 @@ textarea:focus {
   color: var(--avo-dark); /* 或你要的顏色 */
 }
 
-/* 🚚 價格表|配送方式標題（中華郵政 / 7-11） */
+/* 🚚 價格表|配送方式標題（中華郵政 / 7-11 / 黑貓） */
 .shipping-title {
   letter-spacing: 1px;
-  margin: 8px 0 4px;
+  margin: 24px 0 10px;
   font-weight: 650;
   font-size: 0.95rem;
   line-height: 1.4;
   color: var(--avo-dark);
 }
 
+/* 第一個配送方式標題不用留太多上方空間 */
+.shipping-title:first-of-type {
+  margin-top: 2px;
+}
+
 /* 🚚 價格表|配送費用列（價格行） */
 .shipping-item {
-
-  line-height: 1.2;
+  line-height: 1.6;
   letter-spacing: 1.2px;
-  margin-bottom: 3px;
+  margin: 0 0 10px;
 }
 
 /* 🌤️ 輕提示文字（淡暖色、存在感低） */
