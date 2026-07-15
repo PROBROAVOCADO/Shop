@@ -804,6 +804,13 @@ textarea:focus {
   margin: 0 0 10px;
 }
 
+/* 🏝️ 價格表|離島加價行（稍微內縮、顏色偏淡以區隔一般運費） */
+.shipping-island-item {
+  padding-left: 18px;
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
 /* 🌤️ 輕提示文字（淡暖色、存在感低） */
 .hint-text {
   font-size: 0.85rem;
