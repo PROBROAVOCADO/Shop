@@ -7,6 +7,18 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbwbkKqipfPrimFs7-d6Zory
 // 🌟 核心變數與狀態
 // ========================================
 var 價格表 = {}, 運費表 = {};
+
+// 🏝️ 台灣離島判定清單（全境算離島的縣市 + 縣市下特定離島鄉鎮）
+// 如認定範圍需調整，改這兩個陣列即可
+const 離島縣市 = ['澎湖縣', '金門縣', '連江縣'];
+const 離島鄉鎮 = ['綠島鄉', '蘭嶼鄉', '琉球鄉'];
+
+function isIslandAddress(county, district) {
+  if (!county) return false;
+  if (離島縣市.includes(county)) return true;
+  if (district && 離島鄉鎮.includes(district)) return true;
+  return false;
+}
 var finalSubtotal = 0, finalShippingFee = 0, finalTotal = 0;
 var isInitialLoad = true;
 var currentOrderSummary = null;
@@ -84,7 +96,11 @@ window.onload = async function () {
       郵寄大: Number(data['郵寄七斤(包含)以上']) || 120,
       '711運費': Number(data['711運費']) || 80,
       黑貓小: Number(data['黑貓配送七斤(不含)以下']) || 100,
-      黑貓大: Number(data['黑貓配送七斤(包含)以上']) || 120
+      黑貓大: Number(data['黑貓配送七斤(包含)以上']) || 120,
+      郵寄離島小: Number(data['郵寄離島七斤(不含)以下']) || 150,
+      郵寄離島大: Number(data['郵寄離島七斤(包含)以上']) || 180,
+      黑貓離島小: Number(data['黑貓配送離島七斤(不含)以下']) || 150,
+      黑貓離島大: Number(data['黑貓配送離島七斤(包含)以上']) || 180
     };
 
     // 訂購頁插圖卡片
@@ -528,13 +544,26 @@ function calculateCartTotal() {
   let subtotal = 0;
   Object.values(cart).forEach(k => { subtotal += k.subtotal; });
 
+  const countyEl = document.getElementById('county');
+  const districtEl = document.getElementById('district');
+  const isIsland = (method === 'post' || method === 'blackcat')
+    && isIslandAddress(countyEl ? countyEl.value : '', districtEl ? districtEl.value : '');
+
+  // 🏝️ 顯示/隱藏離島運費提示
+  const islandHint = document.getElementById('island-shipping-hint');
+  if (islandHint) islandHint.style.display = isIsland ? 'block' : 'none';
+
   let shippingFee = 0;
   if (method === 'post') {
-    shippingFee = (totalWeight < 7) ? 運費表.郵寄小 : 運費表.郵寄大;
+    shippingFee = isIsland
+      ? ((totalWeight < 7) ? 運費表.郵寄離島小 : 運費表.郵寄離島大)
+      : ((totalWeight < 7) ? 運費表.郵寄小 : 運費表.郵寄大);
   } else if (method === '711') {
     shippingFee = 運費表['711運費'];
   } else if (method === 'blackcat') {
-    shippingFee = (totalWeight < 7) ? 運費表.黑貓小 : 運費表.黑貓大;
+    shippingFee = isIsland
+      ? ((totalWeight < 7) ? 運費表.黑貓離島小 : 運費表.黑貓離島大)
+      : ((totalWeight < 7) ? 運費表.黑貓小 : 運費表.黑貓大);
   }
 
   finalSubtotal = subtotal;
@@ -667,6 +696,10 @@ function renderPriceMenu() {
   document.getElementById('ship-711').innerText = cfg['711運費'] || 0;
   document.getElementById('ship-blackcat-small').innerText = cfg['黑貓配送七斤(不含)以下'] || 0;
   document.getElementById('ship-blackcat-large').innerText = cfg['黑貓配送七斤(包含)以上'] || 0;
+  document.getElementById('ship-post-island-small').innerText = cfg['郵寄離島七斤(不含)以下'] || 0;
+  document.getElementById('ship-post-island-large').innerText = cfg['郵寄離島七斤(包含)以上'] || 0;
+  document.getElementById('ship-blackcat-island-small').innerText = cfg['黑貓配送離島七斤(不含)以下'] || 0;
+  document.getElementById('ship-blackcat-island-large').innerText = cfg['黑貓配送離島七斤(包含)以上'] || 0;
 }
 
 function initAddressSelector() {
@@ -693,10 +726,12 @@ function initAddressSelector() {
     } else {
       districtSelect.disabled = true;
     }
+    calculateCartTotal();
   });
 
   districtSelect.addEventListener('change', () => {
     zipInput.value = (addressMap[countySelect.value] && addressMap[countySelect.value][districtSelect.value]) || '';
+    calculateCartTotal();
   });
 }
 
@@ -826,6 +861,9 @@ if (!/^09\d{8}$/.test(p)) {
 
   submitBtn.innerText = '處理中...';
   submitBtn.disabled = true;
+
+  // 🏝️ 保險：送單前用最新地址再算一次運費，確保離島判斷不會用到過期數字
+  calculateCartTotal();
 
   const weightText = Object.values(cart).map(item => `${item.displayName} ${item.weight} 斤 x${item.qty}`);
 
