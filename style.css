@@ -804,11 +804,24 @@ textarea:focus {
   margin: 0 0 10px;
 }
 
-/* 🏝️ 價格表|離島加價行（稍微內縮、顏色偏淡以區隔一般運費） */
+/* 🏝️ 價格表|本島／離島同列並排（本島靠左、離島靠右，中間自然拉開間距） */
+.shipping-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.shipping-row .shipping-item {
+  margin: 0 0 10px;
+}
+
+/* 🏝️ 價格表|離島加價行（顏色偏淡以區隔一般運費） */
 .shipping-island-item {
-  padding-left: 18px;
   font-size: 0.9rem;
   opacity: 0.75;
+  white-space: nowrap;
 }
 
 /* 🌤️ 輕提示文字（淡暖色、存在感低） */
