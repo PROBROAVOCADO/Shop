@@ -797,31 +797,53 @@ textarea:focus {
   margin-top: 2px;
 }
 
-/* 🚚 價格表|配送費用列（價格行） */
+/* 🚚 價格表|配送費用列（單行價格，如 7-11 單筆固定） */
 .shipping-item {
   line-height: 1.6;
   letter-spacing: 1.2px;
   margin: 0 0 10px;
 }
 
-/* 🏝️ 價格表|本島／離島同列並排（本島靠左、離島靠右，中間自然拉開間距） */
+/* 🏝️ 價格表|本島＋離島同列：斤兩固定寬度、價格靠右對齊，
+   離島區塊獨立推到最右側，區塊內部離島價格自身也靠右對齊 */
 .shipping-row {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px 24px;
-}
-
-.shipping-row .shipping-item {
+  gap: 6px 20px;
+  line-height: 1.6;
+  letter-spacing: 1.2px;
   margin: 0 0 10px;
+  font-size: 1rem;
+  color: var(--avo-dark);
 }
 
-/* 🏝️ 價格表|離島加價行（顏色偏淡以區隔一般運費） */
-.shipping-island-item {
+.shipping-weight {
+  flex: 0 0 auto;
+  min-width: 58px;
+}
+
+.shipping-price {
+  flex: 0 0 auto;
+  min-width: 48px;
+  text-align: right;
+  font-weight: 600;
+  margin-right: auto; /* 把離島區塊推到最右側，留出明顯間距 */
+}
+
+.shipping-island {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 0.9rem;
   opacity: 0.75;
   white-space: nowrap;
+}
+
+.shipping-island-price {
+  min-width: 42px;
+  text-align: right;
 }
 
 /* 🌤️ 輕提示文字（淡暖色、存在感低） */
