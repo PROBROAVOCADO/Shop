@@ -1462,3 +1462,44 @@ textarea:focus {
   background: #cfcfcf !important;
   transform: none !important;
 }
+/* ============================================
+   📱【規格選擇區塊｜手機版數量按鈕縮小 + 庫存欄防裁切】
+   只在手機生效，桌機版排版不受影響。
+   放在檔案最後、選擇器優先權與前面 #product-list-container 規則相同，
+   確保能真的覆蓋掉之前沒生效的舊規則。
+   ============================================ */
+@media screen and (max-width: 767px) {
+  #product-list-container .price-row {
+    grid-template-columns: 1fr 66px 78px; /* 左:斤兩 / 中:庫存 / 右:按鈕，庫存欄給足空間 */
+  }
+
+  #product-list-container .price-col.stock {
+    justify-self: start;
+    text-align: right;
+    margin-left: 0;      /* 移除容易裁切的硬推寫法 */
+    width: 100%;
+    font-size: 0.8rem;
+  }
+
+  #product-list-container .price-col.action {
+    width: auto;
+  }
+
+  #product-list-container .price-col.action .qty-control {
+    margin-left: 0;
+    gap: 4px;
+    width: auto;
+  }
+
+  #product-list-container .btn-qty {
+    width: 22px;
+    height: 22px;
+    font-size: 0.85rem;
+    border-width: 1px;
+  }
+
+  #product-list-container .qty-num {
+    width: 16px;
+    font-size: 0.8rem;
+  }
+}
