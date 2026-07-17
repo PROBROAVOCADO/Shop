@@ -517,6 +517,23 @@ select {
     margin: 4px 0 !important;
     font-size: 0.9rem !important;
   }
+
+  /* 📱【價目表｜配送方式卡片分組】只在手機生效，桌機版維持原本清單排版 */
+  .shipping-method-block {
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(87, 110, 55, 0.14);
+    border-radius: 16px;
+    padding: 14px 16px 6px;
+    margin-bottom: 14px;
+  }
+
+  .shipping-method-block .shipping-title {
+    margin-top: 0;
+  }
+
+  .shipping-method-block .shipping-row:last-child {
+    margin-bottom: 8px;
+  }
 }
 
 /* 手機小螢幕調整 */
