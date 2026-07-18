@@ -24,7 +24,6 @@ var isInitialLoad = true;
 var currentOrderSummary = null;
 var cart = {};
 var totalWeight = 0;
-var isOpen = false; // 控制浮動購物車是否展開
 
 // 顯示名稱 → stockMap key 的對照表
 const stockKeyMap = {
@@ -651,7 +650,7 @@ function renderPriceMenu() {
       ${[3,5,7,10].map(w => {
         const price = (Number(cfg['當季酪梨( 隨機出貨 )【優級】單價']) || 0) * w;
         const key = ('當季酪梨( 隨機出貨 )【優級】-' + w).replace(/\s+/g,'');
-        const count = stockMap[key] || 0;
+        const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${count > 0 ? `（剩 ${count} 份）` : '（售罄）'}</div></div>`;
       }).join('')}
       <div style="height:26px;"></div>
@@ -660,7 +659,7 @@ function renderPriceMenu() {
       ${[3,5,7,10].map(w => {
         const price = (Number(cfg['當季酪梨( 隨機出貨 )【次級】單價']) || 0) * w;
         const key = ('當季酪梨( 隨機出貨 )【次級】-' + w).replace(/\s+/g,'');
-        const count = stockMap[key] || 0;
+        const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${count > 0 ? `（剩 ${count} 份）` : '（售罄）'}</div></div>`;
       }).join('')}
     </div>
@@ -675,7 +674,7 @@ function renderPriceMenu() {
       ${[1,2,3].map(w => {
         const price = (Number(cfg['平克頓/哈斯【優級】單價']) || 0) * w;
         const key = ('平克頓/哈斯【優級】-' + w).replace(/\s+/g,'');
-        const count = stockMap[key] || 0;
+        const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${count > 0 ? `（剩 ${count} 份）` : '（售罄）'}</div></div>`;
       }).join('')}
       <div style="height:26px;"></div>
@@ -684,7 +683,7 @@ function renderPriceMenu() {
       ${[1,2,3].map(w => {
         const price = (Number(cfg['平克頓/哈斯【次級】單價']) || 0) * w;
         const key = ('平克頓/哈斯【次級】-' + w).replace(/\s+/g,'');
-        const count = stockMap[key] || 0;
+        const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${count > 0 ? `（剩 ${count} 份）` : '（售罄）'}</div></div>`;
       }).join('')}
     </div>
@@ -856,6 +855,16 @@ if (!/^09\d{8}$/.test(p)) {
     fullAddress = `7-11 門市：${storeEl.value.trim()}`;
   } else {
     customAlert('☝️請選擇配送方式！');
+    return;
+  }
+
+  // 🔴 送單前最終防呆：避免「先加購物車、後切換配送方式」繞過限重限制
+  recalcTotalWeight();
+  const weightLimitMap = { post: 10, '711': 7, blackcat: 10 };
+  const weightLimit = weightLimitMap[shippingMethod];
+  if (weightLimit && totalWeight > weightLimit) {
+    const methodNameMap = { post: '中華郵政', '711': '7-11', blackcat: '黑貓宅急便' };
+    customAlert(`❌ 目前購物車總重 ${totalWeight} 斤，已超過「${methodNameMap[shippingMethod]}」限重 ${weightLimit} 斤，請調整購買數量或改選其他配送方式！`);
     return;
   }
 
