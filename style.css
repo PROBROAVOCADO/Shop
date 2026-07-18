@@ -1488,6 +1488,7 @@ textarea:focus {
     text-align: right;
     margin-left: 0;      /* 移除容易裁切的硬推寫法 */
     width: 100%;
+    padding-right: 10px; /* 👈 讓數字往左挪一點，避免貼近按鈕 */
     font-size: 0.8rem;
   }
 
