@@ -517,22 +517,31 @@ select {
     margin: 4px 0 !important;
     font-size: 0.9rem !important;
   }
+}
 
-  /* 📱【價目表｜配送方式卡片分組】只在手機生效，桌機版維持原本清單排版 */
+/* 🚚🏝️【價目表｜配送方式卡片分組】桌機／手機都套用，讓不同配送方式視覺上明確分開 */
+.shipping-method-block {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(87, 110, 55, 0.14);
+  border-radius: 16px;
+  padding: 14px 16px 6px;
+  margin-bottom: 14px;
+}
+
+.shipping-method-block .shipping-title {
+  margin-top: 0;
+}
+
+.shipping-method-block .shipping-row:last-child {
+  margin-bottom: 8px;
+}
+
+/* 💻 桌機版：卡片再大氣一點，帶一點陰影跟外層卡片做出層次感 */
+@media screen and (min-width: 768px) {
   .shipping-method-block {
-    background: rgba(255, 255, 255, 0.55);
-    border: 1px solid rgba(87, 110, 55, 0.14);
-    border-radius: 16px;
-    padding: 14px 16px 6px;
-    margin-bottom: 14px;
-  }
-
-  .shipping-method-block .shipping-title {
-    margin-top: 0;
-  }
-
-  .shipping-method-block .shipping-row:last-child {
-    margin-bottom: 8px;
+    padding: 18px 22px 10px;
+    margin-bottom: 18px;
+    box-shadow: 0 4px 14px rgba(93, 122, 50, 0.06);
   }
 }
 
@@ -1471,6 +1480,7 @@ textarea:focus {
 @media screen and (max-width: 767px) {
   #product-list-container .price-row {
     grid-template-columns: 1fr 66px 78px; /* 左:斤兩 / 中:庫存 / 右:按鈕，庫存欄給足空間 */
+    column-gap: 10px; /* 👈 欄位之間留白，避免庫存數字貼著 -/+ 按鈕 */
   }
 
   #product-list-container .price-col.stock {
