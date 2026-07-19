@@ -98,15 +98,15 @@ window.onload = async function () {
     };
 
     運費表 = {
-      郵寄小: Number(data['郵寄七斤(不含)以下']) || 100,
-      郵寄大: Number(data['郵寄七斤(包含)以上']) || 120,
-      '711運費': Number(data['711運費']) || 80,
-      黑貓小: Number(data['黑貓配送七斤(不含)以下']) || 100,
-      黑貓大: Number(data['黑貓配送七斤(包含)以上']) || 120,
-      郵寄離島小: Number(data['郵寄離島七斤(不含)以下']) || 150,
-      郵寄離島大: Number(data['郵寄離島七斤(包含)以上']) || 180,
-      黑貓離島小: Number(data['黑貓配送離島七斤(不含)以下']) || 150,
-      黑貓離島大: Number(data['黑貓配送離島七斤(包含)以上']) || 180
+      郵寄小: Number(data['郵寄七斤(不含)以下']) || 0,
+      郵寄大: Number(data['郵寄七斤(包含)以上']) || 0,
+      '711運費': Number(data['711運費']) || 0,
+      黑貓小: Number(data['黑貓配送七斤(不含)以下']) || 0,
+      黑貓大: Number(data['黑貓配送七斤(包含)以上']) || 0,
+      郵寄離島小: Number(data['郵寄離島七斤(不含)以下']) || 0,
+      郵寄離島大: Number(data['郵寄離島七斤(包含)以上']) || 0,
+      黑貓離島小: Number(data['黑貓配送離島七斤(不含)以下']) || 0,
+      黑貓離島大: Number(data['黑貓配送離島七斤(包含)以上']) || 0
     };
 
     // 訂購頁插圖卡片
@@ -296,6 +296,16 @@ function showLoadingScreen(show) {
           }
           .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
           .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+          .loading-msg {
+            margin-top: 22px;
+            font-size: 0.85rem;
+            color: #576e37;
+            letter-spacing: 1px;
+            opacity: 0.85;
+            min-height: 1.2em;
+            transition: opacity 0.25s ease;
+          }
+          .loading-msg.is-fading { opacity: 0; }
         </style>
         <div class="avo-bounce">🥑</div>
         <div class="loading-brand">波波酪梨</div>
@@ -303,16 +313,84 @@ function showLoadingScreen(show) {
         <div class="loading-dots">
           <span></span><span></span><span></span>
         </div>
+        <div class="loading-msg" id="loading-msg"></div>
       `;
       document.body.appendChild(el);
     }
     el.style.opacity = '1';
     el.style.display = 'flex';
+    startLoadingMessages();
   } else {
+    stopLoadingMessages();
     if (el) {
       el.style.opacity = '0';
       setTimeout(() => { el.style.display = 'none'; }, 500);
     }
+  }
+}
+
+// 🌱 loading 畫面文字輪播：把等待感轉化成一點小期待
+const LOADING_MESSAGES = [
+  '正在挑選當季酪梨…',
+  '正在確認庫存…',
+  '正在為您整理鮮採清單…',
+  '馬上就好，稍等一下…',
+  '正在打包新鮮好味道…',
+  '正在秤重最飽滿的果實…',
+  '正在檢查熟成度…',
+  '正在整理今日出貨清單…',
+  '陽光正在醞釀好滋味…',
+  '正在幫酪梨做最後健檢…',
+  '正在準備您的專屬箱子…',
+  '南投的果園正在待命中…',
+  '正在確認今日鮮採進度…',
+  '正在挑出最漂亮的那一顆…',
+  '正在規劃最新鮮的路線…',
+  '小農們正在忙碌準備中…',
+  '正在核對每一筆訂單細節…',
+  '正在為酪梨穿上防護包裝…',
+  '用心種植，用心送達…',
+  '正在把幸福打包好…'
+];
+let loadingMsgTimer = null;
+let loadingMsgQueue = [];
+
+// Fisher–Yates 洗牌：每次開始播放都重新打亂順序，每次進站的播放順序都不一樣
+function shuffleLoadingMessages() {
+  const arr = [...LOADING_MESSAGES];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function startLoadingMessages() {
+  const msgEl = document.getElementById('loading-msg');
+  if (!msgEl || loadingMsgTimer) return; // 已經在跑就不要重複啟動
+
+  loadingMsgQueue = shuffleLoadingMessages();
+  let index = 0;
+  msgEl.textContent = loadingMsgQueue[0];
+
+  loadingMsgTimer = setInterval(() => {
+    msgEl.classList.add('is-fading');
+    setTimeout(() => {
+      index++;
+      if (index >= loadingMsgQueue.length) {
+        loadingMsgQueue = shuffleLoadingMessages(); // 播完一輪，重新洗牌再來一輪
+        index = 0;
+      }
+      msgEl.textContent = loadingMsgQueue[index];
+      msgEl.classList.remove('is-fading');
+    }, 250); // 跟 CSS transition 時間對齊，文字淡出後再換字、淡入
+  }, 1000);
+}
+
+function stopLoadingMessages() {
+  if (loadingMsgTimer) {
+    clearInterval(loadingMsgTimer);
+    loadingMsgTimer = null;
   }
 }
 
