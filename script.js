@@ -25,6 +25,13 @@ var currentOrderSummary = null;
 var cart = {};
 var totalWeight = 0;
 
+// 🖼️ Google Drive 圖片網址工具：附加 =wXXX 尺寸參數，讓 Google 自動輸出壓縮過的縮圖，
+// 不用改動試算表裡存的原始檔案 ID，網頁載入的檔案大小卻能大幅縮小
+function driveImgUrl(id, width) {
+  if (!id) return '';
+  return `https://lh3.googleusercontent.com/d/${id}=w${width || 800}`;
+}
+
 // 顯示名稱 → stockMap key 的對照表
 const stockKeyMap = {
   '平克頓/哈斯 (隨機出貨)【優級】': '平克頓/哈斯【優級】',
@@ -112,9 +119,9 @@ window.onload = async function () {
       if (middleCard && (cardImgId1 || cardImgId2 || cardText)) {
         middleCard.style.display = 'block';
         const img1 = document.getElementById('order-card-img1');
-        if (img1 && cardImgId1) img1.src = 'https://lh3.googleusercontent.com/d/' + cardImgId1;
+        if (img1 && cardImgId1) img1.src = driveImgUrl(cardImgId1, 600);
         const img2 = document.getElementById('order-card-img2');
-        if (img2 && cardImgId2) img2.src = 'https://lh3.googleusercontent.com/d/' + cardImgId2;
+        if (img2 && cardImgId2) img2.src = driveImgUrl(cardImgId2, 600);
         const textElement = document.getElementById('order-card-text');
         if (textElement && cardText) {
           textElement.innerText = cardText;
@@ -215,7 +222,7 @@ function applyConfigToPage(cfg) {
     const bannerContainer = document.getElementById('banner-container');
     const bannerImg = document.getElementById('banner-img');
     if (bannerContainer && bannerImg) {
-      bannerImg.src = 'https://lh3.googleusercontent.com/d/' + bannerId;
+      bannerImg.src = driveImgUrl(bannerId, 1000);
       bannerContainer.style.display = 'block';
     }
   }
@@ -583,7 +590,7 @@ function renderVarieties() {
 
   container.innerHTML = data.map(v => `
     <div class="info-block">
-      ${v.img ? `<div class="variety-images"><img src="${v.img}" class="avocado-img" onclick="showLightbox('${v.img}')"></div>` : ''}
+      ${v.img ? `<div class="variety-images"><img src="${v.img}" class="avocado-img" loading="lazy" onclick="showLightbox('${v.img}')"></div>` : ''}
       <h3 class="variety-title">${v.name}</h3>
       <div class="product-divider"></div>
       <p style="white-space:pre-wrap;">${v.feature || ''}</p>
@@ -598,7 +605,7 @@ function renderSuccessPage() {
   document.getElementById('lp-announcement').innerText = window.APP_CONFIG.linePayMsg || '';
 
   if (window.APP_CONFIG.linePayImgId) {
-    document.getElementById('lp-qrcode').src = 'https://lh3.googleusercontent.com/d/' + window.APP_CONFIG.linePayImgId;
+    document.getElementById('lp-qrcode').src = driveImgUrl(window.APP_CONFIG.linePayImgId, 500);
   }
 
   document.getElementById('final-amount-display').innerText = '$' + finalTotal + ' 元';
