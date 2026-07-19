@@ -1,9 +1,15 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <!-- ⚡ 效能：提早跟圖片主機、GAS API 主機建立連線，減少之後真正抓取資料/圖片的等待時間 -->
+    <link rel="preconnect" href="https://lh3.googleusercontent.com">
+    <link rel="preconnect" href="https://script.google.com">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js" defer></script>
 
     <!-- 🥑 Open Graph 社群分享預覽圖 -->
     <meta property="og:title" content="🥑 波波酪梨｜南投小農 用心種植" />
@@ -183,10 +189,10 @@
   <div id="order-middle-card" class="info-block" style="display: none; padding: 25px !important;">
     <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 15px;">
       <div id="container-img1" class="variety-img-container" style="margin-bottom: 0;">
-        <img id="order-card-img1" src="" class="variety-img" onclick="showLightbox(this.src)" style="cursor: zoom-in; height: 220px; object-fit: contain; background-color: #fff;">
+        <img id="order-card-img1" src="" class="variety-img" loading="lazy" onclick="showLightbox(this.src)" style="cursor: zoom-in; height: 220px; object-fit: contain; background-color: #fff;">
       </div>
       <div id="container-img2" class="variety-img-container" style="margin-bottom: 0;">
-        <img id="order-card-img2" src="" class="variety-img" onclick="showLightbox(this.src)" style="cursor: zoom-in; height: 220px; object-fit: contain; background-color: #fff;">
+        <img id="order-card-img2" src="" class="variety-img" loading="lazy" onclick="showLightbox(this.src)" style="cursor: zoom-in; height: 220px; object-fit: contain; background-color: #fff;">
       </div>
     </div>
     <div id="order-card-text" class="variety-grading-note" style="text-align: center; display: none;"></div>
@@ -275,7 +281,7 @@
         <h3 style="margin-top: 0; color: #00b900;">🟢 LINE Pay 付款</h3>
         <p id="lp-announcement" style="font-size: 0.95rem; color: var(--avo-dark); margin-bottom: 15px; font-weight: 600;"></p>
         <div class="variety-img-container" style="max-width: 250px; margin: 0 auto 15px auto; padding: 10px;">
-          <img id="lp-qrcode" src="" style="width: 100%; display: block; border-radius: 10px;" onclick="showLightbox(this.src)">
+          <img id="lp-qrcode" src="" loading="lazy" style="width: 100%; aspect-ratio: 1 / 1; display: block; border-radius: 10px;" onclick="showLightbox(this.src)">
         </div>
         <p style="font-size: 0.85rem; color: #888;">( 點擊圖片可放大掃描 )</p>
       </div>
@@ -296,7 +302,7 @@
 <!-- ------ 燈箱效果 ------ -->
 <div id="lightbox-overlay" onclick="this.style.display='none'" style="display: none; position: fixed; z-index: 9998; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); cursor: zoom-out; justify-content: center; align-items: center;">
   <div style="text-align: center; width: 100%;">
-    <img id="lightbox-img" src="" style="max-width: 90%; max-height: 80vh; border-radius: 10px; box-shadow: 0 0 30px rgba(0,0,0,0.5);">
+    <img id="lightbox-img" src="" loading="lazy" style="max-width: 90%; max-height: 80vh; border-radius: 10px; box-shadow: 0 0 30px rgba(0,0,0,0.5);">
     <div style="margin-top: 20px; color: white;">✕ 點擊畫面任意處關閉</div>
   </div>
 </div>
