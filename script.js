@@ -303,7 +303,7 @@ function showLoadingScreen(show) {
             letter-spacing: 1px;
             opacity: 0.85;
             min-height: 1.2em;
-            transition: opacity 0.25s ease;
+            transition: opacity 0.35s ease;
           }
           .loading-msg.is-fading { opacity: 0; }
         </style>
