@@ -6,6 +6,7 @@
   --text-main: #2d3e10;
   --herb-green: #76944a;
   --transition-smooth: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  --heading-font: "cwTeXKai", "Kaiti TC", "BiauKai", "YuGothic", "Yu Gothic", "Hiragino Sans GB", "Microsoft JhengHei", sans-serif; /* 🖋️ 標題專用：帶手寫毛筆感的楷體 */
 }
 
 /* ✅ 全站盒模型修正（避免手機偏移） */
@@ -59,6 +60,8 @@ html, body {
 /* --- 🧱 全站通用卡片外觀（唯一正版） --- */
 .info-block {
   background-color: var(--creamy);
+  /* 🎨 紙感紋理：純SVG噪點疊在底色上，透明度直接烤進SVG的alpha值裡（約5%），不用額外圖片檔 */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix in='noise' type='matrix' values='0 0 0 0 0.34  0 0 0 0 0.22  0 0 0 0 0.1  0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   padding: 35px 30px;
   border-radius: 24px;
   box-shadow: 0 12px 40px rgba(93, 122, 50, 0.08);
@@ -77,7 +80,7 @@ html, body {
 
 /* ---【頁面標題】--- */
 .main-title {
-  font-family: "YuGothic", "Yu Gothic", "Hiragino Sans GB", "Microsoft JhengHei", sans-serif;
+  font-family: var(--heading-font);
   font-size: 2.2rem;
   font-weight: 900;
   text-align: center;
@@ -119,6 +122,7 @@ html, body {
 
 /* 📢 公告區－標題樣式（可自由調整） */
 .section-title {
+  font-family: var(--heading-font);
   text-align: center;          /* 標題置中 */
   font-size: 1.3rem;           /* 標題大小 */
   font-weight: 800;
@@ -160,6 +164,7 @@ html, body {
 
 /* 🥑 第二頁｜品種名稱標題 */
 .variety-title {
+  font-family: var(--heading-font);
   text-align: center;
   margin: 0;
   font-weight: 800;
@@ -669,6 +674,7 @@ textarea:focus {
 }
 
 .price-title {
+  font-family: var(--heading-font);
   font-size: 1.2rem;
   text-align: center;
   color: var(--avo-dark);  
