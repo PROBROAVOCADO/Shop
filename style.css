@@ -155,6 +155,12 @@ html, body {
 .btn-primary, #submit-btn { background-color: var(--herb-green) !important; color: white !important; }
 .btn-secondary { background-color: white !important; color: var(--avo-dark) !important; border: 1.5px solid var(--herb-green) !important; }
 
+/* 🖱️ 按鈕懸停效果：輕微上浮 + 陰影加深，幅度保守不浮誇 */
+.btn-primary:hover, .btn-secondary:hover, #submit-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+
 .button-group { 
   display: flex !important; flex-direction: row !important;
   justify-content: space-between !important; gap: 12px !important; 
@@ -1058,6 +1064,7 @@ textarea:focus {
   flex-direction: column;
   align-items: center;
   gap: 5px;
+  min-width: 68px; /* 👈 固定寬度，不受「LINE」「Instagram」文字長短不同影響，確保三者間距真正平均 */
   text-decoration: none;
 }
 
