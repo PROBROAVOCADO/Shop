@@ -196,7 +196,7 @@ function applyConfigToPage(cfg) {
     const url = (socialMap[id] || '').toString().trim();
     if (el && url) {
       el.href = url;
-      el.style.display = 'inline';
+      el.style.display = 'flex';
     }
   });
 
