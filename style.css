@@ -1043,29 +1043,31 @@ textarea:focus {
   letter-spacing: 0.5px;
 }
 
-/* 🔗 footer 社群連結（LINE / IG / FB） */
+/* 🔗 footer 社群連結（LINE / IG / FB）：方形圓角徽章，配色採用品牌色票 */
 .social-links {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 18px;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
 }
 
-.social-link {
-  color: var(--avo-dark);
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-decoration: none;
-  opacity: 0.75;
+.social-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;           /* 👈 方形圓角，不是全圓 */
+  background: var(--avo-accent); /* 品牌金棕色，跟各平台官方色區隔開來 */
+  color: var(--creamy);          /* 圖示線條顏色 */
   transition: var(--transition-smooth);
 }
 
-.social-link:hover {
-  opacity: 1;
-  transform: translateY(-1px);
+.social-icon:hover {
+  background: var(--avo-dark);
+  transform: translateY(-2px);
 }
 
 /* ------------------------ */
