@@ -1043,6 +1043,31 @@ textarea:focus {
   letter-spacing: 0.5px;
 }
 
+/* 🔗 footer 社群連結（LINE / IG / FB） */
+.social-links {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.social-link {
+  color: var(--avo-dark);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  opacity: 0.75;
+  transition: var(--transition-smooth);
+}
+
+.social-link:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
 /* ------------------------ */
 /* 浮動購物車容器 */
 /* ------------------------ */
