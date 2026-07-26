@@ -27,9 +27,24 @@ var totalWeight = 0;
 
 // 🖼️ Google Drive 圖片網址工具：附加 =wXXX 尺寸參數，讓 Google 自動輸出壓縮過的縮圖，
 // 不用改動試算表裡存的原始檔案 ID，網頁載入的檔案大小卻能大幅縮小
-function driveImgUrl(id, width) {
-  if (!id) return '';
-  return `https://lh3.googleusercontent.com/d/${id}=w${width || 800}`;
+// 🖼️ 圖片網址工具：
+// - 試算表填「完整網址」（http開頭，例如 ImageKit）→ 直接使用，若是 ImageKit 網址會自動附加壓縮參數
+// - 試算表填「純 Google Drive 檔案 ID」（舊格式）→ 沿用原本的組合方式，向下相容
+// 這樣可以一張圖片一張圖片慢慢換成 ImageKit，不用一次全部搬完
+function resolveImageUrl(raw, width) {
+  if (!raw) return '';
+  const w = width || 800;
+
+  if (/^https?:\/\//i.test(raw)) {
+    if (raw.includes('ik.imagekit.io')) {
+      const sep = raw.includes('?') ? '&' : '?';
+      return `${raw}${sep}tr=w-${w}`;
+    }
+    return raw; // 其他完整網址（非 ImageKit）直接使用，不額外加參數
+  }
+
+  // 純 Google Drive 檔案 ID（舊格式相容）
+  return `https://lh3.googleusercontent.com/d/${raw}=w${w}`;
 }
 
 // 顯示名稱 → stockMap key 的對照表
@@ -68,6 +83,7 @@ window.onload = async function () {
       linePayImgId:  cfg['匯款']['LINE_PAY圖片ID'] || '',
       successMsg:    cfg['匯款']['成功頁提醒文字'] || '',
       stockData:     cfg['庫存'] || {},
+      releaseMap:    cfg['上架時間'] || {},
       orderConfig:   cfg['訂購'] || {},
       addressMap:    cfg['地址對照'] || {},
       varieties:     cfg['品種'] || []
@@ -119,9 +135,9 @@ window.onload = async function () {
       if (middleCard && (cardImgId1 || cardImgId2 || cardText)) {
         middleCard.style.display = 'block';
         const img1 = document.getElementById('order-card-img1');
-        if (img1 && cardImgId1) img1.src = driveImgUrl(cardImgId1, 600);
+        if (img1 && cardImgId1) img1.src = resolveImageUrl(cardImgId1, 600);
         const img2 = document.getElementById('order-card-img2');
-        if (img2 && cardImgId2) img2.src = driveImgUrl(cardImgId2, 600);
+        if (img2 && cardImgId2) img2.src = resolveImageUrl(cardImgId2, 600);
         const textElement = document.getElementById('order-card-text');
         if (textElement && cardText) {
           textElement.innerText = cardText;
@@ -168,6 +184,21 @@ function applyConfigToPage(cfg) {
 
   // 網頁 title
   document.title = h['分頁標題'] || '波波酪梨｜線上訂購';
+
+  // 🔗 footer 社群連結：試算表有填才顯示，沒填的平台就維持隱藏
+  const socialMap = {
+    'social-line': h['LINE連結'],
+    'social-ig': h['IG連結'],
+    'social-fb': h['FB連結']
+  };
+  Object.keys(socialMap).forEach(id => {
+    const el = document.getElementById(id);
+    const url = (socialMap[id] || '').toString().trim();
+    if (el && url) {
+      el.href = url;
+      el.style.display = 'inline';
+    }
+  });
 
   // 公告
   const annTitle = document.getElementById('announcement-title');
@@ -222,7 +253,7 @@ function applyConfigToPage(cfg) {
     const bannerContainer = document.getElementById('banner-container');
     const bannerImg = document.getElementById('banner-img');
     if (bannerContainer && bannerImg) {
-      bannerImg.src = driveImgUrl(bannerId, 1000);
+      bannerImg.src = resolveImageUrl(bannerId, 1000);
       bannerContainer.style.display = 'block';
     }
   }
@@ -303,7 +334,7 @@ function showLoadingScreen(show) {
             letter-spacing: 1px;
             opacity: 0.85;
             min-height: 1.2em;
-            transition: opacity 0.35s ease;
+            transition: opacity 0.25s ease;
           }
           .loading-msg.is-fading { opacity: 0; }
         </style>
@@ -384,7 +415,7 @@ function startLoadingMessages() {
       msgEl.textContent = loadingMsgQueue[index];
       msgEl.classList.remove('is-fading');
     }, 250); // 跟 CSS transition 時間對齊，文字淡出後再換字、淡入
-  }, 2000);
+  }, 1000);
 }
 
 function stopLoadingMessages() {
@@ -478,6 +509,7 @@ function renderProductList() {
 
   const cfg = window.APP_CONFIG.orderConfig || {};
   const stockMap = window.APP_CONFIG.stockMap || {};
+  const releaseMap = window.APP_CONFIG.releaseMap || {};
 
   const categories = [
     { name: '當季酪梨(隨機出貨)【優級】', weights: [3,5,7,10], priceKey: '當季酪梨( 隨機出貨 )【優級】單價' },
@@ -504,6 +536,25 @@ function renderProductList() {
       const displayPrice = unitPrice * w;
       const currentQty = (cart[stockKey] && cart[stockKey].qty) || 0;
       const remaining = availableStock - currentQty;
+      const releaseTime = releaseMap[stockKey]; // 有值代表還沒到開賣時間
+
+      if (releaseTime) {
+        html += `
+          <div class="price-row">
+            <div class="price-col weight">${w} 斤裝 <span>($${displayPrice})</span></div>
+            <div class="price-col stock" id="stock-${stockKey}">⏰ ${releaseTime} 開賣</div>
+            <div class="price-col action">
+              <div class="qty-control">
+                <button class="btn-qty" disabled>-</button>
+                <span id="qty-${stockKey}" class="qty-num">0</span>
+                <button class="btn-qty" disabled>+</button>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
       html += `
         <div class="price-row">
           <div class="price-col weight">${w} 斤裝 <span>($${displayPrice})</span></div>
@@ -666,14 +717,17 @@ function renderVarieties() {
     return;
   }
 
-  container.innerHTML = data.map(v => `
+  container.innerHTML = data.map(v => {
+    const imgSrc = resolveImageUrl(v.img, 900);
+    return `
     <div class="info-block">
-      ${v.img ? `<div class="variety-images"><img src="${v.img}" class="avocado-img" loading="lazy" onclick="showLightbox('${v.img}')"></div>` : ''}
+      ${imgSrc ? `<div class="variety-images"><img src="${imgSrc}" class="avocado-img" loading="lazy" onclick="showLightbox('${imgSrc}')"></div>` : ''}
       <h3 class="variety-title">${v.name}</h3>
       <div class="product-divider"></div>
       <p style="white-space:pre-wrap;">${v.feature || ''}</p>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function renderSuccessPage() {
@@ -683,7 +737,7 @@ function renderSuccessPage() {
   document.getElementById('lp-announcement').innerText = window.APP_CONFIG.linePayMsg || '';
 
   if (window.APP_CONFIG.linePayImgId) {
-    document.getElementById('lp-qrcode').src = driveImgUrl(window.APP_CONFIG.linePayImgId, 500);
+    document.getElementById('lp-qrcode').src = resolveImageUrl(window.APP_CONFIG.linePayImgId, 500);
   }
 
   document.getElementById('final-amount-display').innerText = '$' + finalTotal + ' 元';
@@ -724,6 +778,7 @@ function renderPriceMenu() {
   if (!container) return;
   const cfg = window.APP_CONFIG.orderConfig || {};
   const stockMap = window.APP_CONFIG.stockMap || {};
+  const releaseMap = window.APP_CONFIG.releaseMap || {};
   let html = '';
 
   html += `
@@ -736,7 +791,8 @@ function renderPriceMenu() {
         const price = (Number(cfg['當季酪梨( 隨機出貨 )【優級】單價']) || 0) * w;
         const key = ('當季酪梨( 隨機出貨 )【優級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${count > 0 ? `（剩 ${count} 份）` : '（售罄）'}</div></div>`;
+        const stockText = releaseMap[key] ? `（${releaseMap[key]} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
       <div style="height:26px;"></div>
       <h4 class="price-subtitle">．次級．</h4>
@@ -745,7 +801,8 @@ function renderPriceMenu() {
         const price = (Number(cfg['當季酪梨( 隨機出貨 )【次級】單價']) || 0) * w;
         const key = ('當季酪梨( 隨機出貨 )【次級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${count > 0 ? `（剩 ${count} 份）` : '（售罄）'}</div></div>`;
+        const stockText = releaseMap[key] ? `（${releaseMap[key]} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
     </div>
   `;
@@ -760,7 +817,8 @@ function renderPriceMenu() {
         const price = (Number(cfg['平克頓/哈斯【優級】單價']) || 0) * w;
         const key = ('平克頓/哈斯【優級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${count > 0 ? `（剩 ${count} 份）` : '（售罄）'}</div></div>`;
+        const stockText = releaseMap[key] ? `（${releaseMap[key]} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
       <div style="height:26px;"></div>
       <h4 class="price-subtitle">．次級．</h4>
@@ -769,7 +827,8 @@ function renderPriceMenu() {
         const price = (Number(cfg['平克頓/哈斯【次級】單價']) || 0) * w;
         const key = ('平克頓/哈斯【次級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${count > 0 ? `（剩 ${count} 份）` : '（售罄）'}</div></div>`;
+        const stockText = releaseMap[key] ? `（${releaseMap[key]} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
     </div>
   `;
