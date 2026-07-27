@@ -6,7 +6,7 @@
   --text-main: #2d3e10;
   --herb-green: #76944a;
   --transition-smooth: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  --heading-font: "Iansui", "Kaiti TC", "BiauKai", "YuGothic", "Yu Gothic", "Hiragino Sans GB", "Microsoft JhengHei", sans-serif; /* 🖋️ 標題專用：Iansui 手寫繁中字體，帶毛筆感 */
+  --heading-font: "Huninn", "Kosugi Maru", "YuGothic", "Yu Gothic", "Hiragino Sans GB", "Microsoft JhengHei", sans-serif; /* 🖋️ 標題專用：Huninn 粉圓，圓潤親切 */
 }
 
 /* ✅ 全站盒模型修正（避免手機偏移） */
