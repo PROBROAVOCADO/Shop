@@ -196,7 +196,7 @@ function applyConfigToPage(cfg) {
     const url = (socialMap[id] || '').toString().trim();
     if (el && url) {
       el.href = url;
-      el.style.display = 'flex';
+      el.style.display = 'inline';
     }
   });
 
@@ -298,10 +298,9 @@ function showLoadingScreen(show) {
             filter: drop-shadow(0 10px 8px rgba(0,0,0,0.15));
           }
           .loading-brand {
-            font-family: var(--heading-font);
             margin-top: 20px;
             font-size: 1.4rem;
-            font-weight: 500;
+            font-weight: 900;
             color: #576e37;
             letter-spacing: 4px;
             animation: fadeInUp 0.8s ease both;
