@@ -415,8 +415,8 @@ function startLoadingMessages() {
       }
       msgEl.textContent = loadingMsgQueue[index];
       msgEl.classList.remove('is-fading');
-    }, 250); // 跟 CSS transition 時間對齊，文字淡出後再換字、淡入
-  }, 1000);
+    }, 280); // 跟 CSS transition 時間對齊，文字淡出後再換字、淡入
+  }, 1800);
 }
 
 function stopLoadingMessages() {
