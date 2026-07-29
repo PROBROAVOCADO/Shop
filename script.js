@@ -58,17 +58,39 @@ const stockKeyMap = {
 // ========================================
 // 🚀 頁面啟動：向 GAS 拿資料，再初始化畫面
 // ========================================
+// 🔁 自動重試：Google 那邊偶爾會短暫延遲/卡頓，多試幾次通常就過去了
+async function fetchConfigWithRetry(maxAttempts = 3, delayMs = 2000) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(GAS_URL + '?action=getConfig');
+      const json = await res.json();
+      if (!json.success) throw new Error('GAS 回傳失敗');
+      return json;
+    } catch (err) {
+      lastError = err;
+      console.warn(`第 ${attempt} 次載入失敗`, err);
+      if (attempt < maxAttempts) {
+        const msgEl = document.getElementById('loading-msg');
+        if (msgEl) {
+          stopLoadingMessages(); // 暫停原本的輪播，改顯示重試提示
+          msgEl.textContent = `連線有點慢，正在重新嘗試 (${attempt}/${maxAttempts - 1})…`;
+        }
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+    }
+  }
+  throw lastError;
+}
+
 window.onload = async function () {
 
   // 顯示載入中提示
   showLoadingScreen(true);
 
   try {
-    // 向 GAS 取得所有設定資料
-    const res = await fetch(GAS_URL + '?action=getConfig');
-    const json = await res.json();
-
-    if (!json.success) throw new Error('GAS 回傳失敗');
+    // 向 GAS 取得所有設定資料（自動重試最多3次）
+    const json = await fetchConfigWithRetry(3, 2000);
 
     const cfg = json.data;
 
@@ -416,7 +438,7 @@ function startLoadingMessages() {
       msgEl.textContent = loadingMsgQueue[index];
       msgEl.classList.remove('is-fading');
     }, 280); // 跟 CSS transition 時間對齊，文字淡出後再換字、淡入
-  }, 1800);
+  }, 1700);
 }
 
 function stopLoadingMessages() {
@@ -427,7 +449,58 @@ function stopLoadingMessages() {
 }
 
 function showLoadingError() {
-  document.body.innerHTML = '<div style="text-align:center;padding:60px;font-size:1.1rem;color:#576e37;">🥑 資料載入失敗，請重新整理頁面試試。</div>';
+  document.body.innerHTML = `
+    <style>
+      .load-error-screen {
+        position: fixed; inset: 0;
+        background: var(--creamy, #fefae0);
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        text-align: center; padding: 30px;
+        font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+        z-index: 99999;
+      }
+      .load-error-icon {
+        font-size: 3.2rem;
+        margin-bottom: 14px;
+        animation: loadErrorFloat 2.4s ease-in-out infinite;
+      }
+      @keyframes loadErrorFloat {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-8px); }
+      }
+      .load-error-title {
+        font-family: var(--heading-font, "Huninn", sans-serif);
+        font-size: 1.3rem; font-weight: 500;
+        color: var(--avo-dark, #576e37); margin-bottom: 10px;
+      }
+      .load-error-desc {
+        font-size: 0.9rem; color: var(--avo-dark, #576e37); opacity: 0.85;
+        line-height: 1.7; margin-bottom: 26px; max-width: 320px;
+      }
+      .load-error-btn {
+        padding: 13px 32px; border-radius: 12px; border: none;
+        background-color: var(--herb-green, #76944a); color: white;
+        font-weight: 600; font-size: 0.95rem; letter-spacing: 1px;
+        cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        transition: var(--transition-smooth, all 0.3s ease);
+      }
+      .load-error-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+      }
+    </style>
+    <div class="load-error-screen">
+      <div class="load-error-icon">🥑💤</div>
+      <div class="load-error-title">酪梨園連線不太順</div>
+      <div class="load-error-desc">
+        可能是網路暫時不穩定，或伺服器正在忙碌中，<br>
+        我們已經自動重試了幾次，但還是沒能連上。<br>
+        稍等一下再試一次，通常就會恢復囉！
+      </div>
+      <button class="load-error-btn" onclick="location.reload()">🔄 重新整理</button>
+    </div>
+  `;
 }
 
 
