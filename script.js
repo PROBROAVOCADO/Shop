@@ -1105,7 +1105,9 @@ if (!/^09\d{8}$/.test(p)) {
     phone: p,
     address: fullAddress,
     note: orderNoteEl ? orderNoteEl.value : '',
-    weight: weightText.join('，')
+    weight: weightText.join('，'),
+    county: countyEl ? countyEl.value : '',
+    district: districtEl ? districtEl.value : ''
   };
 
   currentOrderSummary = orderData;
