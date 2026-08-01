@@ -615,14 +615,7 @@ function renderProductList() {
         html += `
           <div class="price-row">
             <div class="price-col weight">${w} 斤裝 <span>($${displayPrice})</span></div>
-            <div class="price-col stock" id="stock-${stockKey}">⏰ ${releaseStatus.releaseTimeDisplay} 開賣</div>
-            <div class="price-col action">
-              <div class="qty-control">
-                <button class="btn-qty" disabled>-</button>
-                <span id="qty-${stockKey}" class="qty-num">0</span>
-                <button class="btn-qty" disabled>+</button>
-              </div>
-            </div>
+            <div class="price-col stock unreleased-badge" id="stock-${stockKey}">⚠️ 未上架</div>
           </div>
         `;
         return;
@@ -864,7 +857,7 @@ function renderPriceMenu() {
         const price = (Number(cfg['當季酪梨( 隨機出貨 )【優級】單價']) || 0) * w;
         const key = ('當季酪梨( 隨機出貨 )【優級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = !releaseStatus.isReleased ? `（${releaseStatus.releaseTimeDisplay} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        const stockText = !releaseStatus.isReleased ? '⚠️ 未上架' : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
       <div style="height:26px;"></div>
@@ -874,7 +867,7 @@ function renderPriceMenu() {
         const price = (Number(cfg['當季酪梨( 隨機出貨 )【次級】單價']) || 0) * w;
         const key = ('當季酪梨( 隨機出貨 )【次級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = !releaseStatus.isReleased ? `（${releaseStatus.releaseTimeDisplay} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        const stockText = !releaseStatus.isReleased ? '⚠️ 未上架' : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
     </div>
@@ -890,7 +883,7 @@ function renderPriceMenu() {
         const price = (Number(cfg['平克頓/哈斯【優級】單價']) || 0) * w;
         const key = ('平克頓/哈斯【優級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = !releaseStatus.isReleased ? `（${releaseStatus.releaseTimeDisplay} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        const stockText = !releaseStatus.isReleased ? '⚠️ 未上架' : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
       <div style="height:26px;"></div>
@@ -900,7 +893,7 @@ function renderPriceMenu() {
         const price = (Number(cfg['平克頓/哈斯【次級】單價']) || 0) * w;
         const key = ('平克頓/哈斯【次級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = !releaseStatus.isReleased ? `（${releaseStatus.releaseTimeDisplay} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        const stockText = !releaseStatus.isReleased ? '⚠️ 未上架' : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
     </div>
