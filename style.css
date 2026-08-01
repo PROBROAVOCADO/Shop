@@ -695,6 +695,14 @@ textarea:focus {
   color: var(--avo-dark);  
 }
 
+/* ⚠️ 未上架警示徽章：橘紅色系警示文字，取代原本過長的日期時間顯示，避免跟按鈕/其他資訊擠在一起 */
+.unreleased-badge {
+  color: #d9534f !important;
+  font-weight: 700 !important;
+  font-style: normal !important;
+  opacity: 1 !important;
+}
+
 /* 🧼 最後一列不要底線 */
 .price-row:last-child {
   border-bottom: none;
