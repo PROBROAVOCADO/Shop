@@ -105,7 +105,7 @@ window.onload = async function () {
       linePayImgId:  cfg['匯款']['LINE_PAY圖片ID'] || '',
       successMsg:    cfg['匯款']['成功頁提醒文字'] || '',
       stockData:     cfg['庫存'] || {},
-      releaseMap:    cfg['上架時間'] || {},
+      releaseStatus: cfg['上架狀態'] || { isReleased: true, releaseTimeDisplay: '' },
       orderConfig:   cfg['訂購'] || {},
       addressMap:    cfg['地址對照'] || {},
       varieties:     cfg['品種'] || []
@@ -583,7 +583,7 @@ function renderProductList() {
 
   const cfg = window.APP_CONFIG.orderConfig || {};
   const stockMap = window.APP_CONFIG.stockMap || {};
-  const releaseMap = window.APP_CONFIG.releaseMap || {};
+  const releaseStatus = window.APP_CONFIG.releaseStatus || { isReleased: true, releaseTimeDisplay: '' };
 
   const categories = [
     { name: '當季酪梨(隨機出貨)【優級】', weights: [3,5,7,10], priceKey: '當季酪梨( 隨機出貨 )【優級】單價' },
@@ -610,13 +610,12 @@ function renderProductList() {
       const displayPrice = unitPrice * w;
       const currentQty = (cart[stockKey] && cart[stockKey].qty) || 0;
       const remaining = availableStock - currentQty;
-      const releaseTime = releaseMap[stockKey]; // 有值代表還沒到開賣時間
 
-      if (releaseTime) {
+      if (!releaseStatus.isReleased) {
         html += `
           <div class="price-row">
             <div class="price-col weight">${w} 斤裝 <span>($${displayPrice})</span></div>
-            <div class="price-col stock" id="stock-${stockKey}">⏰ ${releaseTime} 開賣</div>
+            <div class="price-col stock" id="stock-${stockKey}">⏰ ${releaseStatus.releaseTimeDisplay} 開賣</div>
             <div class="price-col action">
               <div class="qty-control">
                 <button class="btn-qty" disabled>-</button>
@@ -852,7 +851,7 @@ function renderPriceMenu() {
   if (!container) return;
   const cfg = window.APP_CONFIG.orderConfig || {};
   const stockMap = window.APP_CONFIG.stockMap || {};
-  const releaseMap = window.APP_CONFIG.releaseMap || {};
+  const releaseStatus = window.APP_CONFIG.releaseStatus || { isReleased: true, releaseTimeDisplay: '' };
   let html = '';
 
   html += `
@@ -865,7 +864,7 @@ function renderPriceMenu() {
         const price = (Number(cfg['當季酪梨( 隨機出貨 )【優級】單價']) || 0) * w;
         const key = ('當季酪梨( 隨機出貨 )【優級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = releaseMap[key] ? `（${releaseMap[key]} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        const stockText = !releaseStatus.isReleased ? `（${releaseStatus.releaseTimeDisplay} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
       <div style="height:26px;"></div>
@@ -875,7 +874,7 @@ function renderPriceMenu() {
         const price = (Number(cfg['當季酪梨( 隨機出貨 )【次級】單價']) || 0) * w;
         const key = ('當季酪梨( 隨機出貨 )【次級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = releaseMap[key] ? `（${releaseMap[key]} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        const stockText = !releaseStatus.isReleased ? `（${releaseStatus.releaseTimeDisplay} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
     </div>
@@ -891,7 +890,7 @@ function renderPriceMenu() {
         const price = (Number(cfg['平克頓/哈斯【優級】單價']) || 0) * w;
         const key = ('平克頓/哈斯【優級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = releaseMap[key] ? `（${releaseMap[key]} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        const stockText = !releaseStatus.isReleased ? `（${releaseStatus.releaseTimeDisplay} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
       <div style="height:26px;"></div>
@@ -901,7 +900,7 @@ function renderPriceMenu() {
         const price = (Number(cfg['平克頓/哈斯【次級】單價']) || 0) * w;
         const key = ('平克頓/哈斯【次級】-' + w).replace(/\s+/g,'');
         const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = releaseMap[key] ? `（${releaseMap[key]} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
+        const stockText = !releaseStatus.isReleased ? `（${releaseStatus.releaseTimeDisplay} 開賣）` : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
         return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
       }).join('')}
     </div>
