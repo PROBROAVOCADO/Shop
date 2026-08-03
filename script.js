@@ -59,7 +59,13 @@ const stockKeyMap = {
 // 🚀 頁面啟動：向 GAS 拿資料，再初始化畫面
 // ========================================
 // 🔁 自動重試：Google 那邊偶爾會短暫延遲/卡頓，多試幾次通常就過去了
-async function fetchConfigWithRetry(maxAttempts = 3, delayMs = 2000) {
+//
+// ⚡ 改版重點（尖峰擁擠時避免重試風暴）：
+// - 原本固定 2000ms 後重試，尖峰時「一大群人同時失敗、同時在同一秒重試」，
+//   反而讓已經忙碌的 GAS 雪上加霜。
+// - 改成「指數退避 + 隨機延遲」：每次重試等待時間拉長，並加入隨機亂數，
+//   讓大家重試的時間點分散開來，不會又擠成一團。
+async function fetchConfigWithRetry(maxAttempts = 3, baseDelayMs = 1500) {
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -71,12 +77,17 @@ async function fetchConfigWithRetry(maxAttempts = 3, delayMs = 2000) {
       lastError = err;
       console.warn(`第 ${attempt} 次載入失敗`, err);
       if (attempt < maxAttempts) {
+        // 指數退避：第1次重試等 ~1.5s，第2次等 ~3s，並加上 0~500ms 隨機亂數分散尖峰
+        const backoff = baseDelayMs * Math.pow(2, attempt - 1);
+        const jitter = Math.random() * 500;
+        const waitMs = backoff + jitter;
+
         const msgEl = document.getElementById('loading-msg');
         if (msgEl) {
           stopLoadingMessages(); // 暫停原本的輪播，改顯示重試提示
           msgEl.textContent = `連線有點慢，正在重新嘗試 (${attempt}/${maxAttempts - 1})…`;
         }
-        await new Promise(r => setTimeout(r, delayMs));
+        await new Promise(r => setTimeout(r, waitMs));
       }
     }
   }
@@ -89,8 +100,8 @@ window.onload = async function () {
   showLoadingScreen(true);
 
   try {
-    // 向 GAS 取得所有設定資料（自動重試最多3次）
-    const json = await fetchConfigWithRetry(3, 2000);
+    // 向 GAS 取得所有設定資料（自動重試最多3次，含指數退避）
+    const json = await fetchConfigWithRetry(3, 1500);
 
     const cfg = json.data;
 
