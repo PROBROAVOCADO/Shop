@@ -1256,6 +1256,9 @@ if (!/^09\d{8}$/.test(p)) {
       customAlert('⚠️ 系統回應較慢，暫時無法確認結果。\n\n您的訂單「有可能已經送出成功」，請先不要重複下單，可透過 LINE 或電話與我們確認訂單狀態，謝謝您的耐心 🙏');
     } else {
       customAlert(err.message || '送單失敗，請稍後再試');
+      // 📺 GAS 端最終核對被拒絕（通常是極端狀況：校對時還夠、送出瞬間被搶走），
+      // 順手立刻刷新一次畫面，讓客人馬上看到準確的最新庫存，不用等下一輪背景更新。
+      refreshStockFromSnapshot();
     }
     submitBtn.disabled = false;
     submitBtn.innerText = '✅ 確認訂購';
