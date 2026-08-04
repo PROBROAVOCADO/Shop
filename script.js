@@ -8,6 +8,7 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbwbkKqipfPrimFs7-d6Zory
 // publishConfigSnapshot() 定期（或每次下單成功後）自動更新。
 // 送出訂單（submitOrder）仍然照舊打 GAS_URL，因為扣庫存必須現場核對。
 const CONFIG_JSON_URL = 'https://probroavocado.com/data/config.json'; // ⚡ 改回這個網址：raw.githubusercontent.com 的快取無法被查詢字串繞過，反而更不可靠
+const ADDRESS_JSON_URL = 'https://probroavocado.com/data/address.json'; // ⚡ 地址對照表獨立成單獨檔案，只在進站時抓一次，不用跟著庫存頻繁背景更新
 
 // ========================================
 // 🌟 核心變數與狀態
@@ -103,14 +104,38 @@ async function fetchConfigWithRetry(maxAttempts = 3, baseDelayMs = 1500) {
   throw lastError;
 }
 
+// ========================================
+// 🏠 抓取地址對照表（新增）
+// 這份資料獨立存放在 address.json，幾乎不會變動，只需要在進站時抓一次，
+// 不用像庫存資料那樣每隔幾秒背景重新抓取。
+// 抓取失敗就回傳空物件，不會卡住整個網站的初始化流程
+//（地址對照表只影響宅配地址下拉選單，不影響瀏覽、下單其他部分）。
+// ========================================
+async function fetchAddressMap() {
+  try {
+    const res = await fetch(ADDRESS_JSON_URL + '?t=' + Date.now());
+    if (!res.ok) return {};
+    const json = await res.json();
+    if (!json.success) return {};
+    return json.data || {};
+  } catch (err) {
+    console.warn('地址對照表載入失敗，宅配地址下拉選單可能無法使用', err);
+    return {};
+  }
+}
+
 window.onload = async function () {
 
   // 顯示載入中提示
   showLoadingScreen(true);
 
   try {
-    // 向 GAS 取得所有設定資料（自動重試最多3次，含指數退避）
-    const json = await fetchConfigWithRetry(3, 1500);
+    // 向靜態快照取得所有設定資料（自動重試最多3次，含指數退避）
+    // 地址對照表獨立抓取，兩者同時進行，不用一個等一個
+    const [json, addressMap] = await Promise.all([
+      fetchConfigWithRetry(3, 1500),
+      fetchAddressMap()
+    ]);
 
     const cfg = json.data;
 
@@ -127,7 +152,7 @@ window.onload = async function () {
       stockData:     cfg['庫存'] || {},
       releaseStatus: cfg['上架狀態'] || { isReleased: true, releaseTimeDisplay: '' },
       orderConfig:   cfg['訂購'] || {},
-      addressMap:    cfg['地址對照'] || {},
+      addressMap:    addressMap || {}, // ⚡ 改用獨立抓取的地址對照表，不再從主設定裡拿
       varieties:     cfg['品種'] || []
     };
 
@@ -999,7 +1024,7 @@ let stockRefreshTimer = null;
 
 function startStockAutoRefresh() {
   if (stockRefreshTimer) return; // 已經在跑就不要重複啟動
-  stockRefreshTimer = setInterval(refreshStockFromSnapshot, 2000); // ⚡ 從30秒調整為5秒，搶購激烈時畫面更貼近即時
+  stockRefreshTimer = setInterval(refreshStockFromSnapshot, 2000); // ⚡ 目前設定為2秒（你手動調整過）
 }
 
 async function refreshStockFromSnapshot() {
