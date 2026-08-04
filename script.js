@@ -108,20 +108,33 @@ async function fetchConfigWithRetry(maxAttempts = 3, baseDelayMs = 1500) {
 // 🏠 抓取地址對照表（新增）
 // 這份資料獨立存放在 address.json，幾乎不會變動，只需要在進站時抓一次，
 // 不用像庫存資料那樣每隔幾秒背景重新抓取。
-// 抓取失敗就回傳空物件，不會卡住整個網站的初始化流程
-//（地址對照表只影響宅配地址下拉選單，不影響瀏覽、下單其他部分）。
+//
+// ⚡ 修正：原本只試一次，失敗就默默回傳空物件，導致縣市選單整個空白、
+// 卻沒有任何錯誤訊息可以察覺。現在改成跟主設定一樣重試最多3次，
+// 大幅降低「剛好那一次請求失敗」造成選單空白的機率。
 // ========================================
-async function fetchAddressMap() {
-  try {
-    const res = await fetch(ADDRESS_JSON_URL + '?t=' + Date.now());
-    if (!res.ok) return {};
-    const json = await res.json();
-    if (!json.success) return {};
-    return json.data || {};
-  } catch (err) {
-    console.warn('地址對照表載入失敗，宅配地址下拉選單可能無法使用', err);
-    return {};
+async function fetchAddressMap(maxAttempts = 3, baseDelayMs = 1000) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(ADDRESS_JSON_URL + '?t=' + Date.now());
+      if (!res.ok) throw new Error('地址對照表讀取失敗，狀態碼 ' + res.status);
+      const json = await res.json();
+      if (!json.success || !json.data || Object.keys(json.data).length === 0) {
+        throw new Error('地址對照表內容為空或格式不正確');
+      }
+      return json.data;
+    } catch (err) {
+      console.warn(`地址對照表第 ${attempt} 次載入失敗`, err);
+      if (attempt < maxAttempts) {
+        await new Promise(r => setTimeout(r, baseDelayMs * attempt));
+      }
+    }
   }
+  // ⚠️ 三次都失敗才真的放棄，這種情況記錄到 console 方便事後排查，
+  // 客人畫面上不會看到錯誤（不影響瀏覽、下單其他部分），
+  // 但宅配地址下拉選單會是空的，客人需要改選 7-11 取貨或稍後重新整理再試。
+  console.error('地址對照表重試 3 次後仍載入失敗，宅配地址下拉選單將無法使用');
+  return {};
 }
 
 window.onload = async function () {
@@ -963,9 +976,17 @@ function initAddressSelector() {
   const countySelect = document.getElementById('county');
   const districtSelect = document.getElementById('district');
   const zipInput = document.getElementById('zipcode');
-  if (!countySelect || !districtSelect || !zipInput || !window.APP_CONFIG.addressMap) return;
+  if (!countySelect || !districtSelect || !zipInput) return;
 
-  const addressMap = window.APP_CONFIG.addressMap;
+  const addressMap = window.APP_CONFIG.addressMap || {};
+
+  // ⚡ 保險：就算重試過還是抓不到地址資料，也讓客人看得懂發生什麼事，
+  // 不要留一個看起來像壞掉、其實只有「縣市」兩個字的空白選單。
+  if (Object.keys(addressMap).length === 0) {
+    countySelect.innerHTML = '<option value="">⚠️ 地址資料載入失敗，請重新整理再試</option>';
+    return;
+  }
+
   countySelect.innerHTML = '<option value="">縣市</option>';
   districtSelect.innerHTML = '<option value="">區域</option>';
 
