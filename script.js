@@ -564,6 +564,9 @@ function goToStep(step) {
       updateAddressSection();
       calculateCartTotal();
     }, 0);
+    startStockAutoRefresh(); // 🔄 進到訂購頁，開始背景自動更新庫存
+  } else {
+    stopStockAutoRefresh(); // 離開訂購頁就停止，避免不必要的背景請求
   }
 
   window.scrollTo(0, 0);
@@ -986,6 +989,48 @@ function recalcTotalWeight() {
   totalWeight = Object.values(cart).reduce((sum, item) => sum + item.qty * item.weight, 0);
 }
 
+// ========================================
+// 🔄 訂購頁面背景自動更新庫存顯示（方向二）
+// 客人停留在訂購頁面時，每隔 30 秒安靜地重新抓一次靜態快照，
+// 更新畫面上顯示的庫存數字，不會打斷客人正在填寫的表單內容，
+// 也不會整頁重新整理。只有畫面還停留在訂購頁時才會真的重新渲染。
+// ========================================
+let stockRefreshTimer = null;
+
+function startStockAutoRefresh() {
+  stopStockAutoRefresh(); // 避免重複啟動多個計時器
+  stockRefreshTimer = setInterval(async () => {
+    try {
+      const res = await fetch(CONFIG_JSON_URL + '?t=' + Date.now());
+      if (!res.ok) return;
+      const json = await res.json();
+      if (!json.success) return;
+
+      const rawStock = json.data['庫存'] || {};
+      const newStockMap = {};
+      Object.keys(rawStock).forEach(k => {
+        newStockMap[k.replace(/\s+/g, '')] = Number(rawStock[k]) || 0;
+      });
+      window.APP_CONFIG.stockMap = newStockMap;
+
+      // 只有目前畫面還停留在訂購頁時，才需要重新渲染商品列表
+      const orderPage = document.getElementById('step4-order-form');
+      if (orderPage && orderPage.style.display !== 'none') {
+        renderProductList();
+      }
+    } catch (err) {
+      // 背景更新失敗就安靜跳過，不用打擾客人，下一輪再試
+    }
+  }, 30000);
+}
+
+function stopStockAutoRefresh() {
+  if (stockRefreshTimer) {
+    clearInterval(stockRefreshTimer);
+    stockRefreshTimer = null;
+  }
+}
+
 function updateFloatingCart() {
   const cartItemsContainer = document.getElementById('floating-cart-items');
   if (!cartItemsContainer) return;
@@ -1098,8 +1143,22 @@ if (!/^09\d{8}$/.test(p)) {
     return;
   }
 
-  submitBtn.innerText = '處理中...';
+  submitBtn.innerText = '確認庫存中...';
   submitBtn.disabled = true;
+
+  // 🔍 送出前先校對一次最新庫存快照，避免客人畫面資料過期造成白等
+  const stockCheck = await verifyStockBeforeSubmit();
+  if (!stockCheck.ok) {
+    const msgLines = stockCheck.shortages.map(s =>
+      `「${s.displayName} ${s.weight}斤」目前只剩 ${s.avail} 份（您選了 ${s.need} 份）`
+    );
+    customAlert('⚠️ 不好意思，部分品項庫存剛好有異動：\n\n' + msgLines.join('\n') + '\n\n請調整購物車數量後再試一次');
+    submitBtn.disabled = false;
+    submitBtn.innerText = '✅ 確認訂購';
+    return;
+  }
+
+  submitBtn.innerText = '處理中...';
 
   // 🏝️ 保險：送單前用最新地址再算一次運費，確保離島判斷不會用到過期數字
   calculateCartTotal();
@@ -1183,6 +1242,48 @@ function customAlert(msg) {
   const overlay = document.getElementById('custom-alert-overlay');
   const msgText = document.getElementById('alert-message');
   if (overlay && msgText) { msgText.innerText = msg; overlay.style.display = 'flex'; }
+}
+
+// ========================================
+// 🔍 送出訂單前先校對庫存（方向一）
+// 送出訂單前，先重新讀一次靜態快照最新的庫存數字，跟購物車裡的數量比對，
+// 如果快照更新有落差、數量不夠了，就在送出前先攔下來提醒客人，
+// 不用等到打去 GAS 才發現，體感速度會快很多。
+// 這個校對本身失敗（例如網路問題）不會卡住下單流程，直接放行，
+// 交給 GAS 送單當下做最終、最準確的核對。
+// ========================================
+async function verifyStockBeforeSubmit() {
+  try {
+    const res = await fetch(CONFIG_JSON_URL + '?t=' + Date.now());
+    if (!res.ok) return { ok: true };
+    const json = await res.json();
+    if (!json.success) return { ok: true };
+
+    const rawStock = json.data['庫存'] || {};
+    const latestStockMap = {};
+    Object.keys(rawStock).forEach(k => {
+      latestStockMap[k.replace(/\s+/g, '')] = Number(rawStock[k]) || 0;
+    });
+
+    const shortages = [];
+    Object.keys(cart).forEach(key => {
+      const need = cart[key].qty;
+      const avail = latestStockMap[key] !== undefined ? latestStockMap[key] : 0;
+      if (avail < need) {
+        shortages.push({
+          displayName: cart[key].displayName,
+          weight: cart[key].weight,
+          need,
+          avail
+        });
+      }
+    });
+
+    return { ok: shortages.length === 0, shortages };
+  } catch (err) {
+    // 校對本身出錯（例如網路不穩），不要卡住客人下單，直接放行
+    return { ok: true };
+  }
 }
 
 function closeAlert() { document.getElementById('custom-alert-overlay').style.display = 'none'; }
