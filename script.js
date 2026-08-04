@@ -205,6 +205,9 @@ window.onload = async function () {
 
     setTimeout(() => { isInitialLoad = false; }, 0);
 
+    // 🔄 資料載入成功後，啟動背景自動更新（全程運作，不分頁面）
+    startStockAutoRefresh();
+
   } catch (err) {
     console.error('初始化失敗：', err);
     showLoadingError();
@@ -564,9 +567,6 @@ function goToStep(step) {
       updateAddressSection();
       calculateCartTotal();
     }, 0);
-    startStockAutoRefresh(); // 🔄 進到訂購頁，開始背景自動更新庫存
-  } else {
-    stopStockAutoRefresh(); // 離開訂購頁就停止，避免不必要的背景請求
   }
 
   window.scrollTo(0, 0);
@@ -990,44 +990,46 @@ function recalcTotalWeight() {
 }
 
 // ========================================
-// 🔄 訂購頁面背景自動更新庫存顯示（方向二）
-// 客人停留在訂購頁面時，每隔 30 秒安靜地重新抓一次靜態快照，
-// 更新畫面上顯示的庫存數字，不會打斷客人正在填寫的表單內容，
-// 也不會整頁重新整理。只有畫面還停留在訂購頁時才會真的重新渲染。
+// 🔄 背景自動更新庫存顯示（改版）
+// 不管客人目前停留在哪一頁，每 5 秒都會安靜地重新抓一次最新快照，
+// 並且只要偵測到目前畫面是「價格表頁」或「訂購頁」，就會同步重新渲染，
+// 確保不管客人停在哪一頁，看到的數字都盡量貼近當下真實狀態。
 // ========================================
 let stockRefreshTimer = null;
 
 function startStockAutoRefresh() {
-  stopStockAutoRefresh(); // 避免重複啟動多個計時器
-  stockRefreshTimer = setInterval(async () => {
-    try {
-      const res = await fetch(CONFIG_JSON_URL + '?t=' + Date.now());
-      if (!res.ok) return;
-      const json = await res.json();
-      if (!json.success) return;
-
-      const rawStock = json.data['庫存'] || {};
-      const newStockMap = {};
-      Object.keys(rawStock).forEach(k => {
-        newStockMap[k.replace(/\s+/g, '')] = Number(rawStock[k]) || 0;
-      });
-      window.APP_CONFIG.stockMap = newStockMap;
-
-      // 只有目前畫面還停留在訂購頁時，才需要重新渲染商品列表
-      const orderPage = document.getElementById('step4-order-form');
-      if (orderPage && orderPage.style.display !== 'none') {
-        renderProductList();
-      }
-    } catch (err) {
-      // 背景更新失敗就安靜跳過，不用打擾客人，下一輪再試
-    }
-  }, 30000);
+  if (stockRefreshTimer) return; // 已經在跑就不要重複啟動
+  stockRefreshTimer = setInterval(refreshStockFromSnapshot, 5000); // ⚡ 從30秒調整為5秒，搶購激烈時畫面更貼近即時
 }
 
-function stopStockAutoRefresh() {
-  if (stockRefreshTimer) {
-    clearInterval(stockRefreshTimer);
-    stockRefreshTimer = null;
+async function refreshStockFromSnapshot() {
+  try {
+    const res = await fetch(CONFIG_JSON_URL + '?t=' + Date.now());
+    if (!res.ok) return;
+    const json = await res.json();
+    if (!json.success) return;
+    applyLatestStockMap(json.data['庫存'] || {});
+  } catch (err) {
+    // 背景更新失敗就安靜跳過，不用打擾客人，下一輪再試
+  }
+}
+
+// 把最新的庫存資料套用進畫面：更新 window.APP_CONFIG.stockMap，
+// 並且只重新渲染「目前正顯示中」的那一頁，不會影響客人正在填寫的表單內容。
+function applyLatestStockMap(rawStock) {
+  const newStockMap = {};
+  Object.keys(rawStock).forEach(k => {
+    newStockMap[k.replace(/\s+/g, '')] = Number(rawStock[k]) || 0;
+  });
+  window.APP_CONFIG.stockMap = newStockMap;
+
+  const step3Page = document.getElementById('step3-price-list');
+  const step4Page = document.getElementById('step4-order-form');
+  if (step3Page && step3Page.style.display !== 'none') {
+    renderPriceMenu();
+  }
+  if (step4Page && step4Page.style.display !== 'none') {
+    renderProductList();
   }
 }
 
@@ -1260,10 +1262,8 @@ async function verifyStockBeforeSubmit() {
     if (!json.success) return { ok: true };
 
     const rawStock = json.data['庫存'] || {};
-    const latestStockMap = {};
-    Object.keys(rawStock).forEach(k => {
-      latestStockMap[k.replace(/\s+/g, '')] = Number(rawStock[k]) || 0;
-    });
+    applyLatestStockMap(rawStock); // 📺 順便同步畫面，不只是拿來做內部判斷
+    const latestStockMap = window.APP_CONFIG.stockMap;
 
     const shortages = [];
     Object.keys(cart).forEach(key => {
