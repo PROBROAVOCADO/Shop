@@ -1,24 +1,77 @@
+/*************************************************************
+ * 波波酪梨 線上訂購系統 — 前端 script.js
+ * 版本：2026-08 穩定度強化版
+ *
+ * 本次主要修正：
+ *  #1  開賣瞬間自動解鎖（原本背景更新只換庫存、沒換上架狀態，
+ *      客人必須手動重新整理才看得到商品——搶購時最致命的一個）
+ *  #6  輪詢改用 ETag/304 + 內容比對，不再用 ?t= 打穿 CDN 快取；
+ *      間隔 8 秒，且內容沒變時完全不動 DOM（消除按鈕被吃掉的 jank）
+ *  #9  快照連不上時退回打 GAS 備援端點，不再整頁變錯誤畫面
+ *  另：庫存下降時自動修正購物車、重複下單保護、電話格式容錯、
+ *      快照過期柔性提示、confetti 防呆
+ *************************************************************/
+
 // ========================================
-// ⭐ 請將這裡換成你的 GAS Web App 網址
+// ⭐ 連線設定
 // ========================================
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwbkKqipfPrimFs7-d6ZorySDv0g5yhq_vbGGp2xmWZm2diNsblTfMjwP8kz-Hx9iRDTQ/exec';
+const CONFIG_JSON_URL  = 'https://probroavocado.com/data/config.json';
+const ADDRESS_JSON_URL = 'https://probroavocado.com/data/address.json';
 
-// ⚡ 靜態快照網址：進站讀取設定/庫存改成讀這個檔案，不再打 GAS，
-// 避開 GAS 帳號等級的同時執行數上限。這個檔案由 code.gs 的
-// publishConfigSnapshot() 定期（或每次下單成功後）自動更新。
-// 送出訂單（submitOrder）仍然照舊打 GAS_URL，因為扣庫存必須現場核對。
-const CONFIG_JSON_URL = 'https://probroavocado.com/data/config.json'; // ⚡ 改回這個網址：raw.githubusercontent.com 的快取無法被查詢字串繞過，反而更不可靠
-const ADDRESS_JSON_URL = 'https://probroavocado.com/data/address.json'; // ⚡ 地址對照表獨立成單獨檔案，只在進站時抓一次，不用跟著庫存頻繁背景更新
+const STOCK_REFRESH_MS   = 8000;   // 背景更新間隔（原本 2 秒是無效的，見下方說明）
+const SNAPSHOT_STALE_MIN = 60;     // 快照超過幾分鐘沒更新就顯示柔性提示
+
+/* 📝 為什麼把 2 秒改成 8 秒？
+   資料真正的更新鏈是：下單 → 背景工人(最多60秒) → GitHub commit
+   → Pages 重新建置(20~60秒) → CDN 生效，實際延遲本來就是 1.5~3 分鐘。
+   每 2 秒抓一次，抓 45 次拿到的都是同一份資料，卻付出三個代價：
+   ①每次都加 ?t= 等於繞過 CDN 快取，全部打到源站
+   ②每次都重建整個 innerHTML，客人按 +/- 時有機會被吃掉
+   ③GitHub Pages 建置有每小時軟性上限，尖峰時容易排隊或失敗
+   現在改成 8 秒 + 標準快取驗證（沒變動時伺服器只回 304，幾乎零流量）
+   + 內容比對（沒變就完全不動畫面）。                                */
+
 
 // ========================================
-// 🌟 核心變數與狀態
+// 🌟 核心狀態
 // ========================================
 var 價格表 = {}, 運費表 = {};
+var finalSubtotal = 0, finalShippingFee = 0, finalTotal = 0;
+var currentOrderSummary = null;
+var cart = {};
+var totalWeight = 0;
+var isSubmitting = false;
+var currentOrderKey = null;      // 同一筆訂單的重試共用同一組，防止重複下單
+var lastSnapshotStamp = null;    // 內容比對用
+var configLoaded = false;
 
-// 🏝️ 台灣離島判定清單（全境算離島的縣市 + 縣市下特定離島鄉鎮）
-// 如認定範圍需調整，改這兩個陣列即可
+// 🏝️ 台灣離島判定
 const 離島縣市 = ['澎湖縣', '金門縣', '連江縣'];
 const 離島鄉鎮 = ['綠島鄉', '蘭嶼鄉', '琉球鄉'];
+
+// 🕐 上架狀態（由快照提供絕對時間戳，前端自行倒數）
+const RELEASE = { at: null, display: '', lastKnown: true };
+var serverClockOffset = 0; // 伺服器時間 - 本機時間
+
+
+// ========================================
+// 🔧 共用小工具
+// ========================================
+
+// 設定 key 一律去空格再查，跟後端 normKey 對齊。
+// 試算表的 key 例如「當季酪梨( 隨機出貨 )【優級】單價」括號內外都有空格，
+// 只要有人不小心動到空白，原本會安靜地變成 undefined → 0 元。
+function normKey(k) {
+  return String(k == null ? '' : k).replace(/\s+/g, '');
+}
+function cfgGet(obj, key) {
+  if (!obj) return undefined;
+  return obj[normKey(key)];
+}
+function cfgNum(obj, key) {
+  return Number(cfgGet(obj, key)) || 0;
+}
 
 function isIslandAddress(county, district) {
   if (!county) return false;
@@ -26,35 +79,34 @@ function isIslandAddress(county, district) {
   if (district && 離島鄉鎮.includes(district)) return true;
   return false;
 }
-var finalSubtotal = 0, finalShippingFee = 0, finalTotal = 0;
-var isInitialLoad = true;
-var currentOrderSummary = null;
-var cart = {};
-var totalWeight = 0;
 
-// 🖼️ Google Drive 圖片網址工具：附加 =wXXX 尺寸參數，讓 Google 自動輸出壓縮過的縮圖，
-// 不用改動試算表裡存的原始檔案 ID，網頁載入的檔案大小卻能大幅縮小
-// 🖼️ 圖片網址工具：
-// - 試算表填「完整網址」（http開頭，例如 ImageKit）→ 直接使用，若是 ImageKit 網址會自動附加壓縮參數
-// - 試算表填「純 Google Drive 檔案 ID」（舊格式）→ 沿用原本的組合方式，向下相容
-// 這樣可以一張圖片一張圖片慢慢換成 ImageKit，不用一次全部搬完
+function makeOrderKey() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+// 伺服器時間（用 HTTP Date 標頭校時，不信任客人的本機時鐘）
+function serverNow() {
+  return Date.now() + serverClockOffset;
+}
+function isReleasedNow() {
+  return RELEASE.at === null ? true : serverNow() >= RELEASE.at;
+}
+
+// 🖼️ 圖片網址工具
 function resolveImageUrl(raw, width) {
   if (!raw) return '';
   const w = width || 800;
-
   if (/^https?:\/\//i.test(raw)) {
     if (raw.includes('ik.imagekit.io')) {
-      const sep = raw.includes('?') ? '&' : '?';
-      return `${raw}${sep}tr=w-${w}`;
+      return raw + (raw.includes('?') ? '&' : '?') + 'tr=w-' + w;
     }
-    return raw; // 其他完整網址（非 ImageKit）直接使用，不額外加參數
+    return raw;
   }
-
-  // 純 Google Drive 檔案 ID（舊格式相容）
   return `https://lh3.googleusercontent.com/d/${raw}=w${w}`;
 }
 
-// 顯示名稱 → stockMap key 的對照表
+// 顯示名稱 → 價格表 key
 const stockKeyMap = {
   '平克頓/哈斯 (隨機出貨)【優級】': '平克頓/哈斯【優級】',
   '平克頓/哈斯 (隨機出貨)【次級】': '平克頓/哈斯【次級】',
@@ -62,61 +114,94 @@ const stockKeyMap = {
   '當季酪梨(隨機出貨)【次級】': '當季酪梨(隨機出貨)【次級】'
 };
 
+const 商品分類 = [
+  { name: '當季酪梨(隨機出貨)【優級】', weights: [3, 5, 7, 10], priceKey: '當季酪梨( 隨機出貨 )【優級】單價' },
+  { name: '當季酪梨(隨機出貨)【次級】', weights: [3, 5, 7, 10], priceKey: '當季酪梨( 隨機出貨 )【次級】單價' },
+  { name: '平克頓/哈斯【優級】',        weights: [1, 2, 3],     priceKey: '平克頓/哈斯【優級】單價' },
+  { name: '平克頓/哈斯【次級】',        weights: [1, 2, 3],     priceKey: '平克頓/哈斯【次級】單價' }
+];
+
+const displayNameMap = {
+  '平克頓/哈斯【優級】': '平克頓/哈斯 (隨機出貨)【優級】',
+  '平克頓/哈斯【次級】': '平克頓/哈斯 (隨機出貨)【次級】',
+  '當季酪梨(隨機出貨)【優級】': '當季酪梨(隨機出貨)【優級】',
+  '當季酪梨(隨機出貨)【次級】': '當季酪梨(隨機出貨)【次級】'
+};
+
+function stockKeyOf(catName, weight) {
+  return normKey(catName + '-' + weight);
+}
+
+
 // ========================================
-// 🚀 頁面啟動：向 GAS 拿資料，再初始化畫面
+// 📡 抓取快照
 // ========================================
-// 🔁 自動重試：Google 那邊偶爾會短暫延遲/卡頓，多試幾次通常就過去了
-//
-// ⚡ 改版重點（尖峰擁擠時避免重試風暴）：
-// - 原本固定 2000ms 後重試，尖峰時「一大群人同時失敗、同時在同一秒重試」，
-//   反而讓已經忙碌的 GAS 雪上加霜。
-// - 改成「指數退避 + 隨機延遲」：每次重試等待時間拉長，並加入隨機亂數，
-//   讓大家重試的時間點分散開來，不會又擠成一團。
+
+// 用標準快取驗證（cache: 'no-cache' = 一定跟伺服器確認，但沒變動時只回 304）。
+// 原本每次都加 ?t=Date.now()，等於每個請求都是全新網址、完全繞過 CDN，
+// 200 人同時在線就是 100 req/s 全部打到源站，而且每次都回傳完整設定（含品種介紹全文）。
+async function fetchSnapshot(url) {
+  const res = await fetch(url, { cache: 'no-cache' });
+  if (!res.ok) throw new Error('快照讀取失敗，狀態碼 ' + res.status);
+  const json = await res.json();
+  if (!json.success) throw new Error('快照格式不正確');
+
+  // 用回應的 Date 標頭校時：這是 CDN 的當下時間，永遠新鮮、也不受客人本機時鐘影響
+  const dateHeader = res.headers.get('date');
+  if (dateHeader) {
+    const t = Date.parse(dateHeader);
+    if (!isNaN(t)) serverClockOffset = t - Date.now();
+  } else if (json.serverNow) {
+    serverClockOffset = Number(json.serverNow) - Date.now();
+  }
+
+  return json;
+}
+
 async function fetchConfigWithRetry(maxAttempts = 3, baseDelayMs = 1500) {
   let lastError;
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      // ⚡ 改讀 GitHub Pages 上的靜態快照，不再打 GAS。
-      // 網址加上 ?t=時間戳，避免瀏覽器把舊版本的檔案快取住，每次都拿到最新內容。
-      const res = await fetch(CONFIG_JSON_URL + '?t=' + Date.now());
-      if (!res.ok) throw new Error('快照讀取失敗，狀態碼 ' + res.status);
-      const json = await res.json();
-      if (!json.success) throw new Error('快照格式不正確');
-      return json;
+      return await fetchSnapshot(CONFIG_JSON_URL);
     } catch (err) {
       lastError = err;
       console.warn(`第 ${attempt} 次載入失敗`, err);
       if (attempt < maxAttempts) {
-        // 指數退避：第1次重試等 ~1.5s，第2次等 ~3s，並加上 0~500ms 隨機亂數分散尖峰
-        const backoff = baseDelayMs * Math.pow(2, attempt - 1);
-        const jitter = Math.random() * 500;
-        const waitMs = backoff + jitter;
-
+        const waitMs = baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 500;
         const msgEl = document.getElementById('loading-msg');
         if (msgEl) {
-          stopLoadingMessages(); // 暫停原本的輪播，改顯示重試提示
+          stopLoadingMessages();
           msgEl.textContent = `連線有點慢，正在重新嘗試 (${attempt}/${maxAttempts - 1})…`;
         }
         await new Promise(r => setTimeout(r, waitMs));
       }
     }
   }
+
+  // 🛟 最後的備援：快照整個掛掉時，退回直接打 GAS。
+  // 速度慢一點、也吃 GAS 的同時執行數，但至少站是活的，不會整頁變錯誤畫面。
+  console.warn('靜態快照連續失敗，改用 GAS 備援端點');
+  try {
+    const msgEl = document.getElementById('loading-msg');
+    if (msgEl) msgEl.textContent = '正在改用備援線路連線…';
+    const res = await fetch(GAS_URL + '?action=getConfig');
+    const json = await res.json();
+    if (json && json.success) {
+      if (json.serverNow) serverClockOffset = Number(json.serverNow) - Date.now();
+      return json;
+    }
+  } catch (err) {
+    console.error('GAS 備援端點也失敗', err);
+  }
+
   throw lastError;
 }
 
-// ========================================
-// 🏠 抓取地址對照表（新增）
-// 這份資料獨立存放在 address.json，幾乎不會變動，只需要在進站時抓一次，
-// 不用像庫存資料那樣每隔幾秒背景重新抓取。
-//
-// ⚡ 修正：原本只試一次，失敗就默默回傳空物件，導致縣市選單整個空白、
-// 卻沒有任何錯誤訊息可以察覺。現在改成跟主設定一樣重試最多3次，
-// 大幅降低「剛好那一次請求失敗」造成選單空白的機率。
-// ========================================
 async function fetchAddressMap(maxAttempts = 3, baseDelayMs = 1000) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const res = await fetch(ADDRESS_JSON_URL + '?t=' + Date.now());
+      const res = await fetch(ADDRESS_JSON_URL, { cache: 'no-cache' });
       if (!res.ok) throw new Error('地址對照表讀取失敗，狀態碼 ' + res.status);
       const json = await res.json();
       if (!json.success || !json.data || Object.keys(json.data).length === 0) {
@@ -125,26 +210,21 @@ async function fetchAddressMap(maxAttempts = 3, baseDelayMs = 1000) {
       return json.data;
     } catch (err) {
       console.warn(`地址對照表第 ${attempt} 次載入失敗`, err);
-      if (attempt < maxAttempts) {
-        await new Promise(r => setTimeout(r, baseDelayMs * attempt));
-      }
+      if (attempt < maxAttempts) await new Promise(r => setTimeout(r, baseDelayMs * attempt));
     }
   }
-  // ⚠️ 三次都失敗才真的放棄，這種情況記錄到 console 方便事後排查，
-  // 客人畫面上不會看到錯誤（不影響瀏覽、下單其他部分），
-  // 但宅配地址下拉選單會是空的，客人需要改選 7-11 取貨或稍後重新整理再試。
   console.error('地址對照表重試 3 次後仍載入失敗，宅配地址下拉選單將無法使用');
   return {};
 }
 
-window.onload = async function () {
 
-  // 顯示載入中提示
+// ========================================
+// 🚀 頁面啟動
+// ========================================
+window.onload = async function () {
   showLoadingScreen(true);
 
   try {
-    // 向靜態快照取得所有設定資料（自動重試最多3次，含指數退避）
-    // 地址對照表獨立抓取，兩者同時進行，不用一個等一個
     const [json, addressMap] = await Promise.all([
       fetchConfigWithRetry(3, 1500),
       fetchAddressMap()
@@ -152,99 +232,83 @@ window.onload = async function () {
 
     const cfg = json.data;
 
-    // 填入 window.APP_CONFIG（和原本 GAS 注入的格式一樣）
     window.APP_CONFIG = {
-      mainTitle:     cfg['首頁']['網頁大標題'] || '波波酪梨',
-      orderSwitch:   cfg['首頁']['訂單開關'] || '開',
-      bankName:      cfg['匯款']['匯款銀行'] || '',
-      bankAcc:       cfg['匯款']['匯款帳號'] || '',
-      bankUser:      cfg['匯款']['戶名'] || '',
-      linePayMsg:    cfg['匯款']['LINE_PAY公告'] || '',
-      linePayImgId:  cfg['匯款']['LINE_PAY圖片ID'] || '',
-      successMsg:    cfg['匯款']['成功頁提醒文字'] || '',
-      stockData:     cfg['庫存'] || {},
-      releaseStatus: cfg['上架狀態'] || { isReleased: true, releaseTimeDisplay: '' },
-      orderConfig:   cfg['訂購'] || {},
-      addressMap:    addressMap || {}, // ⚡ 改用獨立抓取的地址對照表，不再從主設定裡拿
-      varieties:     cfg['品種'] || []
+      mainTitle:    cfgGet(cfg['首頁'], '網頁大標題') || '波波酪梨',
+      orderSwitch:  cfgGet(cfg['首頁'], '訂單開關') || '開',
+      bankName:     cfgGet(cfg['匯款'], '匯款銀行') || '',
+      bankAcc:      cfgGet(cfg['匯款'], '匯款帳號') || '',
+      bankUser:     cfgGet(cfg['匯款'], '戶名') || '',
+      linePayMsg:   cfgGet(cfg['匯款'], 'LINE_PAY公告') || '',
+      linePayImgId: cfgGet(cfg['匯款'], 'LINE_PAY圖片ID') || '',
+      successMsg:   cfgGet(cfg['匯款'], '成功頁提醒文字') || '',
+      stockData:    cfg['庫存'] || {},
+      orderConfig:  cfg['訂購'] || {},
+      addressMap:   addressMap || {},
+      varieties:    cfg['品種'] || []
     };
 
     window.allVarieties = cfg['品種'] || [];
     window.paymentConfig = cfg['匯款'] || {};
 
-    // 填入頁面靜態文字
+    applyReleaseStatus(cfg['上架狀態']);
+    applySnapshotStamp(json);
     applyConfigToPage(cfg);
 
-    // 初始化 stockMap（統一 key 去空格）
+    // 庫存 key 統一去空格
     window.APP_CONFIG.stockMap = {};
     const rawStock = window.APP_CONFIG.stockData || {};
     Object.keys(rawStock).forEach(k => {
-      const normalizedKey = k.replace(/\s+/g, '');
-      window.APP_CONFIG.stockMap[normalizedKey] = Number(rawStock[k]) || 0;
+      window.APP_CONFIG.stockMap[normKey(k)] = Math.max(0, Number(rawStock[k]) || 0);
     });
 
     const data = window.APP_CONFIG.orderConfig || {};
 
-    // 建立價格表
     價格表 = {
-      '當季酪梨(隨機出貨)【優級】': Number(data['當季酪梨( 隨機出貨 )【優級】單價']) || 0,
-      '當季酪梨(隨機出貨)【次級】': Number(data['當季酪梨( 隨機出貨 )【次級】單價']) || 0,
-      '平克頓/哈斯【優級】': Number(data['平克頓/哈斯【優級】單價']) || 0,
-      '平克頓/哈斯【次級】': Number(data['平克頓/哈斯【次級】單價']) || 0
+      '當季酪梨(隨機出貨)【優級】': cfgNum(data, '當季酪梨( 隨機出貨 )【優級】單價'),
+      '當季酪梨(隨機出貨)【次級】': cfgNum(data, '當季酪梨( 隨機出貨 )【次級】單價'),
+      '平克頓/哈斯【優級】':        cfgNum(data, '平克頓/哈斯【優級】單價'),
+      '平克頓/哈斯【次級】':        cfgNum(data, '平克頓/哈斯【次級】單價')
     };
 
     運費表 = {
-      郵寄小: Number(data['郵寄七斤(不含)以下']) || 0,
-      郵寄大: Number(data['郵寄七斤(包含)以上']) || 0,
-      '711運費': Number(data['711運費']) || 0,
-      黑貓小: Number(data['黑貓配送七斤(不含)以下']) || 0,
-      黑貓大: Number(data['黑貓配送七斤(包含)以上']) || 0,
-      郵寄離島小: Number(data['郵寄離島七斤(不含)以下']) || 0,
-      郵寄離島大: Number(data['郵寄離島七斤(包含)以上']) || 0,
-      黑貓離島小: Number(data['黑貓配送離島七斤(不含)以下']) || 0,
-      黑貓離島大: Number(data['黑貓配送離島七斤(包含)以上']) || 0
+      郵寄小: cfgNum(data, '郵寄七斤(不含)以下'),
+      郵寄大: cfgNum(data, '郵寄七斤(包含)以上'),
+      '711運費': cfgNum(data, '711運費'),
+      黑貓小: cfgNum(data, '黑貓配送七斤(不含)以下'),
+      黑貓大: cfgNum(data, '黑貓配送七斤(包含)以上'),
+      郵寄離島小: cfgNum(data, '郵寄離島七斤(不含)以下'),
+      郵寄離島大: cfgNum(data, '郵寄離島七斤(包含)以上'),
+      黑貓離島小: cfgNum(data, '黑貓配送離島七斤(不含)以下'),
+      黑貓離島大: cfgNum(data, '黑貓配送離島七斤(包含)以上')
     };
 
-    // 訂購頁插圖卡片
-    const cardImgId1 = data['訂購頁插圖ID_1'] || '';
-    const cardImgId2 = data['訂購頁插圖ID_2'] || '';
-    const cardText   = data['訂購頁插圖文字'] || '';
-    const middleCard = document.getElementById('order-middle-card');
-
-    setTimeout(() => {
-      if (middleCard && (cardImgId1 || cardImgId2 || cardText)) {
-        middleCard.style.display = 'block';
-        const img1 = document.getElementById('order-card-img1');
-        if (img1 && cardImgId1) img1.src = resolveImageUrl(cardImgId1, 600);
-        const img2 = document.getElementById('order-card-img2');
-        if (img2 && cardImgId2) img2.src = resolveImageUrl(cardImgId2, 600);
-        const textElement = document.getElementById('order-card-text');
-        if (textElement && cardText) {
-          textElement.innerText = cardText;
-          textElement.style.display = 'block';
-          textElement.style.cssText = 'text-align:center; color:var(--avo-dark); font-size:0.95rem; margin-top:15px; line-height:1.6; font-weight:500; opacity:0.85;';
-        }
-      }
-    }, 0);
-
-    // 渲染 UI
-    setTimeout(renderProductList, 0);
-    setTimeout(renderVarieties, 0);
-    setTimeout(renderPriceMenu, 0);
-    setTimeout(initAddressSelector, 0);
-    initShippingAddressToggle();
-
-    // 開關狀態
-    const btn = document.getElementById('order-enter-btn');
-    if (btn && window.APP_CONFIG.orderSwitch === '關') {
-      btn.classList.add('is-disabled');
-      btn.innerText = '🚫 現在暫停接單';
+    // ⚠️ 價格全 0 通常代表試算表的 key 被動到（多打/少打空格）。
+    // 這種情況下前後端會「一致地」都算成 0 元，後端覆核完全失效，
+    // 所以這裡直接把訂購入口鎖住，而不是讓客人下 0 元訂單。
+    const 有效價格數 = Object.values(價格表).filter(v => v > 0).length;
+    if (有效價格數 === 0) {
+      console.error('價格設定全部為 0，已鎖定訂購入口');
+      window.APP_CONFIG.priceConfigBroken = true;
     }
 
-    setTimeout(() => { isInitialLoad = false; }, 0);
+    renderOrderCardImages(data);
 
-    // 🔄 資料載入成功後，啟動背景自動更新（全程運作，不分頁面）
+    renderProductList();
+    renderVarieties();
+    renderPriceMenu();
+    initAddressSelector();
+    initShippingAddressToggle();
+    updateReleaseBanner();
+
+    const btn = document.getElementById('order-enter-btn');
+    if (btn && (window.APP_CONFIG.orderSwitch === '關' || window.APP_CONFIG.priceConfigBroken)) {
+      btn.classList.add('is-disabled');
+      btn.innerText = window.APP_CONFIG.priceConfigBroken ? '⚠️ 系統維護中' : '🚫 現在暫停接單';
+    }
+
+    configLoaded = true;
     startStockAutoRefresh();
+    startReleaseTicker();
 
   } catch (err) {
     console.error('初始化失敗：', err);
@@ -254,84 +318,172 @@ window.onload = async function () {
   }
 };
 
+function renderOrderCardImages(data) {
+  const middleCard = document.getElementById('order-middle-card');
+  if (!middleCard) return;
+
+  const img1Id = cfgGet(data, '訂購頁插圖ID_1') || '';
+  const img2Id = cfgGet(data, '訂購頁插圖ID_2') || '';
+  const cardText = cfgGet(data, '訂購頁插圖文字') || '';
+  if (!img1Id && !img2Id && !cardText) return;
+
+  middleCard.style.display = 'block';
+  const img1 = document.getElementById('order-card-img1');
+  if (img1 && img1Id) img1.src = resolveImageUrl(img1Id, 600);
+  const img2 = document.getElementById('order-card-img2');
+  if (img2 && img2Id) img2.src = resolveImageUrl(img2Id, 600);
+
+  const textElement = document.getElementById('order-card-text');
+  if (textElement && cardText) {
+    textElement.innerText = cardText;
+    textElement.style.display = 'block';
+  }
+}
+
+
 // ========================================
-// 🖼️ 把 GAS 資料填入頁面靜態元素
+// 🕐 上架狀態 / 開賣倒數
+// ========================================
+
+function applyReleaseStatus(status) {
+  const s = status || {};
+  RELEASE.at = (s.releaseAt === null || s.releaseAt === undefined) ? null : Number(s.releaseAt);
+  RELEASE.display = s.releaseTimeDisplay || '';
+  RELEASE.lastKnown = isReleasedNow();
+}
+
+// 🔑 這是本次最關鍵的修正。
+// 原本背景更新只換 stockMap、完全沒碰 releaseStatus，
+// 而 renderProductList / renderPriceMenu 都是讀 releaseStatus 決定要不要顯示「未上架」。
+// 結果：19:55 進站等 20:00 開賣的客人（也就是搶購的主力），
+// 畫面會永遠停在「未上架」，除非他自己想到要重新整理。
+// 現在改成：快照提供絕對時間戳 releaseAt，前端每秒自己判斷，
+// 時間一到立刻解鎖並重新渲染，完全不依賴快照有沒有即時更新到。
+let releaseTickerTimer = null;
+
+function startReleaseTicker() {
+  if (releaseTickerTimer) return;
+  releaseTickerTimer = setInterval(() => {
+    const nowReleased = isReleasedNow();
+    updateReleaseBanner();
+
+    if (nowReleased !== RELEASE.lastKnown) {
+      RELEASE.lastKnown = nowReleased;
+      renderProductList();
+      renderPriceMenu();
+      if (nowReleased) {
+        customAlert('🎉 開賣囉！商品已經可以選購，祝您順利下單～');
+        refreshStockFromSnapshot(); // 立刻抓一次最新庫存
+      }
+    }
+  }, 1000);
+}
+
+function updateReleaseBanner() {
+  const banner = document.getElementById('release-banner');
+  if (!banner) return;
+
+  if (RELEASE.at === null || isReleasedNow()) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  const remain = Math.max(0, RELEASE.at - serverNow());
+  const totalSec = Math.floor(remain / 1000);
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const pad = n => String(n).padStart(2, '0');
+
+  const countdown = d > 0
+    ? `${d} 天 ${pad(h)}:${pad(m)}:${pad(s)}`
+    : `${pad(h)}:${pad(m)}:${pad(s)}`;
+
+  banner.style.display = 'block';
+  banner.innerHTML =
+    `<div class="release-banner-title">🕐 ${RELEASE.display} 開賣</div>` +
+    `<div class="release-banner-count">距離開賣還有 ${countdown}</div>` +
+    `<div class="release-banner-hint">時間一到會自動開放，不需要重新整理</div>`;
+}
+
+
+// ========================================
+// 🩺 快照新鮮度
+// ========================================
+function applySnapshotStamp(json) {
+  const ms = Number(json.updatedAtMs || 0);
+  const el = document.getElementById('stale-warning');
+  if (!el) return;
+
+  if (!ms) { el.style.display = 'none'; return; }
+
+  const ageMin = (serverNow() - ms) / 60000;
+  if (ageMin > SNAPSHOT_STALE_MIN) {
+    // 快照凍住通常代表 GITHUB_TOKEN 過期或觸發器停擺。
+    // 站台看起來一切正常，但賣的是幽靈庫存——這種靜默故障最難發現。
+    el.style.display = 'block';
+    el.textContent = '⚠️ 庫存資訊可能不是最新的，下單前建議與我們確認';
+    console.warn('快照已超過 ' + Math.round(ageMin) + ' 分鐘未更新');
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+
+// ========================================
+// 🖼️ 填入頁面靜態文字
 // ========================================
 function applyConfigToPage(cfg) {
   const h = cfg['首頁'] || {};
   const 訂購 = cfg['訂購'] || {};
 
-  // 標題
   const mainTitle = document.getElementById('main-title');
-  if (mainTitle) mainTitle.textContent = h['網頁大標題'] || '波波酪梨';
+  if (mainTitle) mainTitle.textContent = cfgGet(h, '網頁大標題') || '波波酪梨';
 
-  // 網頁 title
-  document.title = h['分頁標題'] || '波波酪梨｜線上訂購';
+  document.title = cfgGet(h, '分頁標題') || '波波酪梨｜線上訂購';
 
-  // 🔗 footer 社群連結：試算表有填才顯示，沒填的平台就維持隱藏
   const socialMap = {
-    'social-line': h['LINE連結'],
-    'social-ig': h['IG連結'],
-    'social-fb': h['FB連結']
+    'social-line': cfgGet(h, 'LINE連結'),
+    'social-ig':   cfgGet(h, 'IG連結'),
+    'social-fb':   cfgGet(h, 'FB連結')
   };
   Object.keys(socialMap).forEach(id => {
     const el = document.getElementById(id);
     const url = (socialMap[id] || '').toString().trim();
-    if (el && url) {
-      el.href = url;
-      el.style.display = 'flex';
-    }
+    if (el && url) { el.href = url; el.style.display = 'flex'; }
   });
 
-  // 公告
   const annTitle = document.getElementById('announcement-title');
-  if (annTitle) annTitle.textContent = h['公告區標題'] || '最新公告';
+  if (annTitle) annTitle.textContent = cfgGet(h, '公告區標題') || '最新公告';
 
   const annContent = document.getElementById('announcement-content');
-  if (annContent) annContent.innerHTML = (h['公告內容'] || '').replace(/\n/g, '<br>');
+  if (annContent) annContent.innerHTML = String(cfgGet(h, '公告內容') || '').replace(/\n/g, '<br>');
 
-  // 品種頁大標題
   const varietyTitle = document.getElementById('variety-title');
-  if (varietyTitle) varietyTitle.textContent = h['品種分頁大標題'] || '我們的當季酪梨';
+  if (varietyTitle) varietyTitle.textContent = cfgGet(h, '品種分頁大標題') || '我們的當季酪梨';
 
-  // 訂購頁大標題
   const orderTitle = document.getElementById('order-title');
-  if (orderTitle) orderTitle.textContent = h['訂購分頁大標題'] || '訂購資訊';
+  if (orderTitle) orderTitle.textContent = cfgGet(h, '訂購分頁大標題') || '訂購資訊';
 
-  // 配送備註
   const shippingNote = document.getElementById('shipping-note');
-  if (shippingNote) shippingNote.textContent = 訂購['配送方式備註'] || '';
+  if (shippingNote) shippingNote.textContent = cfgGet(訂購, '配送方式備註') || '';
 
-  // 配送選項 disabled 狀態
-  const optPost = document.getElementById('opt-post');
-  const opt711  = document.getElementById('opt-711');
-  if (optPost) {
-    optPost.disabled = 訂購['中華郵政配送'] !== '開';
-    optPost.textContent = 訂購['中華郵政配送'] === '開'
-      ? '📫 中華郵政 (限重10斤內)'
-      : '📫 中華郵政（目前不支援）';
-  }
-  if (opt711) {
-    opt711.disabled = 訂購['7-11超取配送'] !== '開';
-    opt711.textContent = 訂購['7-11超取配送'] === '開'
-      ? '🏪 7-11 超商取件 ($80 / 限重7斤內)'
-      : '🏪 7-11（目前不支援）';
-  }
+  const 設定配送選項 = (id, key, onText, offText) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const 開 = String(cfgGet(訂購, key) || '').trim() === '開';
+    el.disabled = !開;
+    el.textContent = 開 ? onText : offText;
+  };
+  設定配送選項('opt-post', '中華郵政配送', '📫 中華郵政 (限重10斤內)', '📫 中華郵政（目前不支援）');
+  設定配送選項('opt-711', '7-11超取配送', '🏪 7-11 超商取件 (限重7斤內)', '🏪 7-11（目前不支援）');
+  設定配送選項('opt-blackcat', '黑貓配送', '🐈\u200d⬛ 黑貓宅急便 (限重10斤內)', '🐈\u200d⬛ 黑貓宅急便（目前不支援）');
 
-  const optBlackcat = document.getElementById('opt-blackcat');
-  if (optBlackcat) {
-    optBlackcat.disabled = 訂購['黑貓配送'] !== '開';
-    optBlackcat.textContent = 訂購['黑貓配送'] === '開'
-      ? '🐈\u200d⬛ 黑貓宅急便 (限重10斤內)'
-      : '🐈\u200d⬛ 黑貓宅急便（目前不支援）';
-  }
-
-  // 匯款跳轉按鈕名稱
   const lineBtn = document.getElementById('final-line-btn');
-  if (lineBtn) lineBtn.textContent = cfg['匯款']['跳轉按鈕名稱'] || '確認匯款回報';
+  if (lineBtn) lineBtn.textContent = cfgGet(cfg['匯款'], '跳轉按鈕名稱') || '確認匯款回報';
 
-  // 頂部橫幅
-  const bannerId = h['網頁頂部橫幅網址'] || '';
+  const bannerId = cfgGet(h, '網頁頂部橫幅網址') || '';
   if (bannerId) {
     const bannerContainer = document.getElementById('banner-container');
     const bannerImg = document.getElementById('banner-img');
@@ -342,8 +494,9 @@ function applyConfigToPage(cfg) {
   }
 }
 
+
 // ========================================
-// ⏳ 載入中畫面（簡易版）
+// ⏳ 載入畫面
 // ========================================
 function showLoadingScreen(show) {
   let el = document.getElementById('loading-screen');
@@ -358,76 +511,28 @@ function showLoadingScreen(show) {
             40% { transform: translateY(-30px) scale(1.1); }
             60% { transform: translateY(-15px) scale(1.05); }
           }
-          @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-          @keyframes dotPulse {
-            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
-            40% { opacity: 1; transform: scale(1.2); }
-          }
+          @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+          @keyframes dotPulse { 0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1.2); } }
           #loading-screen {
-            position: fixed; top: 0; left: 0;
-            width: 100%; height: 100%;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: linear-gradient(160deg, #e9edc9 0%, #d4e09b 100%);
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            z-index: 99999;
-            transition: opacity 0.5s ease;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 99999; transition: opacity 0.5s ease;
           }
-          .avo-bounce {
-            font-size: 5rem;
-            animation: avoBounce 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-            filter: drop-shadow(0 10px 8px rgba(0,0,0,0.15));
-          }
-          .loading-brand {
-            font-family: var(--heading-font);
-            margin-top: 20px;
-            font-size: 1.4rem;
-            font-weight: 500;
-            color: #576e37;
-            letter-spacing: 4px;
-            animation: fadeInUp 0.8s ease both;
-          }
-          .loading-sub {
-            margin-top: 6px;
-            font-size: 0.75rem;
-            color: #76944a;
-            letter-spacing: 3px;
-            opacity: 0.8;
-            animation: fadeInUp 0.8s ease 0.2s both;
-          }
-          .loading-dots {
-            display: flex;
-            gap: 6px;
-            margin-top: 24px;
-            animation: fadeInUp 0.8s ease 0.4s both;
-          }
-          .loading-dots span {
-            width: 8px; height: 8px;
-            background: #76944a;
-            border-radius: 50%;
-            animation: dotPulse 1.2s ease infinite;
-          }
+          .avo-bounce { font-size: 5rem; animation: avoBounce 1s cubic-bezier(0.4,0,0.2,1) infinite; filter: drop-shadow(0 10px 8px rgba(0,0,0,0.15)); }
+          .loading-brand { font-family: var(--heading-font); margin-top: 20px; font-size: 1.4rem; font-weight: 500; color: #576e37; letter-spacing: 4px; animation: fadeInUp 0.8s ease both; }
+          .loading-sub { margin-top: 6px; font-size: 0.75rem; color: #76944a; letter-spacing: 3px; opacity: 0.8; animation: fadeInUp 0.8s ease 0.2s both; }
+          .loading-dots { display: flex; gap: 6px; margin-top: 24px; animation: fadeInUp 0.8s ease 0.4s both; }
+          .loading-dots span { width: 8px; height: 8px; background: #76944a; border-radius: 50%; animation: dotPulse 1.2s ease infinite; }
           .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
           .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
-          .loading-msg {
-            margin-top: 22px;
-            font-size: 0.85rem;
-            color: #576e37;
-            letter-spacing: 1px;
-            opacity: 0.85;
-            min-height: 1.2em;
-            transition: opacity 0.25s ease;
-          }
+          .loading-msg { margin-top: 22px; font-size: 0.85rem; color: #576e37; letter-spacing: 1px; opacity: 0.85; min-height: 1.2em; transition: opacity 0.25s ease; text-align: center; padding: 0 20px; }
           .loading-msg.is-fading { opacity: 0; }
         </style>
         <div class="avo-bounce">🥑</div>
         <div class="loading-brand">波波酪梨</div>
         <div class="loading-sub">Pro-Bro Avo. | Earth to Table</div>
-        <div class="loading-dots">
-          <span></span><span></span><span></span>
-        </div>
+        <div class="loading-dots"><span></span><span></span><span></span></div>
         <div class="loading-msg" id="loading-msg"></div>
       `;
       document.body.appendChild(el);
@@ -444,33 +549,15 @@ function showLoadingScreen(show) {
   }
 }
 
-// 🌱 loading 畫面文字輪播：把等待感轉化成一點小期待
 const LOADING_MESSAGES = [
-  '正在挑選當季酪梨…',
-  '正在確認庫存…',
-  '正在為您整理鮮採清單…',
-  '馬上就好，稍等一下…',
-  '正在打包新鮮好味道…',
-  '正在秤重最飽滿的果實…',
-  '正在檢查熟成度…',
-  '正在整理今日出貨清單…',
-  '陽光正在醞釀好滋味…',
-  '正在幫酪梨做最後健檢…',
-  '正在準備您的專屬箱子…',
-  '南投的果園正在待命中…',
-  '正在確認今日鮮採進度…',
-  '正在挑出最漂亮的那一顆…',
-  '正在規劃最新鮮的路線…',
-  '小農們正在忙碌準備中…',
-  '正在核對每一筆訂單細節…',
-  '正在為酪梨穿上防護包裝…',
-  '用心種植，用心送達…',
-  '正在把幸福打包好…'
+  '正在挑選當季酪梨…', '正在確認庫存…', '正在為您整理鮮採清單…', '馬上就好，稍等一下…',
+  '正在打包新鮮好味道…', '正在秤重最飽滿的果實…', '正在檢查熟成度…', '正在整理今日出貨清單…',
+  '陽光正在醞釀好滋味…', '正在幫酪梨做最後健檢…', '正在準備您的專屬箱子…', '南投的果園正在待命中…',
+  '正在確認今日鮮採進度…', '正在挑出最漂亮的那一顆…', '正在規劃最新鮮的路線…', '小農們正在忙碌準備中…',
+  '正在核對每一筆訂單細節…', '正在為酪梨穿上防護包裝…', '用心種植，用心送達…', '正在把幸福打包好…'
 ];
 let loadingMsgTimer = null;
-let loadingMsgQueue = [];
 
-// Fisher–Yates 洗牌：每次開始播放都重新打亂順序，每次進站的播放順序都不一樣
 function shuffleLoadingMessages() {
   const arr = [...LOADING_MESSAGES];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -482,74 +569,39 @@ function shuffleLoadingMessages() {
 
 function startLoadingMessages() {
   const msgEl = document.getElementById('loading-msg');
-  if (!msgEl || loadingMsgTimer) return; // 已經在跑就不要重複啟動
+  if (!msgEl || loadingMsgTimer) return;
 
-  loadingMsgQueue = shuffleLoadingMessages();
+  let queue = shuffleLoadingMessages();
   let index = 0;
-  msgEl.textContent = loadingMsgQueue[0];
+  msgEl.textContent = queue[0];
 
   loadingMsgTimer = setInterval(() => {
     msgEl.classList.add('is-fading');
     setTimeout(() => {
       index++;
-      if (index >= loadingMsgQueue.length) {
-        loadingMsgQueue = shuffleLoadingMessages(); // 播完一輪，重新洗牌再來一輪
-        index = 0;
-      }
-      msgEl.textContent = loadingMsgQueue[index];
+      if (index >= queue.length) { queue = shuffleLoadingMessages(); index = 0; }
+      msgEl.textContent = queue[index];
       msgEl.classList.remove('is-fading');
-    }, 280); // 跟 CSS transition 時間對齊，文字淡出後再換字、淡入
+    }, 280);
   }, 1700);
 }
 
 function stopLoadingMessages() {
-  if (loadingMsgTimer) {
-    clearInterval(loadingMsgTimer);
-    loadingMsgTimer = null;
-  }
+  if (loadingMsgTimer) { clearInterval(loadingMsgTimer); loadingMsgTimer = null; }
 }
 
 function showLoadingError() {
   document.body.innerHTML = `
     <style>
-      .load-error-screen {
-        position: fixed; inset: 0;
-        background: var(--creamy, #fefae0);
-        display: flex; flex-direction: column;
-        align-items: center; justify-content: center;
-        text-align: center; padding: 30px;
-        font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
-        z-index: 99999;
-      }
-      .load-error-icon {
-        font-size: 3.2rem;
-        margin-bottom: 14px;
-        animation: loadErrorFloat 2.4s ease-in-out infinite;
-      }
-      @keyframes loadErrorFloat {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-8px); }
-      }
-      .load-error-title {
-        font-family: var(--heading-font, "Huninn", sans-serif);
-        font-size: 1.3rem; font-weight: 500;
-        color: var(--avo-dark, #576e37); margin-bottom: 10px;
-      }
-      .load-error-desc {
-        font-size: 0.9rem; color: var(--avo-dark, #576e37); opacity: 0.85;
-        line-height: 1.7; margin-bottom: 26px; max-width: 320px;
-      }
-      .load-error-btn {
-        padding: 13px 32px; border-radius: 12px; border: none;
-        background-color: var(--herb-green, #76944a); color: white;
-        font-weight: 600; font-size: 0.95rem; letter-spacing: 1px;
-        cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-        transition: var(--transition-smooth, all 0.3s ease);
-      }
-      .load-error-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.12);
-      }
+      .load-error-screen { position: fixed; inset: 0; background: var(--creamy, #fefae0);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center; padding: 30px; font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif; z-index: 99999; }
+      .load-error-icon { font-size: 3.2rem; margin-bottom: 14px; animation: loadErrorFloat 2.4s ease-in-out infinite; }
+      @keyframes loadErrorFloat { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-8px);} }
+      .load-error-title { font-family: var(--heading-font, "Huninn", sans-serif); font-size: 1.3rem; font-weight: 500; color: var(--avo-dark, #576e37); margin-bottom: 10px; }
+      .load-error-desc { font-size: 0.9rem; color: var(--avo-dark, #576e37); opacity: 0.85; line-height: 1.7; margin-bottom: 26px; max-width: 320px; }
+      .load-error-btn { padding: 13px 32px; border-radius: 12px; border: none; background-color: var(--herb-green, #76944a);
+        color: white; font-weight: 600; font-size: 0.95rem; letter-spacing: 1px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
     </style>
     <div class="load-error-screen">
       <div class="load-error-icon">🥑💤</div>
@@ -566,68 +618,49 @@ function showLoadingError() {
 
 
 // ========================================
-// 以下全部原版保留，完全不動
+// 🧭 分頁切換
 // ========================================
-
 function goToStep(step) {
-  document.querySelectorAll('.page-content').forEach(p => {
-    p.style.display = 'none';
-  });
+  document.querySelectorAll('.page-content').forEach(p => { p.style.display = 'none'; });
 
   const pageMap = {
-    1: 'step1-announcement',
-    2: 'step2-varieties',
-    3: 'step3-price-list',
-    4: 'step4-order-form',
-    5: 'step5-payment-info'
+    1: 'step1-announcement', 2: 'step2-varieties', 3: 'step3-price-list',
+    4: 'step4-order-form', 5: 'step5-payment-info'
   };
-
-  const targetId = pageMap[step];
-  const targetPage = document.getElementById(targetId);
+  const targetPage = document.getElementById(pageMap[step]);
   if (targetPage) targetPage.style.display = 'block';
 
   if (step === 5) {
     renderSuccessPage();
     setTimeout(() => {
-      const successCard = document.querySelector('#step5-payment-info .info-block');
-      if (successCard) successCard.classList.add('success-animate');
+      const card = document.querySelector('#step5-payment-info .info-block');
+      if (card) card.classList.add('success-animate');
     }, 100);
-    setTimeout(() => { fireConfetti(); }, 200);
+    setTimeout(fireConfetti, 200);
   }
-
-  if (step === 3) {
-    setTimeout(() => { renderPriceMenu(); }, 0);
-  }
-
+  if (step === 3) renderPriceMenu();
   if (step === 4) {
-    setTimeout(() => {
-      renderProductList();
-      updateAddressSection();
-      calculateCartTotal();
-    }, 0);
+    renderProductList();
+    updateAddressSection();
+    calculateCartTotal();
   }
 
   window.scrollTo(0, 0);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const fields = document.querySelectorAll('#cust-name, #cust-phone, #delivery-address, #order-note');
-  fields.forEach(field => {
+  document.querySelectorAll('#cust-name, #cust-phone, #delivery-address, #order-note').forEach(field => {
     field.addEventListener('blur', () => {
       if (field.value.trim() !== '') {
         field.classList.add('input-completed');
-        setTimeout(() => { field.classList.remove('input-completed'); }, 600);
+        setTimeout(() => field.classList.remove('input-completed'), 600);
       }
     });
   });
 
-  const floatingBtn = document.getElementById('floating-checkout');
-  if (floatingBtn) floatingBtn.addEventListener('click', () => { goToStep(4); });
-
   const floatingCart = document.getElementById('floating-cart');
   const cartHandle = document.getElementById('floating-cart-handle');
   let isOpen = false;
-
   if (floatingCart && cartHandle) {
     cartHandle.addEventListener('click', (e) => {
       isOpen = !isOpen;
@@ -638,70 +671,126 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+
+// ========================================
+// 🛒 商品清單
+// ========================================
 function renderProductList() {
   const container = document.getElementById('product-list-container');
   if (!container) return;
 
-  const cfg = window.APP_CONFIG.orderConfig || {};
-  const stockMap = window.APP_CONFIG.stockMap || {};
-  const releaseStatus = window.APP_CONFIG.releaseStatus || { isReleased: true, releaseTimeDisplay: '' };
-
-  const categories = [
-    { name: '當季酪梨(隨機出貨)【優級】', weights: [3,5,7,10], priceKey: '當季酪梨( 隨機出貨 )【優級】單價' },
-    { name: '當季酪梨(隨機出貨)【次級】', weights: [3,5,7,10], priceKey: '當季酪梨( 隨機出貨 )【次級】單價' },
-    { name: '平克頓/哈斯【優級】', weights: [1,2,3], priceKey: '平克頓/哈斯【優級】單價' },
-    { name: '平克頓/哈斯【次級】', weights: [1,2,3], priceKey: '平克頓/哈斯【次級】單價' }
-  ];
-
-  const displayNameMap = {
-    '平克頓/哈斯【優級】': '平克頓/哈斯 (隨機出貨)【優級】',
-    '平克頓/哈斯【次級】': '平克頓/哈斯 (隨機出貨)【次級】',
-    '當季酪梨(隨機出貨)【優級】': '當季酪梨(隨機出貨)【優級】',
-    '當季酪梨(隨機出貨)【次級】': '當季酪梨(隨機出貨)【次級】'
-  };
+  const cfg = (window.APP_CONFIG && window.APP_CONFIG.orderConfig) || {};
+  const stockMap = (window.APP_CONFIG && window.APP_CONFIG.stockMap) || {};
+  const released = isReleasedNow();
 
   let html = '';
-  categories.forEach(cat => {
+  商品分類.forEach(cat => {
     const displayName = displayNameMap[cat.name] || cat.name;
     html += `<div class="product-group-label">🥑 ${displayName}</div>`;
-    cat.weights.forEach(w => {
-      const stockKey = (cat.name + '-' + w).replace(/\s+/g, '');
-      const availableStock = stockMap[stockKey] || 0;
-      const unitPrice = Number(cfg[cat.priceKey]) || 0;
-      const displayPrice = unitPrice * w;
-      const currentQty = (cart[stockKey] && cart[stockKey].qty) || 0;
-      const remaining = availableStock - currentQty;
 
-      if (!releaseStatus.isReleased) {
+    cat.weights.forEach(w => {
+      const key = stockKeyOf(cat.name, w);
+      const availableStock = stockMap[key] || 0;
+      const displayPrice = cfgNum(cfg, cat.priceKey) * w;
+      const currentQty = (cart[key] && cart[key].qty) || 0;
+      const remaining = Math.max(0, availableStock - currentQty);
+
+      if (!released) {
         html += `
           <div class="price-row">
             <div class="price-col weight">${w} 斤裝 <span>($${displayPrice})</span></div>
-            <div class="price-col stock unreleased-badge" id="stock-${stockKey}">⚠️ 未上架</div>
-          </div>
-        `;
+            <div class="price-col stock unreleased-badge" id="stock-${key}">⏳ 未開賣</div>
+          </div>`;
         return;
       }
 
       html += `
         <div class="price-row">
           <div class="price-col weight">${w} 斤裝 <span>($${displayPrice})</span></div>
-          <div class="price-col stock" id="stock-${stockKey}">剩 ${remaining}</div>
+          <div class="price-col stock" id="stock-${key}">剩 ${remaining}</div>
           <div class="price-col action">
             <div class="qty-control">
-              <button onclick="updateCart('${stockKey}', -1, ${w}, '${displayName}')" class="btn-qty">-</button>
-              <span id="qty-${stockKey}" class="qty-num">${currentQty}</span>
-              <button onclick="updateCart('${stockKey}', 1, ${w}, '${displayName}')" class="btn-qty" ${remaining <= 0 ? 'disabled' : ''}>+</button>
+              <button onclick="updateCart('${key}', -1, ${w}, '${displayName}')" class="btn-qty">-</button>
+              <span id="qty-${key}" class="qty-num">${currentQty}</span>
+              <button id="plus-${key}" onclick="updateCart('${key}', 1, ${w}, '${displayName}')" class="btn-qty" ${remaining <= 0 ? 'disabled' : ''}>+</button>
             </div>
           </div>
-        </div>
-      `;
+        </div>`;
     });
   });
+
   container.innerHTML = html;
 }
 
+function renderPriceMenu() {
+  const container = document.getElementById('price-menu-container');
+  if (!container) return;
+
+  const cfg = (window.APP_CONFIG && window.APP_CONFIG.orderConfig) || {};
+  const released = isReleasedNow();
+
+  const 區塊 = (title, 優級, 次級) => {
+    const 列 = cat => cat.weights.map(w => {
+      const price = cfgNum(cfg, cat.priceKey) * w;
+      const key = stockKeyOf(cat.name, w);
+      return `<div class="price-row">
+        <div class="price-col weight">${w} 斤裝</div>
+        <div class="price-col amount">$${price}</div>
+        <div class="price-col stock" id="pm-stock-${key}">${priceMenuStockText(key, released)}</div>
+      </div>`;
+    }).join('');
+
+    return `
+      <div class="info-block price-info">
+        <h3 class="price-title">${title}</h3>
+        <div class="product-divider"></div>
+        <h4 class="price-subtitle">．優級．</h4>
+        <div class="price-divider">✦ ✦ ✦</div>
+        ${列(優級)}
+        <div style="height:26px;"></div>
+        <h4 class="price-subtitle">．次級．</h4>
+        <div class="price-divider">✦ ✦ ✦</div>
+        ${列(次級)}
+      </div>`;
+  };
+
+  container.innerHTML =
+    區塊('🥑 當季酪梨', 商品分類[0], 商品分類[1]) +
+    區塊('🥑 平克頓 & 哈斯', 商品分類[2], 商品分類[3]);
+
+  const 設 = (id, key) => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = cfgNum(cfg, key);
+  };
+  設('ship-post-small', '郵寄七斤(不含)以下');
+  設('ship-post-large', '郵寄七斤(包含)以上');
+  設('ship-711', '711運費');
+  設('ship-blackcat-small', '黑貓配送七斤(不含)以下');
+  設('ship-blackcat-large', '黑貓配送七斤(包含)以上');
+  設('ship-post-island-small', '郵寄離島七斤(不含)以下');
+  設('ship-post-island-large', '郵寄離島七斤(包含)以上');
+  設('ship-blackcat-island-small', '黑貓配送離島七斤(不含)以下');
+  設('ship-blackcat-island-large', '黑貓配送離島七斤(包含)以上');
+}
+
+function priceMenuStockText(key, released) {
+  if (!released) return '⏳ 未開賣';
+  const stockMap = (window.APP_CONFIG && window.APP_CONFIG.stockMap) || {};
+  const count = Math.max(0, (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0));
+  return count > 0 ? `（剩 ${count} 份）` : '（售罄）';
+}
+
+
+// ========================================
+// 🛒 購物車
+// ========================================
 function updateCart(key, deltaQty, weight, displayName) {
   if (!cart[key] && deltaQty <= 0) return;
+
+  if (!isReleasedNow()) {
+    customAlert('⏳ 商品尚未開賣，請稍候一下～');
+    return;
+  }
 
   const method = document.getElementById('shipping-method').value;
   if (!method) {
@@ -713,89 +802,109 @@ function updateCart(key, deltaQty, weight, displayName) {
   const newQty = currentQty + deltaQty;
   if (newQty < 0) return;
 
-  const availableStock = window.APP_CONFIG.stockMap[key] || 0;
+  const availableStock = (window.APP_CONFIG.stockMap || {})[key] || 0;
   if (deltaQty > 0 && newQty > availableStock) {
     customAlert(`❌ 庫存只剩 ${availableStock} 份喔！`);
     return;
   }
 
   const prevQty = currentQty;
-  const priceKey = stockKeyMap[displayName] || displayName;
-  const unitPrice = 價格表[priceKey] || 0;
+  const unitPrice = 價格表[stockKeyMap[displayName] || displayName] || 0;
 
-  if (newQty === 0) {
-    delete cart[key];
-  } else {
-    cart[key] = { displayName, weight, qty: newQty, subtotal: unitPrice * weight * newQty };
-  }
+  if (newQty === 0) delete cart[key];
+  else cart[key] = { displayName, weight, qty: newQty, subtotal: unitPrice * weight * newQty };
 
   recalcTotalWeight();
 
-  let overweight = false;
-  if (method === '711' && totalWeight > 7) overweight = true;
-  if (method === 'post' && totalWeight > 10) overweight = true;
-  if (method === 'blackcat' && totalWeight > 10) overweight = true;
-
-  if (overweight) {
-    const overweightMsgMap = {
-      '711': '❌ 7-11配送總重不能超過7斤喔！',
-      post: '❌ 郵寄配送總重不能超過10斤喔！',
-      blackcat: '❌ 黑貓宅急便配送總重不能超過10斤喔！'
-    };
-    customAlert(overweightMsgMap[method] || '❌ 總重已超過此配送方式的限重！');
-    if (prevQty === 0) {
-      delete cart[key];
-    } else {
-      cart[key] = { displayName, weight, qty: prevQty, subtotal: unitPrice * weight * prevQty };
-    }
+  const limit = { post: 10, '711': 7, blackcat: 10 }[method];
+  if (limit && totalWeight > limit) {
+    const nameMap = { post: '郵寄', '711': '7-11', blackcat: '黑貓宅急便' };
+    customAlert(`❌ ${nameMap[method]}配送總重不能超過${limit}斤喔！`);
+    if (prevQty === 0) delete cart[key];
+    else cart[key] = { displayName, weight, qty: prevQty, subtotal: unitPrice * weight * prevQty };
     recalcTotalWeight();
-    refreshCartUI();
-    return;
   }
 
   refreshCartUI();
 }
 
 function refreshCartUI() {
-  const stockMap = window.APP_CONFIG.stockMap || {};
-  Object.keys(stockMap).forEach(key => {
+  Object.keys(cart).forEach(key => {
     const item = cart[key];
-    const qtyEl = document.getElementById(`qty-${key}`);
-    if (qtyEl) qtyEl.innerText = item ? item.qty : 0;
+    const unitPrice = 價格表[stockKeyMap[item.displayName] || item.displayName] || 0;
+    item.subtotal = unitPrice * item.weight * item.qty;
+  });
+  updateStockDisplay();
+  calculateCartTotal();
+  updateFloatingCart();
+}
 
-    const plusBtn = qtyEl && qtyEl.parentNode.querySelector('button.btn-qty:last-child');
-    const availableStock = stockMap[key] || 0;
-    if (plusBtn) plusBtn.disabled = item ? (item.qty >= availableStock) : (0 >= availableStock);
+// ⚡ 只更新數字與按鈕狀態，不重建整塊 innerHTML。
+// 原本每 2 秒重建一次，手機上會有輕微 jank，
+// 而且客人剛好在按 +/- 時，按鈕會被整個換掉、那一次點擊就消失了。
+function updateStockDisplay() {
+  const stockMap = (window.APP_CONFIG && window.APP_CONFIG.stockMap) || {};
+  const released = isReleasedNow();
 
-    const stockEl = document.getElementById(`stock-${key}`);
-    if (stockEl) {
-      const usedQty = item ? item.qty : 0;
-      stockEl.innerText = `剩 ${availableStock - usedQty}`;
-    }
+  商品分類.forEach(cat => {
+    cat.weights.forEach(w => {
+      const key = stockKeyOf(cat.name, w);
+      const usedQty = (cart[key] && cart[key].qty) || 0;
+      const remaining = Math.max(0, (stockMap[key] || 0) - usedQty); // 不再出現「剩 -2」
 
-    if (item) {
-      const priceKey = stockKeyMap[item.displayName] || item.displayName;
-      const unitPrice = 價格表[priceKey] || 0;
-      item.subtotal = unitPrice * item.weight * item.qty;
+      const qtyEl = document.getElementById('qty-' + key);
+      if (qtyEl) qtyEl.innerText = usedQty;
+
+      const stockEl = document.getElementById('stock-' + key);
+      if (stockEl && released) stockEl.innerText = `剩 ${remaining}`;
+
+      const plusBtn = document.getElementById('plus-' + key);
+      if (plusBtn) plusBtn.disabled = remaining <= 0;
+
+      const pmEl = document.getElementById('pm-stock-' + key);
+      if (pmEl) pmEl.innerText = priceMenuStockText(key, released);
+    });
+  });
+}
+
+// 庫存被別人買走時，自動把購物車修正到還買得到的數量，
+// 而不是讓客人一路填完資料、按下送出才被打回票。
+function trimCartToStock() {
+  const stockMap = (window.APP_CONFIG && window.APP_CONFIG.stockMap) || {};
+  const 調整 = [];
+
+  Object.keys(cart).forEach(key => {
+    const avail = stockMap[key] || 0;
+    const item = cart[key];
+    if (item.qty > avail) {
+      調整.push(`${item.displayName} ${item.weight}斤：${item.qty} → ${avail}`);
+      if (avail <= 0) delete cart[key];
+      else item.qty = avail;
     }
   });
 
-  calculateCartTotal();
-  updateFloatingCart();
+  if (調整.length === 0) return false;
+
+  recalcTotalWeight();
+  refreshCartUI();
+  if (!isSubmitting) {
+    customAlert('⚠️ 有品項剛好被其他客人買走，已為您自動調整購物車：\n\n' + 調整.join('\n'));
+  }
+  return true;
 }
 
 function handleShippingChange() {
   const method = document.getElementById('shipping-method').value;
   recalcTotalWeight();
+
   if (Object.keys(cart).length > 0) {
-    if (method === '711' && totalWeight > 7) {
-      customAlert('⚠️ 7-11 限重 7 斤，目前已超過！請減少品項。');
-    } else if (method === 'post' && totalWeight > 10) {
-      customAlert('⚠️ 郵寄限重 10 斤，目前已超過！');
-    } else if (method === 'blackcat' && totalWeight > 10) {
-      customAlert('⚠️ 黑貓宅急便限重 10 斤，目前已超過！');
+    const limit = { post: 10, '711': 7, blackcat: 10 }[method];
+    if (limit && totalWeight > limit) {
+      const nameMap = { post: '郵寄', '711': '7-11', blackcat: '黑貓宅急便' };
+      customAlert(`⚠️ ${nameMap[method]} 限重 ${limit} 斤，目前已超過！請減少品項。`);
     }
   }
+
   calculateCartTotal();
   updateAddressSection();
 }
@@ -803,6 +912,7 @@ function handleShippingChange() {
 function calculateCartTotal() {
   recalcTotalWeight();
   const method = document.getElementById('shipping-method').value;
+
   let subtotal = 0;
   Object.values(cart).forEach(k => { subtotal += k.subtotal; });
 
@@ -811,21 +921,20 @@ function calculateCartTotal() {
   const isIsland = (method === 'post' || method === 'blackcat')
     && isIslandAddress(countyEl ? countyEl.value : '', districtEl ? districtEl.value : '');
 
-  // 🏝️ 顯示/隱藏離島運費提示
   const islandHint = document.getElementById('island-shipping-hint');
   if (islandHint) islandHint.style.display = isIsland ? 'block' : 'none';
 
   let shippingFee = 0;
   if (method === 'post') {
     shippingFee = isIsland
-      ? ((totalWeight < 7) ? 運費表.郵寄離島小 : 運費表.郵寄離島大)
-      : ((totalWeight < 7) ? 運費表.郵寄小 : 運費表.郵寄大);
+      ? (totalWeight < 7 ? 運費表.郵寄離島小 : 運費表.郵寄離島大)
+      : (totalWeight < 7 ? 運費表.郵寄小 : 運費表.郵寄大);
   } else if (method === '711') {
     shippingFee = 運費表['711運費'];
   } else if (method === 'blackcat') {
     shippingFee = isIsland
-      ? ((totalWeight < 7) ? 運費表.黑貓離島小 : 運費表.黑貓離島大)
-      : ((totalWeight < 7) ? 運費表.黑貓小 : 運費表.黑貓大);
+      ? (totalWeight < 7 ? 運費表.黑貓離島小 : 運費表.黑貓離島大)
+      : (totalWeight < 7 ? 運費表.黑貓小 : 運費表.黑貓大);
   }
 
   finalSubtotal = subtotal;
@@ -834,11 +943,44 @@ function calculateCartTotal() {
   updateFloatingCart();
 }
 
+function recalcTotalWeight() {
+  totalWeight = Object.values(cart).reduce((sum, item) => sum + item.qty * item.weight, 0);
+}
+
+function updateFloatingCart() {
+  const container = document.getElementById('floating-cart-items');
+  if (!container) return;
+
+  container.innerHTML = '';
+  const visibleItems = Object.values(cart).filter(item => item.qty > 0);
+
+  visibleItems.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'floating-cart-item';
+    div.innerHTML = `<span class="item-name">${item.displayName} ${item.weight}斤</span>` +
+                    `<span class="item-qty">x${item.qty}</span>` +
+                    `<span class="item-subtotal">$${item.subtotal}</span>`;
+    container.appendChild(div);
+  });
+
+  if (visibleItems.length === 0) {
+    container.innerHTML = '<div style="text-align:center; color:#888;">購物車空空如也</div>';
+  }
+
+  document.getElementById('floating-subtotal').innerHTML = `<span class="label">小計：</span><span class="amount">$${finalSubtotal}</span>`;
+  document.getElementById('floating-shipping').innerHTML = `<span class="label">運費：</span><span class="amount">$${finalShippingFee}</span>`;
+  document.getElementById('floating-total').innerHTML = `<span class="label">總計：</span><span class="amount">$${finalTotal}</span>`;
+}
+
+
+// ========================================
+// 🥑 品種頁
+// ========================================
 function renderVarieties() {
   const container = document.getElementById('varieties-container');
   if (!container) return;
-  const data = window.allVarieties || (window.APP_CONFIG && window.APP_CONFIG.varieties) || [];
 
+  const data = window.allVarieties || (window.APP_CONFIG && window.APP_CONFIG.varieties) || [];
   if (data.length === 0) {
     container.innerHTML = '<p style="text-align:center; color:var(--avo-dark); padding:20px;">目前尚無當季品種資訊。🥑</p>';
     return;
@@ -847,141 +989,26 @@ function renderVarieties() {
   container.innerHTML = data.map(v => {
     const imgSrc = resolveImageUrl(v.img, 900);
     return `
-    <div class="info-block">
-      ${imgSrc ? `<div class="variety-images"><img src="${imgSrc}" class="avocado-img" loading="lazy" onclick="showLightbox('${imgSrc}')"></div>` : ''}
-      <h3 class="variety-title">${v.name}</h3>
-      <div class="product-divider"></div>
-      <p style="white-space:pre-wrap;">${v.feature || ''}</p>
-    </div>
-  `;
+      <div class="info-block">
+        ${imgSrc ? `<div class="variety-images"><img src="${imgSrc}" class="avocado-img" loading="lazy" onclick="showLightbox('${imgSrc}')"></div>` : ''}
+        <h3 class="variety-title">${v.name}</h3>
+        <div class="product-divider"></div>
+        <p style="white-space:pre-wrap;">${v.feature || ''}</p>
+      </div>`;
   }).join('');
 }
 
-function renderSuccessPage() {
-  document.getElementById('bank-val').innerText = window.APP_CONFIG.bankName || '';
-  document.getElementById('account-val').innerText = window.APP_CONFIG.bankAcc || '';
-  document.getElementById('name-val').innerText = window.APP_CONFIG.bankUser || '';
-  document.getElementById('lp-announcement').innerText = window.APP_CONFIG.linePayMsg || '';
 
-  if (window.APP_CONFIG.linePayImgId) {
-    document.getElementById('lp-qrcode').src = resolveImageUrl(window.APP_CONFIG.linePayImgId, 500);
-  }
-
-  document.getElementById('final-amount-display').innerText = '$' + finalTotal + ' 元';
-
-  if (!currentOrderSummary) return;
-  const o = currentOrderSummary;
-
-  document.getElementById('order-summary-content').innerHTML = `
-    <div class="order-summary-list">
-      <div class="order-summary-row"><span class="label">📦 規格細項</span><span class="value js-summary-weight"></span></div>
-      <div class="order-summary-row"><span class="label">🚚 配送方式</span><span class="value js-summary-shipping"></span></div>
-      <div class="order-summary-row"><span class="label">🏠 收件地址(門市)</span><span class="value js-summary-address"></span></div>
-      <div class="order-summary-row"><span class="label">💰 商品小計</span><span class="value js-summary-subtotal">$${o.subtotal}</span></div>
-      <div class="order-summary-row"><span class="label">🚛 運費</span><span class="value js-summary-shipping-fee">$${o.shippingFee}</span></div>
-    </div>
-  `;
-
-  const weightContainer = document.querySelector('.js-summary-weight');
-  if (weightContainer) {
-    weightContainer.innerHTML = o.weight.split('，').map(item => `<div>${item}</div>`).join('');
-  }
-
-  const shippingEl = document.querySelector('.js-summary-shipping');
-  if (shippingEl) {
-    const shippingNameMap = { post: '中華郵政配送', '711': '7-11超商配送', blackcat: '黑貓宅急便配送' };
-    shippingEl.textContent = shippingNameMap[o.shippingMethod] || '';
-  }
-
-  const addressEl = document.querySelector('.js-summary-address');
-  if (addressEl) addressEl.textContent = o.shipping || o.address || '';
-
-  const rawMsg = window.APP_CONFIG.successMsg || '謝謝您支持，下單成功！';
-  document.getElementById('success-reminder-msg').innerHTML = `<div class="success-warm-text">${rawMsg}</div>`;
-}
-
-function renderPriceMenu() {
-  const container = document.getElementById('price-menu-container');
-  if (!container) return;
-  const cfg = window.APP_CONFIG.orderConfig || {};
-  const stockMap = window.APP_CONFIG.stockMap || {};
-  const releaseStatus = window.APP_CONFIG.releaseStatus || { isReleased: true, releaseTimeDisplay: '' };
-  let html = '';
-
-  html += `
-    <div class="info-block price-info">
-      <h3 class="price-title">🥑 當季酪梨</h3>
-      <div class="product-divider"></div>
-      <h4 class="price-subtitle">．優級．</h4>
-      <div class="price-divider">✦ ✦ ✦</div>
-      ${[3,5,7,10].map(w => {
-        const price = (Number(cfg['當季酪梨( 隨機出貨 )【優級】單價']) || 0) * w;
-        const key = ('當季酪梨( 隨機出貨 )【優級】-' + w).replace(/\s+/g,'');
-        const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = !releaseStatus.isReleased ? '⚠️ 未上架' : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
-        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
-      }).join('')}
-      <div style="height:26px;"></div>
-      <h4 class="price-subtitle">．次級．</h4>
-      <div class="price-divider">✦ ✦ ✦</div>
-      ${[3,5,7,10].map(w => {
-        const price = (Number(cfg['當季酪梨( 隨機出貨 )【次級】單價']) || 0) * w;
-        const key = ('當季酪梨( 隨機出貨 )【次級】-' + w).replace(/\s+/g,'');
-        const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = !releaseStatus.isReleased ? '⚠️ 未上架' : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
-        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
-      }).join('')}
-    </div>
-  `;
-
-  html += `
-    <div class="info-block price-info">
-      <h3 class="price-title">🥑 平克頓 & 哈斯</h3>
-      <div class="product-divider"></div>
-      <h4 class="price-subtitle">．優級．</h4>
-      <div class="price-divider">✦ ✦ ✦</div>
-      ${[1,2,3].map(w => {
-        const price = (Number(cfg['平克頓/哈斯【優級】單價']) || 0) * w;
-        const key = ('平克頓/哈斯【優級】-' + w).replace(/\s+/g,'');
-        const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = !releaseStatus.isReleased ? '⚠️ 未上架' : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
-        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
-      }).join('')}
-      <div style="height:26px;"></div>
-      <h4 class="price-subtitle">．次級．</h4>
-      <div class="price-divider">✦ ✦ ✦</div>
-      ${[1,2,3].map(w => {
-        const price = (Number(cfg['平克頓/哈斯【次級】單價']) || 0) * w;
-        const key = ('平克頓/哈斯【次級】-' + w).replace(/\s+/g,'');
-        const count = (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0);
-        const stockText = !releaseStatus.isReleased ? '⚠️ 未上架' : (count > 0 ? `（剩 ${count} 份）` : '（售罄）');
-        return `<div class="price-row"><div class="price-col weight">${w} 斤裝</div><div class="price-col amount">$${price}</div><div class="price-col stock">${stockText}</div></div>`;
-      }).join('')}
-    </div>
-  `;
-
-  container.innerHTML = html;
-  document.getElementById('ship-post-small').innerText = cfg['郵寄七斤(不含)以下'] || 0;
-  document.getElementById('ship-post-large').innerText = cfg['郵寄七斤(包含)以上'] || 0;
-  document.getElementById('ship-711').innerText = cfg['711運費'] || 0;
-  document.getElementById('ship-blackcat-small').innerText = cfg['黑貓配送七斤(不含)以下'] || 0;
-  document.getElementById('ship-blackcat-large').innerText = cfg['黑貓配送七斤(包含)以上'] || 0;
-  document.getElementById('ship-post-island-small').innerText = cfg['郵寄離島七斤(不含)以下'] || 0;
-  document.getElementById('ship-post-island-large').innerText = cfg['郵寄離島七斤(包含)以上'] || 0;
-  document.getElementById('ship-blackcat-island-small').innerText = cfg['黑貓配送離島七斤(不含)以下'] || 0;
-  document.getElementById('ship-blackcat-island-large').innerText = cfg['黑貓配送離島七斤(包含)以上'] || 0;
-}
-
+// ========================================
+// 🏠 地址選單
+// ========================================
 function initAddressSelector() {
   const countySelect = document.getElementById('county');
   const districtSelect = document.getElementById('district');
   const zipInput = document.getElementById('zipcode');
   if (!countySelect || !districtSelect || !zipInput) return;
 
-  const addressMap = window.APP_CONFIG.addressMap || {};
-
-  // ⚡ 保險：就算重試過還是抓不到地址資料，也讓客人看得懂發生什麼事，
-  // 不要留一個看起來像壞掉、其實只有「縣市」兩個字的空白選單。
+  const addressMap = (window.APP_CONFIG && window.APP_CONFIG.addressMap) || {};
   if (Object.keys(addressMap).length === 0) {
     countySelect.innerHTML = '<option value="">⚠️ 地址資料載入失敗，請重新整理再試</option>';
     return;
@@ -989,17 +1016,14 @@ function initAddressSelector() {
 
   countySelect.innerHTML = '<option value="">縣市</option>';
   districtSelect.innerHTML = '<option value="">區域</option>';
-
-  Object.keys(addressMap).forEach(county => {
-    countySelect.add(new Option(county, county));
-  });
+  Object.keys(addressMap).forEach(county => countySelect.add(new Option(county, county)));
 
   countySelect.addEventListener('change', () => {
     districtSelect.innerHTML = '<option value="">區域</option>';
     zipInput.value = '';
     const districts = addressMap[countySelect.value];
     if (districts) {
-      Object.keys(districts).forEach(dist => { districtSelect.add(new Option(dist, dist)); });
+      Object.keys(districts).forEach(d => districtSelect.add(new Option(d, d)));
       districtSelect.disabled = false;
     } else {
       districtSelect.disabled = true;
@@ -1008,11 +1032,14 @@ function initAddressSelector() {
   });
 
   districtSelect.addEventListener('change', () => {
-    zipInput.value = (addressMap[countySelect.value] && addressMap[countySelect.value][districtSelect.value]) || '';
+    const m = addressMap[countySelect.value];
+    zipInput.value = (m && m[districtSelect.value]) || '';
     calculateCartTotal();
   });
 }
 
+// ⚡ 只在這裡綁一次 change。原本 HTML 的 onchange 跟這裡的 addEventListener
+// 同時存在，每次切換配送方式 handleShippingChange 都會跑兩遍。
 function initShippingAddressToggle() {
   const shippingEl = document.getElementById('shipping-method');
   if (!shippingEl) return;
@@ -1025,82 +1052,61 @@ function updateAddressSection() {
   const postSection = document.getElementById('post-address-section');
   const storeSection = document.getElementById('store-address-section');
   if (!postSection || !storeSection) return;
-  postSection.style.display = 'none';
-  storeSection.style.display = 'none';
-  if (method === 'post' || method === 'blackcat') postSection.style.display = 'block';
-  if (method === '711') storeSection.style.display = 'block';
+
+  postSection.style.display = (method === 'post' || method === 'blackcat') ? 'block' : 'none';
+  storeSection.style.display = (method === '711') ? 'block' : 'none';
 }
 
-function recalcTotalWeight() {
-  totalWeight = Object.values(cart).reduce((sum, item) => sum + item.qty * item.weight, 0);
-}
 
 // ========================================
-// 🔄 背景自動更新庫存顯示（改版）
-// 不管客人目前停留在哪一頁，每 5 秒都會安靜地重新抓一次最新快照，
-// 並且只要偵測到目前畫面是「價格表頁」或「訂購頁」，就會同步重新渲染，
-// 確保不管客人停在哪一頁，看到的數字都盡量貼近當下真實狀態。
+// 🔄 背景更新
 // ========================================
 let stockRefreshTimer = null;
 
 function startStockAutoRefresh() {
-  if (stockRefreshTimer) return; // 已經在跑就不要重複啟動
-  stockRefreshTimer = setInterval(refreshStockFromSnapshot, 2000); // ⚡ 目前設定為2秒（你手動調整過）
+  if (stockRefreshTimer) return;
+  stockRefreshTimer = setInterval(refreshStockFromSnapshot, STOCK_REFRESH_MS);
 }
 
 async function refreshStockFromSnapshot() {
+  if (isSubmitting) return; // 送單當下不要動畫面
   try {
-    const res = await fetch(CONFIG_JSON_URL + '?t=' + Date.now());
-    if (!res.ok) return;
-    const json = await res.json();
-    if (!json.success) return;
+    const json = await fetchSnapshot(CONFIG_JSON_URL);
+
+    // ⚡ 內容比對：沒變就完全不碰 DOM，省下每次的重繪
+    const stamp = json.updatedAtMs || json.updatedAt;
+    if (stamp && stamp === lastSnapshotStamp) return;
+    lastSnapshotStamp = stamp;
+
+    applySnapshotStamp(json);
+    applyReleaseStatus(json.data['上架狀態']);
     applyLatestStockMap(json.data['庫存'] || {});
   } catch (err) {
-    // 背景更新失敗就安靜跳過，不用打擾客人，下一輪再試
+    // 背景更新失敗就安靜跳過，下一輪再試
   }
 }
 
-// 把最新的庫存資料套用進畫面：更新 window.APP_CONFIG.stockMap，
-// 並且只重新渲染「目前正顯示中」的那一頁，不會影響客人正在填寫的表單內容。
 function applyLatestStockMap(rawStock) {
   const newStockMap = {};
   Object.keys(rawStock).forEach(k => {
-    newStockMap[k.replace(/\s+/g, '')] = Number(rawStock[k]) || 0;
+    newStockMap[normKey(k)] = Math.max(0, Number(rawStock[k]) || 0);
   });
   window.APP_CONFIG.stockMap = newStockMap;
 
-  const step3Page = document.getElementById('step3-price-list');
-  const step4Page = document.getElementById('step4-order-form');
-  if (step3Page && step3Page.style.display !== 'none') {
-    renderPriceMenu();
-  }
-  if (step4Page && step4Page.style.display !== 'none') {
-    renderProductList();
-  }
+  trimCartToStock();
+  updateStockDisplay();
+  calculateCartTotal();
 }
 
-function updateFloatingCart() {
-  const cartItemsContainer = document.getElementById('floating-cart-items');
-  if (!cartItemsContainer) return;
-  cartItemsContainer.innerHTML = '';
-  const visibleItems = Object.values(cart).filter(item => item.qty > 0);
-  visibleItems.forEach(item => {
-    const div = document.createElement('div');
-    div.className = 'floating-cart-item';
-    div.innerHTML = `<span class="item-name">${item.displayName} ${item.weight}斤</span><span class="item-qty">x${item.qty}</span><span class="item-subtotal">$${item.subtotal}</span>`;
-    cartItemsContainer.appendChild(div);
-  });
 
-  document.getElementById('floating-subtotal').innerHTML = `<span class="label">小計：</span><span class="amount">$${finalSubtotal}</span>`;
-  document.getElementById('floating-shipping').innerHTML = `<span class="label">運費：</span><span class="amount">$${finalShippingFee}</span>`;
-  document.getElementById('floating-total').innerHTML = `<span class="label">總計：</span><span class="amount">$${finalTotal}</span>`;
-
-  if (visibleItems.length === 0) {
-    cartItemsContainer.innerHTML = '<div style="text-align:center; color:#888;">購物車空空如也</div>';
-  }
-}
-
+// ========================================
+// 📬 送出訂單
+// ========================================
 function handleOrderEnter() {
+  if (window.APP_CONFIG && window.APP_CONFIG.priceConfigBroken) {
+    customAlert('⚠️ 系統設定正在維護中，暫時無法訂購，造成不便敬請見諒。');
+    return;
+  }
   const orderSwitch = (window.APP_CONFIG && window.APP_CONFIG.orderSwitch) || '開';
   if (orderSwitch === '關') {
     customAlert('目前為停止採收期，暫停接單中 🌱\n\n我們會於開放時第一時間公告，感謝您的體諒！');
@@ -1109,11 +1115,15 @@ function handleOrderEnter() {
   goToStep(2);
 }
 
-// ========================================
-// 📬 送單：改用 fetch 取代 google.script.run
-// ========================================
+// 電話容錯：客人常常會填 0912-345-678 或帶空格，
+// 原本直接被正則擋掉，其實只是格式不同而已。
+function normalizePhone(raw) {
+  return String(raw || '').replace(/[\s\-()+.]/g, '');
+}
+
 async function submitOrder(e) {
   if (e) e.preventDefault();
+  if (isSubmitting) return;
 
   const nEl = document.getElementById('cust-name');
   const pEl = document.getElementById('cust-phone');
@@ -1130,44 +1140,46 @@ async function submitOrder(e) {
     return;
   }
 
+  if (!isReleasedNow()) {
+    customAlert(`⏳ 商品尚未開賣（${RELEASE.display} 開放），請稍候～`);
+    return;
+  }
+
   if (Object.keys(cart).length === 0 || totalWeight <= 0) {
     customAlert('☝️ 購物車還是空的，請挑選規格！');
     return;
   }
 
   const n = nEl.value.trim();
-  const p = pEl.value.trim();
+  const p = normalizePhone(pEl.value);
   const shippingMethodEl = document.getElementById('shipping-method');
   const shippingMethod = shippingMethodEl ? shippingMethodEl.value : '';
 
-if (!n || !p) {
-  customAlert('☝️請填寫收件人姓名與電話！');
-  return;
-}
-
-if (!/^09\d{8}$/.test(p)) {
-  customAlert('☝️ 請填寫正確的手機號碼格式！\n例如：0912345678');
-  return;
-}
+  if (!n || !p) { customAlert('☝️請填寫收件人姓名與電話！'); return; }
+  if (n.length > 40) { customAlert('☝️ 姓名長度超過限制，請確認填寫內容'); return; }
+  if (!/^09\d{8}$/.test(p)) {
+    customAlert('☝️ 請填寫正確的手機號碼格式！\n例如：0912345678\n（超商取貨與宅配都需要手機才能收到通知）');
+    return;
+  }
+  pEl.value = p; // 順手把格式化後的號碼寫回欄位，讓客人看到我們收到的是什麼
 
   let fullAddress = '';
   if (shippingMethod === 'post' || shippingMethod === 'blackcat') {
     if (!countyEl.value || !districtEl.value) {
       countyEl.classList.add('address-error');
       districtEl.classList.add('address-error');
-      const errorHint = document.getElementById('address-error-hint');
-      if (errorHint) errorHint.style.display = 'block';
+      const hint = document.getElementById('address-error-hint');
+      if (hint) hint.style.display = 'block';
       countyEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    if (!addressDetailEl.value.trim()) {
-      customAlert('☝️請填寫完整宅配地址！');
-      return;
-    }
+    if (!addressDetailEl.value.trim()) { customAlert('☝️請填寫完整宅配地址！'); return; }
+
     countyEl.classList.remove('address-error');
     districtEl.classList.remove('address-error');
-    const errorHint = document.getElementById('address-error-hint');
-    if (errorHint) errorHint.style.display = 'none';
+    const hint = document.getElementById('address-error-hint');
+    if (hint) hint.style.display = 'none';
+
     fullAddress = `${zipcodeEl.value || ''} ${countyEl.value}${districtEl.value}${addressDetailEl.value.trim()}`;
   } else if (shippingMethod === '711') {
     if (!storeEl || !storeEl.value.trim()) {
@@ -1181,39 +1193,48 @@ if (!/^09\d{8}$/.test(p)) {
     return;
   }
 
-  // 🔴 送單前最終防呆：避免「先加購物車、後切換配送方式」繞過限重限制
+  if (fullAddress.length > 120) { customAlert('☝️ 地址長度超過限制，請簡化填寫內容'); return; }
+
   recalcTotalWeight();
-  const weightLimitMap = { post: 10, '711': 7, blackcat: 10 };
-  const weightLimit = weightLimitMap[shippingMethod];
+  const weightLimit = { post: 10, '711': 7, blackcat: 10 }[shippingMethod];
   if (weightLimit && totalWeight > weightLimit) {
-    const methodNameMap = { post: '中華郵政', '711': '7-11', blackcat: '黑貓宅急便' };
-    customAlert(`❌ 目前購物車總重 ${totalWeight} 斤，已超過「${methodNameMap[shippingMethod]}」限重 ${weightLimit} 斤，請調整購買數量或改選其他配送方式！`);
+    const nameMap = { post: '中華郵政', '711': '7-11', blackcat: '黑貓宅急便' };
+    customAlert(`❌ 目前購物車總重 ${totalWeight} 斤，已超過「${nameMap[shippingMethod]}」限重 ${weightLimit} 斤，請調整購買數量或改選其他配送方式！`);
     return;
   }
 
+  isSubmitting = true;
   submitBtn.innerText = '確認庫存中...';
   submitBtn.disabled = true;
 
-  // 🔍 送出前先校對一次最新庫存快照，避免客人畫面資料過期造成白等
-  const stockCheck = await verifyStockBeforeSubmit();
-  if (!stockCheck.ok) {
-    const msgLines = stockCheck.shortages.map(s =>
-      `「${s.displayName} ${s.weight}斤」目前只剩 ${s.avail} 份（您選了 ${s.need} 份）`
-    );
-    customAlert('⚠️ 不好意思，部分品項庫存剛好有異動：\n\n' + msgLines.join('\n') + '\n\n請調整購物車數量後再試一次');
+  const 收尾 = () => {
+    isSubmitting = false;
     submitBtn.disabled = false;
     submitBtn.innerText = '✅ 確認訂購';
+  };
+
+  // 送出前先用最新快照校對一次，避免客人白等 GAS
+  const stockCheck = await verifyStockBeforeSubmit();
+  if (!stockCheck.ok) {
+    const lines = stockCheck.shortages.map(s =>
+      `「${s.displayName} ${s.weight}斤」目前只剩 ${s.avail} 份（您選了 ${s.need} 份）`);
+    isSubmitting = false;
+    trimCartToStock(); // 順手幫客人把數量調整好
+    customAlert('⚠️ 不好意思，部分品項庫存剛好有異動：\n\n' + lines.join('\n') + '\n\n已為您自動調整購物車，請確認後再送出一次');
+    收尾();
     return;
   }
 
   submitBtn.innerText = '處理中...';
-
-  // 🏝️ 保險：送單前用最新地址再算一次運費，確保離島判斷不會用到過期數字
   calculateCartTotal();
 
-  const weightText = Object.values(cart).map(item => `${item.displayName} ${item.weight} 斤 x${item.qty}`);
+  // 🔁 同一筆訂單的重試共用同一組 orderKey。
+  // 逾時情境下客人如果重按送出，後端會辨識出是同一筆、直接回傳成功，
+  // 不會產生第二筆真訂單、也不會重複扣庫存。
+  if (!currentOrderKey) currentOrderKey = makeOrderKey();
 
   const orderData = {
+    orderKey: currentOrderKey,
     cart,
     subtotal: finalSubtotal,
     shippingMethod,
@@ -1224,14 +1245,13 @@ if (!/^09\d{8}$/.test(p)) {
     phone: p,
     address: fullAddress,
     note: orderNoteEl ? orderNoteEl.value : '',
-    weight: weightText.join('，'),
+    weight: Object.values(cart).map(i => `${i.displayName} ${i.weight} 斤 x${i.qty}`).join('，'),
     county: countyEl ? countyEl.value : '',
     district: districtEl ? districtEl.value : ''
   };
 
   currentOrderSummary = orderData;
 
-  // ✅ 改用 fetch 送單（取代原本的 google.script.run）
   try {
     const res = await fetch(GAS_URL, {
       method: 'POST',
@@ -1239,55 +1259,118 @@ if (!/^09\d{8}$/.test(p)) {
       body: JSON.stringify(orderData)
     });
 
-    // ⚡ 先把回應內容當純文字讀出來，再嘗試解析成 JSON。
-    // 尖峰擁擠、或 Google 那端逾時時，有機會回傳一頁 HTML 錯誤頁而不是 JSON，
-    // 這種情況下 res.json() 會丟出很難懂的原始錯誤（例如 Unexpected token '<'）。
-    // 這裡改成自己攔截這種情況，改顯示對客人比較友善、也比較準確的提示：
-    // 因為 GAS 就算連線斷了，背景仍可能已經把訂單寫入完成，
-    // 不能直接跟客人說「失敗」，避免造成誤會或重複下單。
+    // 尖峰擁擠或 Google 端逾時時，有機會回傳一頁 HTML 錯誤頁而不是 JSON。
+    // 這種情況下訂單「有可能已經寫入成功」，不能直接跟客人說失敗。
     const rawText = await res.text();
     let json;
-    try {
-      json = JSON.parse(rawText);
-    } catch (parseErr) {
-      throw new Error('SERVER_TIMEOUT_NON_JSON');
-    }
+    try { json = JSON.parse(rawText); }
+    catch (parseErr) { throw new Error('SERVER_TIMEOUT_NON_JSON'); }
 
     if (!json.success) throw new Error(json.error || '送單失敗');
 
-    // ✅ 下單成功：本地同步扣除庫存快照，避免回首頁/價目表顯示舊庫存
+    // 成功：本地先扣一次，避免回價目表看到舊數字
     const stockMap = window.APP_CONFIG.stockMap || {};
     Object.keys(cart).forEach(key => {
-      if (stockMap[key] !== undefined) {
-        stockMap[key] = Math.max(0, stockMap[key] - cart[key].qty);
-      }
+      if (stockMap[key] !== undefined) stockMap[key] = Math.max(0, stockMap[key] - cart[key].qty);
     });
 
-    // ✅ 清空購物車，避免下次進訂購頁殘留舊品項
     cart = {};
     totalWeight = 0;
+    currentOrderKey = null; // 這筆已完成，下一筆要用新的識別碼
 
-    submitBtn.disabled = false;
-    submitBtn.innerText = '✅ 確認訂購';
+    收尾();
     goToStep(5);
+
   } catch (err) {
     if (err.message === 'SERVER_TIMEOUT_NON_JSON') {
-      // ⚡ 系統回應逾時的特殊情況：訂單很可能已經在後台成功寫入，
-      // 所以不要跟客人說「失敗」，改提醒他先不要重複下單，直接聯繫確認即可。
-      customAlert('⚠️ 系統回應較慢，暫時無法確認結果。\n\n您的訂單「有可能已經送出成功」，請先不要重複下單，可透過 LINE 或電話與我們確認訂單狀態，謝謝您的耐心 🙏');
+      // ⚠️ 這裡刻意「不」清掉 currentOrderKey：
+      // 客人如果再按一次，後端會用同一組識別碼辨識出是同一筆，直接回成功，
+      // 不會變成兩筆訂單。所以現在可以放心請他重試。
+      customAlert('⚠️ 系統回應較慢，暫時無法確認結果。\n\n您可以「再按一次確認訂購」，系統會自動辨識、不會重複下單。\n若仍然失敗，請透過 LINE 或電話與我們確認，謝謝您的耐心 🙏');
     } else {
+      currentOrderKey = null; // 這是明確的失敗（例如庫存不足），下次是新的一筆
       customAlert(err.message || '送單失敗，請稍後再試');
-      // 📺 GAS 端最終核對被拒絕（通常是極端狀況：校對時還夠、送出瞬間被搶走），
-      // 順手立刻刷新一次畫面，讓客人馬上看到準確的最新庫存，不用等下一輪背景更新。
       refreshStockFromSnapshot();
     }
-    submitBtn.disabled = false;
-    submitBtn.innerText = '✅ 確認訂購';
+    收尾();
   }
 }
 
+async function verifyStockBeforeSubmit() {
+  try {
+    const json = await fetchSnapshot(CONFIG_JSON_URL);
+    const rawStock = json.data['庫存'] || {};
+
+    const latest = {};
+    Object.keys(rawStock).forEach(k => { latest[normKey(k)] = Math.max(0, Number(rawStock[k]) || 0); });
+    window.APP_CONFIG.stockMap = latest;
+
+    const shortages = [];
+    Object.keys(cart).forEach(key => {
+      const need = cart[key].qty;
+      const avail = latest[key] !== undefined ? latest[key] : 0;
+      if (avail < need) {
+        shortages.push({ displayName: cart[key].displayName, weight: cart[key].weight, need, avail });
+      }
+    });
+
+    return { ok: shortages.length === 0, shortages };
+  } catch (err) {
+    // 校對本身出錯（網路不穩）不要卡住客人，交給 GAS 做最終核對
+    return { ok: true };
+  }
+}
+
+
 // ========================================
-// 通用工具函式
+// ✅ 成功頁
+// ========================================
+function renderSuccessPage() {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val || ''; };
+  set('bank-val', window.APP_CONFIG.bankName);
+  set('account-val', window.APP_CONFIG.bankAcc);
+  set('name-val', window.APP_CONFIG.bankUser);
+  set('lp-announcement', window.APP_CONFIG.linePayMsg);
+
+  if (window.APP_CONFIG.linePayImgId) {
+    const qr = document.getElementById('lp-qrcode');
+    if (qr) qr.src = resolveImageUrl(window.APP_CONFIG.linePayImgId, 500);
+  }
+
+  set('final-amount-display', '$' + finalTotal + ' 元');
+
+  if (!currentOrderSummary) return;
+  const o = currentOrderSummary;
+
+  document.getElementById('order-summary-content').innerHTML = `
+    <div class="order-summary-list">
+      <div class="order-summary-row"><span class="label">📦 規格細項</span><span class="value js-summary-weight"></span></div>
+      <div class="order-summary-row"><span class="label">🚚 配送方式</span><span class="value js-summary-shipping"></span></div>
+      <div class="order-summary-row"><span class="label">🏠 收件地址(門市)</span><span class="value js-summary-address"></span></div>
+      <div class="order-summary-row"><span class="label">💰 商品小計</span><span class="value">$${o.subtotal}</span></div>
+      <div class="order-summary-row"><span class="label">🚛 運費</span><span class="value">$${o.shippingFee}</span></div>
+    </div>`;
+
+  const weightContainer = document.querySelector('.js-summary-weight');
+  if (weightContainer) {
+    weightContainer.innerHTML = String(o.weight || '').split('，').map(i => `<div>${i}</div>`).join('');
+  }
+
+  const shippingEl = document.querySelector('.js-summary-shipping');
+  if (shippingEl) {
+    shippingEl.textContent = { post: '中華郵政配送', '711': '7-11超商配送', blackcat: '黑貓宅急便配送' }[o.shippingMethod] || '';
+  }
+
+  const addressEl = document.querySelector('.js-summary-address');
+  if (addressEl) addressEl.textContent = o.shipping || o.address || '';
+
+  const rawMsg = window.APP_CONFIG.successMsg || '謝謝您支持，下單成功！';
+  document.getElementById('success-reminder-msg').innerHTML = `<div class="success-warm-text">${rawMsg}</div>`;
+}
+
+
+// ========================================
+// 🔧 通用工具
 // ========================================
 function customAlert(msg) {
   const overlay = document.getElementById('custom-alert-overlay');
@@ -1295,47 +1378,10 @@ function customAlert(msg) {
   if (overlay && msgText) { msgText.innerText = msg; overlay.style.display = 'flex'; }
 }
 
-// ========================================
-// 🔍 送出訂單前先校對庫存（方向一）
-// 送出訂單前，先重新讀一次靜態快照最新的庫存數字，跟購物車裡的數量比對，
-// 如果快照更新有落差、數量不夠了，就在送出前先攔下來提醒客人，
-// 不用等到打去 GAS 才發現，體感速度會快很多。
-// 這個校對本身失敗（例如網路問題）不會卡住下單流程，直接放行，
-// 交給 GAS 送單當下做最終、最準確的核對。
-// ========================================
-async function verifyStockBeforeSubmit() {
-  try {
-    const res = await fetch(CONFIG_JSON_URL + '?t=' + Date.now());
-    if (!res.ok) return { ok: true };
-    const json = await res.json();
-    if (!json.success) return { ok: true };
-
-    const rawStock = json.data['庫存'] || {};
-    applyLatestStockMap(rawStock); // 📺 順便同步畫面，不只是拿來做內部判斷
-    const latestStockMap = window.APP_CONFIG.stockMap;
-
-    const shortages = [];
-    Object.keys(cart).forEach(key => {
-      const need = cart[key].qty;
-      const avail = latestStockMap[key] !== undefined ? latestStockMap[key] : 0;
-      if (avail < need) {
-        shortages.push({
-          displayName: cart[key].displayName,
-          weight: cart[key].weight,
-          need,
-          avail
-        });
-      }
-    });
-
-    return { ok: shortages.length === 0, shortages };
-  } catch (err) {
-    // 校對本身出錯（例如網路不穩），不要卡住客人下單，直接放行
-    return { ok: true };
-  }
+function closeAlert() {
+  const el = document.getElementById('custom-alert-overlay');
+  if (el) el.style.display = 'none';
 }
-
-function closeAlert() { document.getElementById('custom-alert-overlay').style.display = 'none'; }
 
 function showLightbox(s) {
   document.getElementById('lightbox-img').src = s;
@@ -1348,19 +1394,19 @@ function switchPayment(type) {
   const optLine = document.getElementById('opt-linepay');
   const contentBank = document.getElementById('content-bank');
   const contentLine = document.getElementById('content-linepay');
-  if (type === 'bank') {
-    bg.style.transform = 'translateX(0)';
-    optBank.classList.add('active'); optLine.classList.remove('active');
-    contentBank.classList.add('active'); contentLine.classList.remove('active');
-  } else {
-    bg.style.transform = 'translateX(100%)';
-    optBank.classList.remove('active'); optLine.classList.add('active');
-    contentBank.classList.remove('active'); contentLine.classList.add('active');
-  }
+
+  const isBank = (type === 'bank');
+  bg.style.transform = isBank ? 'translateX(0)' : 'translateX(100%)';
+  optBank.classList.toggle('active', isBank);
+  optLine.classList.toggle('active', !isBank);
+  contentBank.classList.toggle('active', isBank);
+  contentLine.classList.toggle('active', !isBank);
 }
 
+// confetti 是第三方 CDN 且用 defer 載入，掛掉時原本會丟 ReferenceError
 function fireConfetti() {
-  var end = Date.now() + 2000;
+  if (typeof confetti !== 'function') return;
+  const end = Date.now() + 2000;
   (function frame() {
     confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0, y: 0.8 } });
     confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1, y: 0.8 } });
@@ -1369,7 +1415,7 @@ function fireConfetti() {
 }
 
 function handleLineJump() {
-  const targetUrl = (window.paymentConfig && window.paymentConfig['跳轉按鈕連結']) || '';
-  if (targetUrl.trim().startsWith('http')) { window.open(targetUrl.trim(), '_blank'); }
-  else { customAlert('✨ 感謝您的訂購！\n請手動回報匯款唷～ ✨'); }
+  const targetUrl = String(cfgGet(window.paymentConfig, '跳轉按鈕連結') || '').trim();
+  if (targetUrl.startsWith('http')) window.open(targetUrl, '_blank');
+  else customAlert('✨ 感謝您的訂購！\n請手動回報匯款唷～ ✨');
 }
