@@ -12,9 +12,12 @@
       gtag('config', 'G-99EP460CDY');
     </script>
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- ⚡ 拿掉 maximum-scale / user-scalable=no：
+         原本會擋掉雙指縮放，長輩客人看不清楚時沒辦法放大
+         （而且 iOS Safari 其實會直接忽略它，等於只懲罰了 Android 使用者） -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- 🥑 分頁小圖示（favicon），直接用表情符號製作，不用另外準備圖片檔 -->
+    <!-- 🥑 分頁小圖示 -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🥑</text></svg>">
 
     <!-- 🖋️ 標題字體：Huninn（粉圓）／內文字體：Noto Sans TC -->
@@ -22,7 +25,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Huninn&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 
-    <!-- ⚡ 效能：提早跟圖片主機、GAS API 主機建立連線，減少之後真正抓取資料/圖片的等待時間 -->
     <link rel="preconnect" href="https://lh3.googleusercontent.com">
     <link rel="preconnect" href="https://script.google.com">
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
@@ -35,8 +37,6 @@
     <meta property="og:image" content="https://drive.google.com/uc?id=1_zOYoU-RQvGc-JOSDkDNa4tRMv5-R_rj" />
     <meta property="og:url" content="https://probroavocado.com/" />
     <meta property="og:type" content="website" />
-
-    <!-- X / Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
 
     <title>波波酪梨｜線上訂購</title>
@@ -44,8 +44,6 @@
   </head>
 
   <body>
-
-    <!-- ✅ 資料由 script.js 啟動時向 GAS API fetch，填入 window.APP_CONFIG -->
 
     <div class="main-wrapper">
 
@@ -56,6 +54,12 @@
              referrerpolicy="no-referrer"
              onerror="this.parentElement.style.display='none';">
       </div>
+
+      <!-- 🕐 開賣倒數橫幅：尚未開賣時顯示，時間一到自動消失並解鎖商品 -->
+      <div id="release-banner" class="release-banner" style="display:none;"></div>
+
+      <!-- ⚠️ 快照過期柔性提示：GITHUB_TOKEN 過期或觸發器停擺時會出現 -->
+      <div id="stale-warning" class="stale-warning" style="display:none;"></div>
 
       <div class="app-container" style="border-radius: 30px;">
 
@@ -175,10 +179,12 @@
     <p><strong>🚚 1. 配送方式選擇</strong></p>
     <div class="hint-warm-text" id="shipping-note"></div>
 
-    <select id="shipping-method" onchange="handleShippingChange(); updateAddressSection();">
+    <!-- ⚡ 拿掉 onchange：原本 HTML 的 onchange 跟 script.js 的 addEventListener
+         同時存在，每次切換配送方式整個流程會跑兩遍。改成只由 JS 綁定一次。 -->
+    <select id="shipping-method">
       <option value="" selected disabled>--- 請選擇配送方式 ---</option>
       <option value="post" id="opt-post">📫 中華郵政 (限重10斤內)</option>
-      <option value="711" id="opt-711">🏪 7-11 超商取件 ($80 / 限重7斤內)</option>
+      <option value="711" id="opt-711">🏪 7-11 超商取件 (限重7斤內)</option>
       <option value="blackcat" id="opt-blackcat">🐈‍⬛ 黑貓宅配 (限重10斤內)</option>
     </select>
 
@@ -219,14 +225,14 @@
   <!-- 訂購資料填寫 -->
   <div class="info-block">
     <p><strong>👤 收件人姓名</strong></p>
-    <input type="text" id="cust-name" placeholder="請輸入姓名">
+    <input type="text" id="cust-name" placeholder="請輸入姓名" maxlength="40">
 
     <p style="margin-top: 20px;"><strong>📞 連絡電話</strong></p>
-    <input type="tel" id="cust-phone" placeholder="請輸入手機號碼" inputmode="numeric">
+    <input type="tel" id="cust-phone" placeholder="請輸入手機號碼" inputmode="numeric" maxlength="20">
 
     <div id="store-address-section" style="display:none;">
       <p style="margin-top: 20px;"><strong>🏪 7-11 取件門市</strong></p>
-      <input type="text" id="store-name" placeholder="請填寫 7-11 門市名稱或門市編號">
+      <input type="text" id="store-name" placeholder="請填寫 7-11 門市名稱或門市編號" maxlength="60">
     </div>
 
     <div id="post-address-section" style="display:none;">
@@ -248,11 +254,11 @@
       <div id="island-shipping-hint" class="hint-warm-text" style="display:none; margin-bottom: 10px;">
         🏝️ 您選擇的地區屬於離島，運費將依離島價格計算
       </div>
-      <input type="text" id="delivery-address" placeholder="請輸入詳細道路、巷弄、號樓">
+      <input type="text" id="delivery-address" placeholder="請輸入詳細道路、巷弄、號樓" maxlength="100">
     </div>
 
     <p style="margin-top: 20px;"><strong>✨ 小小許願區 (備註)</strong></p>
-    <textarea id="order-note" placeholder="如欲購買同地址、兩箱(含)以上&#10;請與我們聯繫~" style="min-height: 100px; width: 100%; box-sizing: border-box;"></textarea>
+    <textarea id="order-note" maxlength="300" placeholder="如欲購買同地址、兩箱(含)以上&#10;請與我們聯繫~" style="min-height: 100px; width: 100%; box-sizing: border-box;"></textarea>
   </div>
 
   <div class="button-group">
