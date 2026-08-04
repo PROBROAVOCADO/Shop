@@ -3,6 +3,12 @@
 // ========================================
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwbkKqipfPrimFs7-d6ZorySDv0g5yhq_vbGGp2xmWZm2diNsblTfMjwP8kz-Hx9iRDTQ/exec';
 
+// ⚡ 靜態快照網址：進站讀取設定/庫存改成讀這個檔案，不再打 GAS，
+// 避開 GAS 帳號等級的同時執行數上限。這個檔案由 code.gs 的
+// publishConfigSnapshot() 定期（或每次下單成功後）自動更新。
+// 送出訂單（submitOrder）仍然照舊打 GAS_URL，因為扣庫存必須現場核對。
+const CONFIG_JSON_URL = 'https://probroavocado.com/data/config.json'; // ⚡ 改用你的自訂網域（CNAME 已指向 Shop 這個 repo）
+
 // ========================================
 // 🌟 核心變數與狀態
 // ========================================
@@ -69,9 +75,12 @@ async function fetchConfigWithRetry(maxAttempts = 3, baseDelayMs = 1500) {
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const res = await fetch(GAS_URL + '?action=getConfig');
+      // ⚡ 改讀 GitHub Pages 上的靜態快照，不再打 GAS。
+      // 網址加上 ?t=時間戳，避免瀏覽器把舊版本的檔案快取住，每次都拿到最新內容。
+      const res = await fetch(CONFIG_JSON_URL + '?t=' + Date.now());
+      if (!res.ok) throw new Error('快照讀取失敗，狀態碼 ' + res.status);
       const json = await res.json();
-      if (!json.success) throw new Error('GAS 回傳失敗');
+      if (!json.success) throw new Error('快照格式不正確');
       return json;
     } catch (err) {
       lastError = err;
