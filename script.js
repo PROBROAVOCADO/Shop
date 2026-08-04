@@ -7,7 +7,7 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbwbkKqipfPrimFs7-d6Zory
 // 避開 GAS 帳號等級的同時執行數上限。這個檔案由 code.gs 的
 // publishConfigSnapshot() 定期（或每次下單成功後）自動更新。
 // 送出訂單（submitOrder）仍然照舊打 GAS_URL，因為扣庫存必須現場核對。
-const CONFIG_JSON_URL = 'https://raw.githubusercontent.com/PROBROAVOCADO/Shop/main/data/config.json'; // ⚡ 改用這個網址，不用等 GitHub Pages 重新部署，幾乎即時反映最新內容
+const CONFIG_JSON_URL = 'https://probroavocado.com/data/config.json'; // ⚡ 改回這個網址：raw.githubusercontent.com 的快取無法被查詢字串繞過，反而更不可靠
 
 // ========================================
 // 🌟 核心變數與狀態
