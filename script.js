@@ -1122,7 +1122,21 @@ if (!/^09\d{8}$/.test(p)) {
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(orderData)
     });
-    const json = await res.json();
+
+    // ⚡ 先把回應內容當純文字讀出來，再嘗試解析成 JSON。
+    // 尖峰擁擠、或 Google 那端逾時時，有機會回傳一頁 HTML 錯誤頁而不是 JSON，
+    // 這種情況下 res.json() 會丟出很難懂的原始錯誤（例如 Unexpected token '<'）。
+    // 這裡改成自己攔截這種情況，改顯示對客人比較友善、也比較準確的提示：
+    // 因為 GAS 就算連線斷了，背景仍可能已經把訂單寫入完成，
+    // 不能直接跟客人說「失敗」，避免造成誤會或重複下單。
+    const rawText = await res.text();
+    let json;
+    try {
+      json = JSON.parse(rawText);
+    } catch (parseErr) {
+      throw new Error('SERVER_TIMEOUT_NON_JSON');
+    }
+
     if (!json.success) throw new Error(json.error || '送單失敗');
 
     // ✅ 下單成功：本地同步扣除庫存快照，避免回首頁/價目表顯示舊庫存
@@ -1141,7 +1155,13 @@ if (!/^09\d{8}$/.test(p)) {
     submitBtn.innerText = '✅ 確認訂購';
     goToStep(5);
   } catch (err) {
-    customAlert(err.message || '送單失敗，請稍後再試');
+    if (err.message === 'SERVER_TIMEOUT_NON_JSON') {
+      // ⚡ 系統回應逾時的特殊情況：訂單很可能已經在後台成功寫入，
+      // 所以不要跟客人說「失敗」，改提醒他先不要重複下單，直接聯繫確認即可。
+      customAlert('⚠️ 系統回應較慢，暫時無法確認結果。\n\n您的訂單「有可能已經送出成功」，請先不要重複下單，可透過 LINE 或電話與我們確認訂單狀態，謝謝您的耐心 🙏');
+    } else {
+      customAlert(err.message || '送單失敗，請稍後再試');
+    }
     submitBtn.disabled = false;
     submitBtn.innerText = '✅ 確認訂購';
   }
