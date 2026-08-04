@@ -999,7 +999,7 @@ let stockRefreshTimer = null;
 
 function startStockAutoRefresh() {
   if (stockRefreshTimer) return; // 已經在跑就不要重複啟動
-  stockRefreshTimer = setInterval(refreshStockFromSnapshot, 5000); // ⚡ 從30秒調整為5秒，搶購激烈時畫面更貼近即時
+  stockRefreshTimer = setInterval(refreshStockFromSnapshot, 2000); // ⚡ 從30秒調整為5秒，搶購激烈時畫面更貼近即時
 }
 
 async function refreshStockFromSnapshot() {
