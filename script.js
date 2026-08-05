@@ -736,20 +736,31 @@ function renderProductList() {
 function renderPriceMenu() {
   const container = document.getElementById('price-menu-container');
   if (!container) return;
-
   const cfg = (window.APP_CONFIG && window.APP_CONFIG.orderConfig) || {};
   const released = isReleasedNow();
 
   const 區塊 = (title, 優級, 次級) => {
-    const 列 = cat => cat.weights.map(w => {
-      const price = cfgNum(cfg, cat.priceKey) * w;
-      const key = stockKeyOf(cat.name, w);
-      return `<div class="price-row">
-        <div class="price-col weight">${w} 斤裝</div>
-        <div class="price-col amount">$${price}</div>
-        <div class="price-col stock" id="pm-stock-${key}">${priceMenuStockText(key, released)}</div>
-      </div>`;
-    }).join('');
+    const 列 = cat => {
+      const 單價 = cfgNum(cfg, cat.priceKey);
+
+      // 🌱 單價為 0 = 非產季未販售：不顯示金額，只標示狀態
+      if (單價 <= 0) {
+        return cat.weights.map(w => `<div class="price-row">
+          <div class="price-col weight">${w} 斤裝</div>
+          <div class="price-col amount">—</div>
+          <div class="price-col stock unreleased-badge">🌱 非產季</div>
+        </div>`).join('');
+      }
+
+      return cat.weights.map(w => {
+        const key = stockKeyOf(cat.name, w);
+        return `<div class="price-row">
+          <div class="price-col weight">${w} 斤裝</div>
+          <div class="price-col amount">$${單價 * w}</div>
+          <div class="price-col stock" id="pm-stock-${key}">${priceMenuStockText(key, released)}</div>
+        </div>`;
+      }).join('');
+    };
 
     return `
       <div class="info-block price-info">
@@ -785,7 +796,14 @@ function renderPriceMenu() {
 }
 
 function priceMenuStockText(key, released) {
+  // 非產季的列沒有 pm-stock- 的 id，不會走到這裡；
+  // 但背景更新時仍可能被呼叫，這裡多一道保險。
+  const cfg = (window.APP_CONFIG && window.APP_CONFIG.orderConfig) || {};
+  const cat = 商品分類.find(c => c.weights.some(w => stockKeyOf(c.name, w) === key));
+  if (cat && cfgNum(cfg, cat.priceKey) <= 0) return '🌱 非產季';
+
   if (!released) return '⏳ 未開賣';
+
   const stockMap = (window.APP_CONFIG && window.APP_CONFIG.stockMap) || {};
   const count = Math.max(0, (stockMap[key] || 0) - ((cart[key] && cart[key].qty) || 0));
   return count > 0 ? `（剩 ${count} 份）` : '（售罄）';
