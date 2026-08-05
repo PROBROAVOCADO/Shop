@@ -685,8 +685,8 @@ function renderProductList() {
 
   let html = '';
   商品分類.forEach(cat => {
-     // 單價為 0 = 非產季未販售，整組不顯示
-    if (cfgNum(cfg, cat.priceKey) <= 0) return;
+    const 單價 = cfgNum(cfg, cat.priceKey);
+    const 非產季 = 單價 <= 0;
     const displayName = displayNameMap[cat.name] || cat.name;
     html += `<div class="product-group-label">🥑 ${displayName}</div>`;
 
@@ -697,6 +697,15 @@ function renderProductList() {
       const currentQty = (cart[key] && cart[key].qty) || 0;
       const remaining = Math.max(0, availableStock - currentQty);
 
+      if (非產季) {
+        html += `
+          <div class="price-row">
+            <div class="price-col weight">${w} 斤裝</div>
+            <div class="price-col stock unreleased-badge">🌱 非產季</div>
+          </div>`;
+        return;
+      }
+       
       if (!released) {
         html += `
           <div class="price-row">
