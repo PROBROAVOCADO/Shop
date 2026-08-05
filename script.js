@@ -459,7 +459,7 @@ function startReleaseTicker() {
       renderProductList();
       renderPriceMenu();
       if (nowReleased) {
-        customAlert('🎉 開賣囉！商品已經可以選購，祝您順利下單～');
+        customAlert('🎉 開賣囉！商品已可以選購～');
         refreshRealtime(); // 立刻抓一次最新庫存
       }
     }
@@ -895,7 +895,7 @@ function updateCart(key, deltaQty, weight, displayName) {
   if (!cart[key] && deltaQty <= 0) return;
 
   if (!isReleasedNow()) {
-    customAlert('⏳ 商品尚未開賣，請稍候一下～');
+    customAlert('⏳ 商品尚未開賣，請稍候...');
     return;
   }
 
@@ -1370,7 +1370,7 @@ function handleOrderEnter() {
     return;
   }
   if (orderSwitch === '關') {
-    customAlert('目前為停止採收期，暫停接單中 🌱\n\n我們會於開放時第一時間公告，感謝您的體諒！');
+    customAlert('目前暫停接單中 🌱\n\n我們會於開放時第一時間公告，感謝您的體諒！');
     return;
   }
   goToStep(2);
