@@ -28,6 +28,8 @@
     <link rel="preconnect" href="https://lh3.googleusercontent.com">
     <link rel="preconnect" href="https://script.google.com">
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://www.gstatic.com">
+    <link rel="preconnect" href="https://probro-stock-default-rtdb.asia-southeast1.firebasedatabase.app">
 
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js" defer></script>
 
@@ -379,6 +381,11 @@
 
       </div><!-- end app-container -->
     </div><!-- end main-wrapper -->
+
+    <!-- 🔥 Firebase 即時庫存 SDK（compat 版本，提供全域 firebase 物件）
+         必須放在 script.js 之前載入 -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
     <script src="script.js"></script>
   </body>
