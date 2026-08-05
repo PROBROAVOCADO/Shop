@@ -1,15 +1,21 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08 穩定度強化版
+ * 版本：2026-08 Firebase 控制節點版 (v4)
  *
- * 本次主要修正：
- *  #1  開賣瞬間自動解鎖（原本背景更新只換庫存、沒換上架狀態，
- *      客人必須手動重新整理才看得到商品——搶購時最致命的一個）
- *  #6  輪詢改用 ETag/304 + 內容比對，不再用 ?t= 打穿 CDN 快取；
- *      間隔 8 秒，且內容沒變時完全不動 DOM（消除按鈕被吃掉的 jank）
- *  #9  快照連不上時退回打 GAS 備援端點，不再整頁變錯誤畫面
- *  另：庫存下降時自動修正購物車、重複下單保護、電話格式容錯、
- *      快照過期柔性提示、confetti 防呆
+ * 本次主要改動：
+ *  A1  Firebase 推播加上 dataAt 新鮮度比對，舊資料一律丟棄
+ *      （秒殺尾聲最容易出現亂序推播，客人會看到已售完的品項還有貨）
+ *  A2  成功頁金額改用後端實際成交金額，保證跟試算表與 PDF 一致
+ *      設定輪詢改為套用整份設定，價格不再凍在載入那一刻
+ *  A5  上架時間全部改吃後端算好的絕對時間戳（後端已改成明確時區）
+ *  D1  applyReleaseStatus 不再重設 lastKnown，開賣狀態轉換只由 ticker 負責
+ *      （舊版快照輪詢與 ticker 搶著決定，開賣那一秒有機率不解鎖）
+ *  D3  送單期間收到的推播先暫存，送完再套用，不再中途改動購物車
+ *
+ * 📝 資料來源分工（依「變動速度」而非「資料種類」）
+ *   即時層 → Firebase control 節點：庫存、上架時間、訂單開關、配送開關
+ *   靜態層 → GitHub 快照：品種、圖片、公告、匯款、價格運費表，兼冷啟動與備援
+ *   權威層 → GAS：下單當下的最終覆核，錢與庫存只認這一層
  *************************************************************/
 
 // ========================================
@@ -19,25 +25,13 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbwbkKqipfPrimFs7-d6Zory
 const CONFIG_JSON_URL  = 'https://probroavocado.com/data/config.json';
 const ADDRESS_JSON_URL = 'https://probroavocado.com/data/address.json';
 
-// 🔥 Firebase 即時庫存（唯讀，這個網址本來就是公開資訊）
+// 🔥 Firebase 即時控制節點（唯讀，這個網址本來就是公開資訊）
 const FIREBASE_DB_URL = 'https://probro-stock-default-rtdb.asia-southeast1.firebasedatabase.app';
+const FIREBASE_CONTROL_PATH = 'control';
 
 const POLL_MS_FAST = 8000;    // Firebase 沒連上時：靠輪詢快照，8 秒一次
-const POLL_MS_SLOW = 60000;   // Firebase 正常時：庫存走推播，快照只需慢慢確認其他設定
+const POLL_MS_SLOW = 60000;   // Firebase 正常時：即時層走推播，快照只需慢慢確認靜態內容
 const SNAPSHOT_STALE_MIN = 60;// 快照超過幾分鐘沒更新就顯示柔性提示
-
-/* 📝 資料來源分工
-   庫存數字   → Firebase 即時推播（1 秒內同步，沒變動時零流量）
-   其他全部   → GitHub 靜態快照（品種、價格、公告、上架時間，本來就不常變）
-
-   為什麼庫存要獨立出來？
-   快照的更新鏈是：下單 → 背景工人(最多60秒) → GitHub commit
-   → Pages 重新建置(20~60秒) → CDN 生效，實際延遲 1~2 分鐘。
-   搶購尾聲時所有品項幾乎同時歸零，畫面卻整片還顯示「剩 3、剩 5」，
-   客人只能一格一格點才發現全沒了 —— 這是最傷體驗的場景。
-
-   Firebase 連不上時會自動退回輪詢快照，站台不會掛，
-   只是庫存回到 1~2 分鐘的延遲（也就是導入 Firebase 之前的狀態）。   */
 
 
 // ========================================
@@ -52,15 +46,30 @@ var isSubmitting = false;
 var currentOrderKey = null;      // 同一筆訂單的重試共用同一組，防止重複下單
 var lastSnapshotStamp = null;    // 內容比對用
 var configLoaded = false;
-var firebaseLive = false;        // Firebase 是否連線中（決定庫存資料要信誰）
+var firebaseLive = false;        // Firebase 是否連線中（決定即時層資料要信誰）
+
+// 🔑 A1：目前手上這份即時層資料的新鮮度。
+// 只接受 dataAt 比它更大的推播，比較舊的一律丟掉。
+// 注意這是「資料被讀出來的時間」，不是「推播送達的時間」——
+// 網路亂序時，先到的不一定比較新。
+var lastControlDataAt = 0;
+
+// 🔑 D3：送單期間收到的推播先存這裡，送完再套用。
+// 舊版 Firebase 回呼會直接改動購物車，客人按下送出的當下購物車被動到，
+// 雖然送出的 body 已經序列化不受影響，但畫面會跳、體驗很差。
+var pendingControl = null;
 
 // 🏝️ 台灣離島判定
 const 離島縣市 = ['澎湖縣', '金門縣', '連江縣'];
 const 離島鄉鎮 = ['綠島鄉', '蘭嶼鄉', '琉球鄉'];
 
-// 🕐 上架狀態（由快照提供絕對時間戳，前端自行倒數）
+// 🕐 上架狀態（後端提供絕對時間戳，前端自行倒數）
 const RELEASE = { at: null, display: '', lastKnown: true };
 var serverClockOffset = 0; // 伺服器時間 - 本機時間
+
+// 🚦 開關狀態（即時層）
+var orderSwitch = '開';
+var shippingSwitch = { post: '', '711': '', blackcat: '' };
 
 
 // ========================================
@@ -140,14 +149,16 @@ function stockKeyOf(catName, weight) {
   return normKey(catName + '-' + weight);
 }
 
+const 限重表 = { post: 10, '711': 7, blackcat: 10 };
+const 配送名稱 = { post: '中華郵政', '711': '7-11', blackcat: '黑貓宅急便' };
+const 配送顯示名 = { post: '中華郵政配送', '711': '7-11超商配送', blackcat: '黑貓宅急便配送' };
+
 
 // ========================================
 // 📡 抓取快照
 // ========================================
 
 // 用標準快取驗證（cache: 'no-cache' = 一定跟伺服器確認，但沒變動時只回 304）。
-// 原本每次都加 ?t=Date.now()，等於每個請求都是全新網址、完全繞過 CDN，
-// 200 人同時在線就是 100 req/s 全部打到源站，而且每次都回傳完整設定（含品種介紹全文）。
 async function fetchSnapshot(url) {
   const res = await fetch(url, { cache: 'no-cache' });
   if (!res.ok) throw new Error('快照讀取失敗，狀態碼 ' + res.status);
@@ -163,6 +174,16 @@ async function fetchSnapshot(url) {
     serverClockOffset = Number(json.serverNow) - Date.now();
   }
 
+  return json;
+}
+
+// 🔥 Firebase REST 備援：SDK 連不上時，用一般 HTTPS 抓即時層。
+// 這條路徑不佔用 realtime 的同時連線數，成本也極低（單次約 1 KB）。
+async function fetchControlViaRest() {
+  const res = await fetch(`${FIREBASE_DB_URL}/${FIREBASE_CONTROL_PATH}.json`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('控制節點讀取失敗，狀態碼 ' + res.status);
+  const json = await res.json();
+  if (!json || !json.json) throw new Error('控制節點內容為空');
   return json;
 }
 
@@ -188,7 +209,7 @@ async function fetchConfigWithRetry(maxAttempts = 3, baseDelayMs = 1500) {
   }
 
   // 🛟 最後的備援：快照整個掛掉時，退回直接打 GAS。
-  // 速度慢一點、也吃 GAS 的同時執行數，但至少站是活的，不會整頁變錯誤畫面。
+  // 速度慢一點、也吃 GAS 的同時執行數，但至少站是活的。
   console.warn('靜態快照連續失敗，改用 GAS 備援端點');
   try {
     const msgEl = document.getElementById('loading-msg');
@@ -242,7 +263,6 @@ window.onload = async function () {
 
     window.APP_CONFIG = {
       mainTitle:    cfgGet(cfg['首頁'], '網頁大標題') || '波波酪梨',
-      orderSwitch:  cfgGet(cfg['首頁'], '訂單開關') || '開',
       bankName:     cfgGet(cfg['匯款'], '匯款銀行') || '',
       bankAcc:      cfgGet(cfg['匯款'], '匯款帳號') || '',
       bankUser:     cfgGet(cfg['匯款'], '戶名') || '',
@@ -258,9 +278,24 @@ window.onload = async function () {
     window.allVarieties = cfg['品種'] || [];
     window.paymentConfig = cfg['匯款'] || {};
 
+    // 冷啟動：先用快照把即時層填起來，Firebase 連上後會立刻被更新的資料取代。
+    // dataAt 用 0，代表「最舊」，所以任何一次推播都會贏過它。
     applyReleaseStatus(cfg['上架狀態']);
+    applySwitches(
+      cfgGet(cfg['首頁'], '訂單開關') || '開',
+      {
+        post:     cfgGet(cfg['訂購'], '中華郵政配送'),
+        '711':    cfgGet(cfg['訂購'], '7-11超取配送'),
+        blackcat: cfgGet(cfg['訂購'], '黑貓配送')
+      }
+    );
+
+    // 🔑 D1：初始化時設定一次基準，之後 lastKnown 只由 ticker 更新。
+    RELEASE.lastKnown = isReleasedNow();
+
     applySnapshotStamp(json);
     applyConfigToPage(cfg);
+    applyStaticTables(cfg['訂購'] || {});
 
     // 庫存 key 統一去空格
     window.APP_CONFIG.stockMap = {};
@@ -269,37 +304,7 @@ window.onload = async function () {
       window.APP_CONFIG.stockMap[normKey(k)] = Math.max(0, Number(rawStock[k]) || 0);
     });
 
-    const data = window.APP_CONFIG.orderConfig || {};
-
-    價格表 = {
-      '當季酪梨(隨機出貨)【優級】': cfgNum(data, '當季酪梨( 隨機出貨 )【優級】單價'),
-      '當季酪梨(隨機出貨)【次級】': cfgNum(data, '當季酪梨( 隨機出貨 )【次級】單價'),
-      '平克頓/哈斯【優級】':        cfgNum(data, '平克頓/哈斯【優級】單價'),
-      '平克頓/哈斯【次級】':        cfgNum(data, '平克頓/哈斯【次級】單價')
-    };
-
-    運費表 = {
-      郵寄小: cfgNum(data, '郵寄七斤(不含)以下'),
-      郵寄大: cfgNum(data, '郵寄七斤(包含)以上'),
-      '711運費': cfgNum(data, '711運費'),
-      黑貓小: cfgNum(data, '黑貓配送七斤(不含)以下'),
-      黑貓大: cfgNum(data, '黑貓配送七斤(包含)以上'),
-      郵寄離島小: cfgNum(data, '郵寄離島七斤(不含)以下'),
-      郵寄離島大: cfgNum(data, '郵寄離島七斤(包含)以上'),
-      黑貓離島小: cfgNum(data, '黑貓配送離島七斤(不含)以下'),
-      黑貓離島大: cfgNum(data, '黑貓配送離島七斤(包含)以上')
-    };
-
-    // ⚠️ 價格全 0 通常代表試算表的 key 被動到（多打/少打空格）。
-    // 這種情況下前後端會「一致地」都算成 0 元，後端覆核完全失效，
-    // 所以這裡直接把訂購入口鎖住，而不是讓客人下 0 元訂單。
-    const 有效價格數 = Object.values(價格表).filter(v => v > 0).length;
-    if (有效價格數 === 0) {
-      console.error('價格設定全部為 0，已鎖定訂購入口');
-      window.APP_CONFIG.priceConfigBroken = true;
-    }
-
-    renderOrderCardImages(data);
+    renderOrderCardImages(window.APP_CONFIG.orderConfig);
 
     renderProductList();
     renderVarieties();
@@ -307,16 +312,11 @@ window.onload = async function () {
     initAddressSelector();
     initShippingAddressToggle();
     updateReleaseBanner();
-
-    const btn = document.getElementById('order-enter-btn');
-    if (btn && (window.APP_CONFIG.orderSwitch === '關' || window.APP_CONFIG.priceConfigBroken)) {
-      btn.classList.add('is-disabled');
-      btn.innerText = window.APP_CONFIG.priceConfigBroken ? '⚠️ 系統維護中' : '🚫 現在暫停接單';
-    }
+    updateEnterButton();
 
     configLoaded = true;
     startStockAutoRefresh();
-    initFirebaseStock();
+    initFirebaseControl();
     startReleaseTicker();
 
   } catch (err) {
@@ -326,6 +326,41 @@ window.onload = async function () {
     showLoadingScreen(false);
   }
 };
+
+// 把「價格表 / 運費表」從設定物件重新建出來。
+// 🔑 A2：獨立成函式，讓背景輪詢也能重新套用，
+// 不再像舊版那樣凍在 window.onload 那一刻。
+function applyStaticTables(data) {
+  window.APP_CONFIG.orderConfig = data || {};
+
+  價格表 = {
+    '當季酪梨(隨機出貨)【優級】': cfgNum(data, '當季酪梨( 隨機出貨 )【優級】單價'),
+    '當季酪梨(隨機出貨)【次級】': cfgNum(data, '當季酪梨( 隨機出貨 )【次級】單價'),
+    '平克頓/哈斯【優級】':        cfgNum(data, '平克頓/哈斯【優級】單價'),
+    '平克頓/哈斯【次級】':        cfgNum(data, '平克頓/哈斯【次級】單價')
+  };
+
+  運費表 = {
+    郵寄小: cfgNum(data, '郵寄七斤(不含)以下'),
+    郵寄大: cfgNum(data, '郵寄七斤(包含)以上'),
+    '711運費': cfgNum(data, '711運費'),
+    黑貓小: cfgNum(data, '黑貓配送七斤(不含)以下'),
+    黑貓大: cfgNum(data, '黑貓配送七斤(包含)以上'),
+    郵寄離島小: cfgNum(data, '郵寄離島七斤(不含)以下'),
+    郵寄離島大: cfgNum(data, '郵寄離島七斤(包含)以上'),
+    黑貓離島小: cfgNum(data, '黑貓配送離島七斤(不含)以下'),
+    黑貓離島大: cfgNum(data, '黑貓配送離島七斤(包含)以上')
+  };
+
+  // ⚠️ 價格全 0 通常代表試算表的 key 被動到（多打/少打空格）。
+  // 這種情況下前後端會「一致地」都算成 0 元，後端覆核完全失效，
+  // 所以這裡直接把訂購入口鎖住，而不是讓客人下 0 元訂單。
+  const 有效價格數 = Object.values(價格表).filter(v => v > 0).length;
+  window.APP_CONFIG.priceConfigBroken = (有效價格數 === 0);
+  if (window.APP_CONFIG.priceConfigBroken) {
+    console.error('價格設定全部為 0，已鎖定訂購入口');
+  }
+}
 
 function renderOrderCardImages(data) {
   const middleCard = document.getElementById('order-middle-card');
@@ -351,23 +386,66 @@ function renderOrderCardImages(data) {
 
 
 // ========================================
+// 🚦 開關（即時層）
+// ========================================
+function applySwitches(newOrderSwitch, newShipping) {
+  orderSwitch = String(newOrderSwitch || '開').trim();
+  shippingSwitch = {
+    post:     String((newShipping && newShipping.post) || '').trim(),
+    '711':    String((newShipping && newShipping['711']) || '').trim(),
+    blackcat: String((newShipping && newShipping.blackcat) || '').trim()
+  };
+
+  const 設定配送選項 = (id, method, onText, offText) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const 開 = shippingSwitch[method] === '開';
+    el.disabled = !開;
+    el.textContent = 開 ? onText : offText;
+  };
+  設定配送選項('opt-post', 'post', '📫 中華郵政 (限重10斤內)', '📫 中華郵政（目前不支援）');
+  設定配送選項('opt-711', '711', '🏪 7-11 超商取件 (限重7斤內)', '🏪 7-11（目前不支援）');
+  設定配送選項('opt-blackcat', 'blackcat', '🐈\u200d⬛ 黑貓宅急便 (限重10斤內)', '🐈\u200d⬛ 黑貓宅急便（目前不支援）');
+
+  updateEnterButton();
+}
+
+function updateEnterButton() {
+  const btn = document.getElementById('order-enter-btn');
+  if (!btn) return;
+
+  const broken = window.APP_CONFIG && window.APP_CONFIG.priceConfigBroken;
+  if (broken) {
+    btn.classList.add('is-disabled');
+    btn.innerText = '⚠️ 系統維護中';
+  } else if (orderSwitch === '關') {
+    btn.classList.add('is-disabled');
+    btn.innerText = '🚫 現在暫停接單';
+  } else {
+    btn.classList.remove('is-disabled');
+    btn.innerText = '✨ 我已同意，前往選購 👉';
+  }
+}
+
+
+// ========================================
 // 🕐 上架狀態 / 開賣倒數
 // ========================================
 
+// 🔑 D1 修正的核心。
+// 舊版這個函式最後有一行 `RELEASE.lastKnown = isReleadNow()`，
+// 而它會被快照輪詢每 8 秒呼叫一次。結果是：
+// 如果輪詢剛好落在開賣的那一秒、且跑在 ticker 之前，
+// lastKnown 會被搶先設成 true，ticker 的「狀態變化」偵測就永遠不會觸發
+// → 商品不重新渲染、不彈開賣提示，客人卡在「未開賣」畫面直到手動重整。
+//
+// 現在 lastKnown 只由 ticker 更新，這個函式單純負責寫入時間戳。
 function applyReleaseStatus(status) {
   const s = status || {};
   RELEASE.at = (s.releaseAt === null || s.releaseAt === undefined) ? null : Number(s.releaseAt);
-  RELEASE.display = s.releaseTimeDisplay || '';
-  RELEASE.lastKnown = isReleasedNow();
+  RELEASE.display = s.releaseTimeDisplay || s.releaseDisplay || '';
 }
 
-// 🔑 這是本次最關鍵的修正。
-// 原本背景更新只換 stockMap、完全沒碰 releaseStatus，
-// 而 renderProductList / renderPriceMenu 都是讀 releaseStatus 決定要不要顯示「未上架」。
-// 結果：19:55 進站等 20:00 開賣的客人（也就是搶購的主力），
-// 畫面會永遠停在「未上架」，除非他自己想到要重新整理。
-// 現在改成：快照提供絕對時間戳 releaseAt，前端每秒自己判斷，
-// 時間一到立刻解鎖並重新渲染，完全不依賴快照有沒有即時更新到。
 let releaseTickerTimer = null;
 
 function startReleaseTicker() {
@@ -382,7 +460,7 @@ function startReleaseTicker() {
       renderPriceMenu();
       if (nowReleased) {
         customAlert('🎉 開賣囉！商品已經可以選購，祝您順利下單～');
-        refreshStockFromSnapshot(); // 立刻抓一次最新庫存
+        refreshRealtime(); // 立刻抓一次最新庫存
       }
     }
   }, 1000);
@@ -425,12 +503,14 @@ function applySnapshotStamp(json) {
   const el = document.getElementById('stale-warning');
   if (!el) return;
 
+  // 🔥 Firebase 連線中時，庫存與開關本來就是即時的，
+  // 快照舊一點完全不影響客人，不需要嚇他們。
+  if (firebaseLive) { el.style.display = 'none'; return; }
+
   if (!ms) { el.style.display = 'none'; return; }
 
   const ageMin = (serverNow() - ms) / 60000;
   if (ageMin > SNAPSHOT_STALE_MIN) {
-    // 快照凍住通常代表 GITHUB_TOKEN 過期或觸發器停擺。
-    // 站台看起來一切正常，但賣的是幽靈庫存——這種靜默故障最難發現。
     el.style.display = 'block';
     el.textContent = '⚠️ 庫存資訊可能不是最新的，下單前建議與我們確認';
     console.warn('快照已超過 ' + Math.round(ageMin) + ' 分鐘未更新');
@@ -477,17 +557,6 @@ function applyConfigToPage(cfg) {
 
   const shippingNote = document.getElementById('shipping-note');
   if (shippingNote) shippingNote.textContent = cfgGet(訂購, '配送方式備註') || '';
-
-  const 設定配送選項 = (id, key, onText, offText) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const 開 = String(cfgGet(訂購, key) || '').trim() === '開';
-    el.disabled = !開;
-    el.textContent = 開 ? onText : offText;
-  };
-  設定配送選項('opt-post', '中華郵政配送', '📫 中華郵政 (限重10斤內)', '📫 中華郵政（目前不支援）');
-  設定配送選項('opt-711', '7-11超取配送', '🏪 7-11 超商取件 (限重7斤內)', '🏪 7-11（目前不支援）');
-  設定配送選項('opt-blackcat', '黑貓配送', '🐈\u200d⬛ 黑貓宅急便 (限重10斤內)', '🐈\u200d⬛ 黑貓宅急便（目前不支援）');
 
   const lineBtn = document.getElementById('final-line-btn');
   if (lineBtn) lineBtn.textContent = cfgGet(cfg['匯款'], '跳轉按鈕名稱') || '確認匯款回報';
@@ -807,8 +876,6 @@ function renderPriceMenu() {
 }
 
 function priceMenuStockText(key, released) {
-  // 非產季的列沒有 pm-stock- 的 id，正常不會走到這裡；
-  // 但背景更新時仍可能被呼叫，這裡多一道保險。
   const cfg = (window.APP_CONFIG && window.APP_CONFIG.orderConfig) || {};
   const cat = 商品分類.find(c => c.weights.some(w => stockKeyOf(c.name, w) === key));
   if (cat && cfgNum(cfg, cat.priceKey) <= 0) return '🌱 非產季';
@@ -856,10 +923,9 @@ function updateCart(key, deltaQty, weight, displayName) {
 
   recalcTotalWeight();
 
-  const limit = { post: 10, '711': 7, blackcat: 10 }[method];
+  const limit = 限重表[method];
   if (limit && totalWeight > limit) {
-    const nameMap = { post: '郵寄', '711': '7-11', blackcat: '黑貓宅急便' };
-    customAlert(`❌ ${nameMap[method]}配送總重不能超過${limit}斤喔！`);
+    customAlert(`❌ ${配送名稱[method]}配送總重不能超過${limit}斤喔！`);
     if (prevQty === 0) delete cart[key];
     else cart[key] = { displayName, weight, qty: prevQty, subtotal: unitPrice * weight * prevQty };
     recalcTotalWeight();
@@ -880,8 +946,6 @@ function refreshCartUI() {
 }
 
 // ⚡ 只更新數字與按鈕狀態，不重建整塊 innerHTML。
-// 原本每 2 秒重建一次，手機上會有輕微 jank，
-// 而且客人剛好在按 +/- 時，按鈕會被整個換掉、那一次點擊就消失了。
 function updateStockDisplay() {
   const stockMap = (window.APP_CONFIG && window.APP_CONFIG.stockMap) || {};
   const released = isReleasedNow();
@@ -890,7 +954,7 @@ function updateStockDisplay() {
     cat.weights.forEach(w => {
       const key = stockKeyOf(cat.name, w);
       const usedQty = (cart[key] && cart[key].qty) || 0;
-      const remaining = Math.max(0, (stockMap[key] || 0) - usedQty); // 不再出現「剩 -2」
+      const remaining = Math.max(0, (stockMap[key] || 0) - usedQty);
 
       const qtyEl = document.getElementById('qty-' + key);
       if (qtyEl) qtyEl.innerText = usedQty;
@@ -907,8 +971,7 @@ function updateStockDisplay() {
   });
 }
 
-// 庫存被別人買走時，自動把購物車修正到還買得到的數量，
-// 而不是讓客人一路填完資料、按下送出才被打回票。
+// 庫存被別人買走時，自動把購物車修正到還買得到的數量
 function trimCartToStock() {
   const stockMap = (window.APP_CONFIG && window.APP_CONFIG.stockMap) || {};
   const 調整 = [];
@@ -938,10 +1001,9 @@ function handleShippingChange() {
   recalcTotalWeight();
 
   if (Object.keys(cart).length > 0) {
-    const limit = { post: 10, '711': 7, blackcat: 10 }[method];
+    const limit = 限重表[method];
     if (limit && totalWeight > limit) {
-      const nameMap = { post: '郵寄', '711': '7-11', blackcat: '黑貓宅急便' };
-      customAlert(`⚠️ ${nameMap[method]} 限重 ${limit} 斤，目前已超過！請減少品項。`);
+      customAlert(`⚠️ ${配送名稱[method]} 限重 ${limit} 斤，目前已超過！請減少品項。`);
     }
   }
 
@@ -1078,8 +1140,6 @@ function initAddressSelector() {
   });
 }
 
-// ⚡ 只在這裡綁一次 change。原本 HTML 的 onchange 跟這裡的 addEventListener
-// 同時存在，每次切換配送方式 handleShippingChange 都會跑兩遍。
 function initShippingAddressToggle() {
   const shippingEl = document.getElementById('shipping-method');
   if (!shippingEl) return;
@@ -1099,7 +1159,7 @@ function updateAddressSection() {
 
 
 // ========================================
-// 🔄 背景更新
+// 🔄 背景更新（靜態層）
 // ========================================
 let stockRefreshTimer = null;
 let currentPollMs = 0;
@@ -1108,7 +1168,7 @@ function setPollInterval(ms) {
   if (currentPollMs === ms && stockRefreshTimer) return;
   if (stockRefreshTimer) clearInterval(stockRefreshTimer);
   currentPollMs = ms;
-  stockRefreshTimer = setInterval(refreshStockFromSnapshot, ms);
+  stockRefreshTimer = setInterval(refreshFromSnapshot, ms);
 }
 
 function startStockAutoRefresh() {
@@ -1116,7 +1176,7 @@ function startStockAutoRefresh() {
   setPollInterval(POLL_MS_FAST);
 }
 
-async function refreshStockFromSnapshot() {
+async function refreshFromSnapshot() {
   if (isSubmitting) return; // 送單當下不要動畫面
   try {
     const json = await fetchSnapshot(CONFIG_JSON_URL);
@@ -1127,23 +1187,61 @@ async function refreshStockFromSnapshot() {
     lastSnapshotStamp = stamp;
 
     applySnapshotStamp(json);
-    applyReleaseStatus(json.data['上架狀態']);
 
-    // 🔥 Firebase 連線中時，庫存以推播為準。
-    // 快照上的庫存可能已經落後 1~2 分鐘，套用它反而會讓數字倒退回舊值。
-    if (!firebaseLive) applyLatestStockMap(json.data['庫存'] || {});
+    // 🔑 A2：靜態層（價格、運費、公告、品種）每次都套用，不再凍在載入那一刻。
+    const 舊價格 = JSON.stringify(價格表);
+    applyStaticTables(json.data['訂購'] || {});
+    window.allVarieties = json.data['品種'] || [];
+    window.paymentConfig = json.data['匯款'] || {};
+    applyConfigToPage(json.data);
+
+    const 價格有變 = JSON.stringify(價格表) !== 舊價格;
+    if (價格有變) {
+      refreshCartUI();
+      renderPriceMenu();
+      renderProductList();
+      if (Object.keys(cart).length > 0) {
+        customAlert('ℹ️ 商品價格剛剛更新了，已為您重新計算金額，請確認後再送出。');
+      }
+    }
+
+    // 🔥 Firebase 連線中時，即時層以推播為準。
+    // 快照上的庫存與開關可能已經落後 1~2 分鐘，套用它反而會讓數字倒退回舊值。
+    if (!firebaseLive) {
+      applyReleaseStatus(json.data['上架狀態']);
+      applySwitches(
+        cfgGet(json.data['首頁'], '訂單開關') || '開',
+        {
+          post:     cfgGet(json.data['訂購'], '中華郵政配送'),
+          '711':    cfgGet(json.data['訂購'], '7-11超取配送'),
+          blackcat: cfgGet(json.data['訂購'], '黑貓配送')
+        }
+      );
+      applyLatestStockMap(json.data['庫存'] || {});
+    }
   } catch (err) {
     // 背景更新失敗就安靜跳過，下一輪再試
   }
 }
 
+// 立刻抓一次即時層（開賣瞬間、送單失敗後使用）
+async function refreshRealtime() {
+  try {
+    const control = await fetchControlViaRest();
+    applyControl(control);
+  } catch (err) {
+    // REST 也失敗就退回快照
+    refreshFromSnapshot();
+  }
+}
+
 
 // ========================================
-// 🔥 Firebase 即時庫存訂閱
+// 🔥 Firebase 即時控制節點訂閱
 // ========================================
-function initFirebaseStock() {
+function initFirebaseControl() {
   if (typeof firebase === 'undefined' || !FIREBASE_DB_URL) {
-    console.warn('Firebase SDK 未載入，庫存改用輪詢快照');
+    console.warn('Firebase SDK 未載入，即時層改用輪詢快照');
     return;
   }
 
@@ -1160,44 +1258,99 @@ function initFirebaseStock() {
       firebaseLive = connected;
       setPollInterval(connected ? POLL_MS_SLOW : POLL_MS_FAST);
       console.info(connected
-        ? '🔥 Firebase 已連線，庫存改為即時推播'
-        : '⚠️ Firebase 連線中斷，庫存暫時改用輪詢快照');
+        ? '🔥 Firebase 已連線，即時層改為推播'
+        : '⚠️ Firebase 連線中斷，即時層暫時改用輪詢');
 
       // 剛斷線時立刻補抓一次，不要空等一輪
-      if (!connected) refreshStockFromSnapshot();
+      if (!connected) refreshRealtime();
     });
 
-    // 庫存推播：整份庫存以一段 JSON 字串存在單一節點
-    // （庫存標籤含有「/」，而 Firebase 的節點名稱不允許這個字元）
-    db.ref('stock').on('value', snap => {
+    // 控制節點推播：庫存 + 上架時間 + 各種開關，單一原子更新
+    db.ref(FIREBASE_CONTROL_PATH).on('value', snap => {
       const v = snap.val();
-      if (!v || !v.json) return;
-
-      let map;
-      try {
-        map = JSON.parse(v.json);
-      } catch (parseErr) {
-        console.warn('Firebase 庫存格式解析失敗', parseErr);
-        return;
-      }
-
-      applyLatestStockMap(map);
+      if (!v) return;
+      applyControl(v);
     }, err => {
-      console.warn('Firebase 庫存訂閱失敗，改用輪詢快照', err);
+      console.warn('Firebase 控制節點訂閱失敗，改用輪詢快照', err);
       firebaseLive = false;
       setPollInterval(POLL_MS_FAST);
     });
 
   } catch (err) {
-    console.warn('Firebase 初始化失敗，庫存改用輪詢快照', err);
+    console.warn('Firebase 初始化失敗，即時層改用輪詢快照', err);
     firebaseLive = false;
     setPollInterval(POLL_MS_FAST);
   }
 }
 
+// 套用一份即時層資料（來自 Firebase 推播或 REST 備援）
+function applyControl(control) {
+  if (!control || !control.json) return;
+
+  // 🔑 A1：新鮮度比對。
+  // dataAt 是「這份資料何時從試算表讀出來」，不是「何時送到」。
+  // 網路亂序時先到的不一定比較新，只認 dataAt。
+  const dataAt = Number(control.dataAt || 0);
+  if (dataAt && dataAt <= lastControlDataAt) {
+    console.debug('收到較舊的控制資料，已忽略', dataAt, '<=', lastControlDataAt);
+    return;
+  }
+
+  // 🔑 D3：送單期間先暫存，送完再套用，避免中途改動購物車讓畫面跳動。
+  // 暫存也要比新鮮度：送單期間可能連收到好幾筆，後到的不一定比較新。
+  if (isSubmitting) {
+    if (!pendingControl || dataAt > Number(pendingControl.dataAt || 0)) {
+      pendingControl = control;
+    }
+    return;
+  }
+
+  if (dataAt) lastControlDataAt = dataAt;
+
+  let stockMap;
+  try {
+    stockMap = JSON.parse(control.json);
+  } catch (parseErr) {
+    console.warn('控制節點庫存格式解析失敗', parseErr);
+    return;
+  }
+
+  // 上架時間
+  const 舊開賣狀態 = isReleasedNow();
+  applyReleaseStatus({
+    releaseAt: control.releaseAt === undefined ? null : control.releaseAt,
+    releaseDisplay: control.releaseDisplay || ''
+  });
+  // 如果你臨時改了開賣時間、而且改完當下狀態就不一樣了，
+  // 這裡先重繪一次；持續的狀態轉換仍然交給 ticker。
+  if (isReleasedNow() !== 舊開賣狀態) {
+    renderProductList();
+    renderPriceMenu();
+  }
+  updateReleaseBanner();
+
+  // 開關
+  applySwitches(control.orderSwitch, control.shipping);
+
+  // 庫存
+  applyLatestStockMap(stockMap);
+
+  // Firebase 活著時不需要快照過期提示
+  const staleEl = document.getElementById('stale-warning');
+  if (staleEl && firebaseLive) staleEl.style.display = 'none';
+}
+
+// 把暫存的推播套用掉（送單流程結束時呼叫）
+function flushPendingControl() {
+  if (!pendingControl) return;
+  const c = pendingControl;
+  pendingControl = null;
+  applyControl(c);
+}
+
 function applyLatestStockMap(rawStock) {
   const newStockMap = {};
-  Object.keys(rawStock).forEach(k => {
+  Object.keys(rawStock || {}).forEach(k => {
     newStockMap[normKey(k)] = Math.max(0, Number(rawStock[k]) || 0);
   });
   window.APP_CONFIG.stockMap = newStockMap;
@@ -1216,7 +1369,6 @@ function handleOrderEnter() {
     customAlert('⚠️ 系統設定正在維護中，暫時無法訂購，造成不便敬請見諒。');
     return;
   }
-  const orderSwitch = (window.APP_CONFIG && window.APP_CONFIG.orderSwitch) || '開';
   if (orderSwitch === '關') {
     customAlert('目前為停止採收期，暫停接單中 🌱\n\n我們會於開放時第一時間公告，感謝您的體諒！');
     return;
@@ -1224,8 +1376,7 @@ function handleOrderEnter() {
   goToStep(2);
 }
 
-// 電話容錯：客人常常會填 0912-345-678 或帶空格，
-// 原本直接被正則擋掉，其實只是格式不同而已。
+// 電話容錯：客人常常會填 0912-345-678 或帶空格
 function normalizePhone(raw) {
   return String(raw || '').replace(/[\s\-()+.]/g, '');
 }
@@ -1270,7 +1421,7 @@ async function submitOrder(e) {
     customAlert('☝️ 請填寫正確的手機號碼格式！\n例如：0912345678\n（超商取貨與宅配都需要手機才能收到通知）');
     return;
   }
-  pEl.value = p; // 順手把格式化後的號碼寫回欄位，讓客人看到我們收到的是什麼
+  pEl.value = p;
 
   let fullAddress = '';
   if (shippingMethod === 'post' || shippingMethod === 'blackcat') {
@@ -1305,10 +1456,9 @@ async function submitOrder(e) {
   if (fullAddress.length > 120) { customAlert('☝️ 地址長度超過限制，請簡化填寫內容'); return; }
 
   recalcTotalWeight();
-  const weightLimit = { post: 10, '711': 7, blackcat: 10 }[shippingMethod];
+  const weightLimit = 限重表[shippingMethod];
   if (weightLimit && totalWeight > weightLimit) {
-    const nameMap = { post: '中華郵政', '711': '7-11', blackcat: '黑貓宅急便' };
-    customAlert(`❌ 目前購物車總重 ${totalWeight} 斤，已超過「${nameMap[shippingMethod]}」限重 ${weightLimit} 斤，請調整購買數量或改選其他配送方式！`);
+    customAlert(`❌ 目前購物車總重 ${totalWeight} 斤，已超過「${配送名稱[shippingMethod]}」限重 ${weightLimit} 斤，請調整購買數量或改選其他配送方式！`);
     return;
   }
 
@@ -1320,15 +1470,16 @@ async function submitOrder(e) {
     isSubmitting = false;
     submitBtn.disabled = false;
     submitBtn.innerText = '✅ 確認訂購';
+    flushPendingControl(); // 把送單期間暫存的推播套用掉
   };
 
-  // 送出前先用最新快照校對一次，避免客人白等 GAS
+  // 送出前先校對一次庫存，避免客人白等 GAS
   const stockCheck = await verifyStockBeforeSubmit();
   if (!stockCheck.ok) {
     const lines = stockCheck.shortages.map(s =>
       `「${s.displayName} ${s.weight}斤」目前只剩 ${s.avail} 份（您選了 ${s.need} 份）`);
     isSubmitting = false;
-    trimCartToStock(); // 順手幫客人把數量調整好
+    trimCartToStock();
     customAlert('⚠️ 不好意思，部分品項庫存剛好有異動：\n\n' + lines.join('\n') + '\n\n已為您自動調整購物車，請確認後再送出一次');
     收尾();
     return;
@@ -1377,7 +1528,19 @@ async function submitOrder(e) {
 
     if (!json.success) throw new Error(json.error || '送單失敗');
 
-    // 成功：本地先扣一次，避免回價目表看到舊數字
+    // 🔑 A2：成功頁改用後端實際成交的金額。
+    // 舊版顯示的是前端自己算的數字，一旦你在客人開著頁面時改了價格，
+    // 成功頁跟試算表、PDF 就會對不起來，而且不會有任何人發現。
+    if (json.totals) {
+      finalSubtotal    = Number(json.totals.subtotal);
+      finalShippingFee = Number(json.totals.shippingFee);
+      finalTotal       = Number(json.totals.total);
+      currentOrderSummary.subtotal    = finalSubtotal;
+      currentOrderSummary.shippingFee = finalShippingFee;
+      currentOrderSummary.total       = finalTotal;
+    }
+
+    // 本地先扣一次，避免回價目表看到舊數字（Firebase 推播通常 1 秒內就會蓋掉它）
     const stockMap = window.APP_CONFIG.stockMap || {};
     Object.keys(cart).forEach(key => {
       if (stockMap[key] !== undefined) stockMap[key] = Math.max(0, stockMap[key] - cart[key].qty);
@@ -1393,13 +1556,12 @@ async function submitOrder(e) {
   } catch (err) {
     if (err.message === 'SERVER_TIMEOUT_NON_JSON') {
       // ⚠️ 這裡刻意「不」清掉 currentOrderKey：
-      // 客人如果再按一次，後端會用同一組識別碼辨識出是同一筆，直接回成功，
-      // 不會變成兩筆訂單。所以現在可以放心請他重試。
+      // 客人如果再按一次，後端會用同一組識別碼辨識出是同一筆，直接回成功。
       customAlert('⚠️ 系統回應較慢，暫時無法確認結果。\n\n您可以「再按一次確認訂購」，系統會自動辨識、不會重複下單。\n若仍然失敗，請透過 LINE 或電話與我們確認，謝謝您的耐心 🙏');
     } else {
       currentOrderKey = null; // 這是明確的失敗（例如庫存不足），下次是新的一筆
       customAlert(err.message || '送單失敗，請稍後再試');
-      refreshStockFromSnapshot();
+      refreshRealtime();
     }
     收尾();
   }
@@ -1420,28 +1582,20 @@ function 比對購物車庫存(latest) {
 async function verifyStockBeforeSubmit() {
   // 🔥 Firebase 連線中時，畫面上的庫存本來就在 1 秒內同步，
   // 不用再多打一次快照（那份反而還比較舊）。直接拿現有的比對就好。
+  //
+  // 這一層在秒殺時特別重要：庫存歸零後的送單會被擋在瀏覽器裡，
+  // 不會變成一次 GAS 執行 —— 這是保護後端同時執行數最有效的一道。
   if (firebaseLive) {
     return 比對購物車庫存((window.APP_CONFIG && window.APP_CONFIG.stockMap) || {});
   }
 
   try {
-    const json = await fetchSnapshot(CONFIG_JSON_URL);
-    const rawStock = json.data['庫存'] || {};
-
+    const control = await fetchControlViaRest();
+    const rawStock = JSON.parse(control.json);
     const latest = {};
     Object.keys(rawStock).forEach(k => { latest[normKey(k)] = Math.max(0, Number(rawStock[k]) || 0); });
     window.APP_CONFIG.stockMap = latest;
-
-    const shortages = [];
-    Object.keys(cart).forEach(key => {
-      const need = cart[key].qty;
-      const avail = latest[key] !== undefined ? latest[key] : 0;
-      if (avail < need) {
-        shortages.push({ displayName: cart[key].displayName, weight: cart[key].weight, need, avail });
-      }
-    });
-
-    return { ok: shortages.length === 0, shortages };
+    return 比對購物車庫存(latest);
   } catch (err) {
     // 校對本身出錯（網路不穩）不要卡住客人，交給 GAS 做最終核對
     return { ok: true };
@@ -1484,9 +1638,7 @@ function renderSuccessPage() {
   }
 
   const shippingEl = document.querySelector('.js-summary-shipping');
-  if (shippingEl) {
-    shippingEl.textContent = { post: '中華郵政配送', '711': '7-11超商配送', blackcat: '黑貓宅急便配送' }[o.shippingMethod] || '';
-  }
+  if (shippingEl) shippingEl.textContent = 配送顯示名[o.shippingMethod] || '';
 
   const addressEl = document.querySelector('.js-summary-address');
   if (addressEl) addressEl.textContent = o.shipping || o.address || '';
