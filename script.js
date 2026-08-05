@@ -19,18 +19,25 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbwbkKqipfPrimFs7-d6Zory
 const CONFIG_JSON_URL  = 'https://probroavocado.com/data/config.json';
 const ADDRESS_JSON_URL = 'https://probroavocado.com/data/address.json';
 
-const STOCK_REFRESH_MS   = 8000;   // 背景更新間隔（原本 2 秒是無效的，見下方說明）
-const SNAPSHOT_STALE_MIN = 60;     // 快照超過幾分鐘沒更新就顯示柔性提示
+// 🔥 Firebase 即時庫存（唯讀，這個網址本來就是公開資訊）
+const FIREBASE_DB_URL = 'https://probro-stock-default-rtdb.asia-southeast1.firebasedatabase.app';
 
-/* 📝 為什麼把 2 秒改成 8 秒？
-   資料真正的更新鏈是：下單 → 背景工人(最多60秒) → GitHub commit
-   → Pages 重新建置(20~60秒) → CDN 生效，實際延遲本來就是 1.5~3 分鐘。
-   每 2 秒抓一次，抓 45 次拿到的都是同一份資料，卻付出三個代價：
-   ①每次都加 ?t= 等於繞過 CDN 快取，全部打到源站
-   ②每次都重建整個 innerHTML，客人按 +/- 時有機會被吃掉
-   ③GitHub Pages 建置有每小時軟性上限，尖峰時容易排隊或失敗
-   現在改成 8 秒 + 標準快取驗證（沒變動時伺服器只回 304，幾乎零流量）
-   + 內容比對（沒變就完全不動畫面）。                                */
+const POLL_MS_FAST = 8000;    // Firebase 沒連上時：靠輪詢快照，8 秒一次
+const POLL_MS_SLOW = 60000;   // Firebase 正常時：庫存走推播，快照只需慢慢確認其他設定
+const SNAPSHOT_STALE_MIN = 60;// 快照超過幾分鐘沒更新就顯示柔性提示
+
+/* 📝 資料來源分工
+   庫存數字   → Firebase 即時推播（1 秒內同步，沒變動時零流量）
+   其他全部   → GitHub 靜態快照（品種、價格、公告、上架時間，本來就不常變）
+
+   為什麼庫存要獨立出來？
+   快照的更新鏈是：下單 → 背景工人(最多60秒) → GitHub commit
+   → Pages 重新建置(20~60秒) → CDN 生效，實際延遲 1~2 分鐘。
+   搶購尾聲時所有品項幾乎同時歸零，畫面卻整片還顯示「剩 3、剩 5」，
+   客人只能一格一格點才發現全沒了 —— 這是最傷體驗的場景。
+
+   Firebase 連不上時會自動退回輪詢快照，站台不會掛，
+   只是庫存回到 1~2 分鐘的延遲（也就是導入 Firebase 之前的狀態）。   */
 
 
 // ========================================
@@ -45,6 +52,7 @@ var isSubmitting = false;
 var currentOrderKey = null;      // 同一筆訂單的重試共用同一組，防止重複下單
 var lastSnapshotStamp = null;    // 內容比對用
 var configLoaded = false;
+var firebaseLive = false;        // Firebase 是否連線中（決定庫存資料要信誰）
 
 // 🏝️ 台灣離島判定
 const 離島縣市 = ['澎湖縣', '金門縣', '連江縣'];
@@ -308,6 +316,7 @@ window.onload = async function () {
 
     configLoaded = true;
     startStockAutoRefresh();
+    initFirebaseStock();
     startReleaseTicker();
 
   } catch (err) {
@@ -693,10 +702,11 @@ function renderProductList() {
     cat.weights.forEach(w => {
       const key = stockKeyOf(cat.name, w);
       const availableStock = stockMap[key] || 0;
-      const displayPrice = cfgNum(cfg, cat.priceKey) * w;
+      const displayPrice = 單價 * w;
       const currentQty = (cart[key] && cart[key].qty) || 0;
       const remaining = Math.max(0, availableStock - currentQty);
 
+      // 🌱 單價為 0 = 非產季未販售：保留品項讓客人知道有這個品種，但不顯示金額
       if (非產季) {
         html += `
           <div class="price-row">
@@ -705,7 +715,7 @@ function renderProductList() {
           </div>`;
         return;
       }
-       
+
       if (!released) {
         html += `
           <div class="price-row">
@@ -736,6 +746,7 @@ function renderProductList() {
 function renderPriceMenu() {
   const container = document.getElementById('price-menu-container');
   if (!container) return;
+
   const cfg = (window.APP_CONFIG && window.APP_CONFIG.orderConfig) || {};
   const released = isReleasedNow();
 
@@ -796,7 +807,7 @@ function renderPriceMenu() {
 }
 
 function priceMenuStockText(key, released) {
-  // 非產季的列沒有 pm-stock- 的 id，不會走到這裡；
+  // 非產季的列沒有 pm-stock- 的 id，正常不會走到這裡；
   // 但背景更新時仍可能被呼叫，這裡多一道保險。
   const cfg = (window.APP_CONFIG && window.APP_CONFIG.orderConfig) || {};
   const cat = 商品分類.find(c => c.weights.some(w => stockKeyOf(c.name, w) === key));
@@ -1091,10 +1102,18 @@ function updateAddressSection() {
 // 🔄 背景更新
 // ========================================
 let stockRefreshTimer = null;
+let currentPollMs = 0;
+
+function setPollInterval(ms) {
+  if (currentPollMs === ms && stockRefreshTimer) return;
+  if (stockRefreshTimer) clearInterval(stockRefreshTimer);
+  currentPollMs = ms;
+  stockRefreshTimer = setInterval(refreshStockFromSnapshot, ms);
+}
 
 function startStockAutoRefresh() {
-  if (stockRefreshTimer) return;
-  stockRefreshTimer = setInterval(refreshStockFromSnapshot, STOCK_REFRESH_MS);
+  // 先用快輪詢起步；Firebase 一旦連上就自動降頻
+  setPollInterval(POLL_MS_FAST);
 }
 
 async function refreshStockFromSnapshot() {
@@ -1109,9 +1128,70 @@ async function refreshStockFromSnapshot() {
 
     applySnapshotStamp(json);
     applyReleaseStatus(json.data['上架狀態']);
-    applyLatestStockMap(json.data['庫存'] || {});
+
+    // 🔥 Firebase 連線中時，庫存以推播為準。
+    // 快照上的庫存可能已經落後 1~2 分鐘，套用它反而會讓數字倒退回舊值。
+    if (!firebaseLive) applyLatestStockMap(json.data['庫存'] || {});
   } catch (err) {
     // 背景更新失敗就安靜跳過，下一輪再試
+  }
+}
+
+
+// ========================================
+// 🔥 Firebase 即時庫存訂閱
+// ========================================
+function initFirebaseStock() {
+  if (typeof firebase === 'undefined' || !FIREBASE_DB_URL) {
+    console.warn('Firebase SDK 未載入，庫存改用輪詢快照');
+    return;
+  }
+
+  try {
+    firebase.initializeApp({ databaseURL: FIREBASE_DB_URL });
+    const db = firebase.database();
+
+    // 連線狀態：斷線時自動切回快輪詢，重連後再降頻。
+    // .info/connected 是 SDK 的本地狀態，不受安全規則限制。
+    db.ref('.info/connected').on('value', snap => {
+      const connected = !!snap.val();
+      if (connected === firebaseLive) return;
+
+      firebaseLive = connected;
+      setPollInterval(connected ? POLL_MS_SLOW : POLL_MS_FAST);
+      console.info(connected
+        ? '🔥 Firebase 已連線，庫存改為即時推播'
+        : '⚠️ Firebase 連線中斷，庫存暫時改用輪詢快照');
+
+      // 剛斷線時立刻補抓一次，不要空等一輪
+      if (!connected) refreshStockFromSnapshot();
+    });
+
+    // 庫存推播：整份庫存以一段 JSON 字串存在單一節點
+    // （庫存標籤含有「/」，而 Firebase 的節點名稱不允許這個字元）
+    db.ref('stock').on('value', snap => {
+      const v = snap.val();
+      if (!v || !v.json) return;
+
+      let map;
+      try {
+        map = JSON.parse(v.json);
+      } catch (parseErr) {
+        console.warn('Firebase 庫存格式解析失敗', parseErr);
+        return;
+      }
+
+      applyLatestStockMap(map);
+    }, err => {
+      console.warn('Firebase 庫存訂閱失敗，改用輪詢快照', err);
+      firebaseLive = false;
+      setPollInterval(POLL_MS_FAST);
+    });
+
+  } catch (err) {
+    console.warn('Firebase 初始化失敗，庫存改用輪詢快照', err);
+    firebaseLive = false;
+    setPollInterval(POLL_MS_FAST);
   }
 }
 
@@ -1325,7 +1405,25 @@ async function submitOrder(e) {
   }
 }
 
+function 比對購物車庫存(latest) {
+  const shortages = [];
+  Object.keys(cart).forEach(key => {
+    const need = cart[key].qty;
+    const avail = latest[key] !== undefined ? latest[key] : 0;
+    if (avail < need) {
+      shortages.push({ displayName: cart[key].displayName, weight: cart[key].weight, need, avail });
+    }
+  });
+  return { ok: shortages.length === 0, shortages };
+}
+
 async function verifyStockBeforeSubmit() {
+  // 🔥 Firebase 連線中時，畫面上的庫存本來就在 1 秒內同步，
+  // 不用再多打一次快照（那份反而還比較舊）。直接拿現有的比對就好。
+  if (firebaseLive) {
+    return 比對購物車庫存((window.APP_CONFIG && window.APP_CONFIG.stockMap) || {});
+  }
+
   try {
     const json = await fetchSnapshot(CONFIG_JSON_URL);
     const rawStock = json.data['庫存'] || {};
