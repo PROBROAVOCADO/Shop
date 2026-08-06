@@ -101,6 +101,26 @@ function cfgNum(obj, key) {
   return Number(cfgGet(obj, key)) || 0;
 }
 
+// 🏝️ 7-11 不提供離島配送。
+// 超取只有一個自由輸入的門市名稱欄位（宅配才有縣市/行政區下拉選單），
+// 所以只能比對關鍵字。這份清單要跟後端 code.gs 的 離島門市關鍵字 保持一致。
+//
+// 刻意只放「幾乎不可能誤判」的詞。像「白沙」「金城」這種本島也有同名
+// 地點的一律不放 —— 漏掉的你出貨前看得到門市名稱，還來得及聯繫；
+// 誤擋的客人則是當場就走了，而且你永遠不會知道。
+const 離島門市關鍵字 = [
+  '澎湖', '馬公', '望安', '七美', '西嶼',
+  '金門', '烈嶼', '大膽',
+  '連江', '馬祖', '南竿', '北竿', '東引', '莒光',
+  '綠島', '蘭嶼', '小琉球'
+];
+
+function is離島門市(storeText) {
+  const s = String(storeText || '');
+  if (!s) return false;
+  return 離島門市關鍵字.some(k => s.indexOf(k) !== -1);
+}
+
 function isIslandAddress(county, district) {
   if (!county) return false;
   if (離島縣市.includes(county)) return true;
@@ -134,10 +154,21 @@ function resolveImageUrl(raw, width) {
   return `https://lh3.googleusercontent.com/d/${raw}=w${w}`;
 }
 
-// 顯示名稱 → 價格表 key
-const stockKeyMap = {
-  '平克頓/哈斯 (隨機出貨)【優級】': '平克頓/哈斯【優級】',
-  '平克頓/哈斯 (隨機出貨)【次級】': '平克頓/哈斯【次級】',
+/* ========================================
+   📦 單一真相來源（E1 / E2）
+   
+   商品規格、單價欄位、配送限重、運費欄位，全部在這一區定義一次，
+   其餘的表格都由它衍生。以前這些散在四、五個地方，
+   改一個品項要動好幾處，改漏了前後端就會算出不同金額。
+   
+   ⚠️ 這一區的內容要跟 code.gs 的「單一真相來源」保持一致。
+   兩邊一個在瀏覽器、一個在 GAS，沒辦法共用程式碼，只能人工同步。
+   ======================================== */
+
+// 顯示名稱：試算表用的標籤 vs 客人看到的名稱
+const displayNameMap = {
+  '平克頓/哈斯【優級】': '平克頓/哈斯 (隨機出貨)【優級】',
+  '平克頓/哈斯【次級】': '平克頓/哈斯 (隨機出貨)【次級】',
   '當季酪梨(隨機出貨)【優級】': '當季酪梨(隨機出貨)【優級】',
   '當季酪梨(隨機出貨)【次級】': '當季酪梨(隨機出貨)【次級】'
 };
@@ -149,20 +180,53 @@ const 商品分類 = [
   { name: '平克頓/哈斯【次級】',        weights: [1, 2, 3],     priceKey: '平克頓/哈斯【次級】單價' }
 ];
 
-const displayNameMap = {
-  '平克頓/哈斯【優級】': '平克頓/哈斯 (隨機出貨)【優級】',
-  '平克頓/哈斯【次級】': '平克頓/哈斯 (隨機出貨)【次級】',
-  '當季酪梨(隨機出貨)【優級】': '當季酪梨(隨機出貨)【優級】',
-  '當季酪梨(隨機出貨)【次級】': '當季酪梨(隨機出貨)【次級】'
+const 配送方式定義 = {
+  post:     { 名稱: '中華郵政',   顯示名: '中華郵政配送',   限重: 10, 開關欄位: '中華郵政配送' },
+  '711':    { 名稱: '7-11',       顯示名: '7-11超商配送',    限重: 7,  開關欄位: '7-11超取配送' },
+  blackcat: { 名稱: '黑貓宅急便', 顯示名: '黑貓宅急便配送', 限重: 10, 開關欄位: '黑貓配送' }
 };
+
+// 運費：內部名稱 → 試算表欄位名稱
+const 運費欄位定義 = {
+  郵寄小:     '郵寄七斤(不含)以下',
+  郵寄大:     '郵寄七斤(包含)以上',
+  '711運費':  '711運費',
+  黑貓小:     '黑貓配送七斤(不含)以下',
+  黑貓大:     '黑貓配送七斤(包含)以上',
+  郵寄離島小: '郵寄離島七斤(不含)以下',
+  郵寄離島大: '郵寄離島七斤(包含)以上',
+  黑貓離島小: '黑貓配送離島七斤(不含)以下',
+  黑貓離島大: '黑貓配送離島七斤(包含)以上'
+};
+
+// ---------- 以下全部由上面衍生，不要手動維護 ----------
+const 限重表 = {};
+const 配送名稱 = {};
+const 配送顯示名 = {};
+Object.keys(配送方式定義).forEach(k => {
+  限重表[k]     = 配送方式定義[k].限重;
+  配送名稱[k]   = 配送方式定義[k].名稱;
+  配送顯示名[k] = 配送方式定義[k].顯示名;
+});
+
+// 客人看到的名稱 → 價格表的 key（updateCart 用）
+const stockKeyMap = {};
+商品分類.forEach(cat => {
+  stockKeyMap[displayNameMap[cat.name] || cat.name] = cat.name;
+});
 
 function stockKeyOf(catName, weight) {
   return normKey(catName + '-' + weight);
 }
 
-const 限重表 = { post: 10, '711': 7, blackcat: 10 };
-const 配送名稱 = { post: '中華郵政', '711': '7-11', blackcat: '黑貓宅急便' };
-const 配送顯示名 = { post: '中華郵政配送', '711': '7-11超商配送', blackcat: '黑貓宅急便配送' };
+// 從「訂購與運費」設定讀出三個配送開關
+function 讀取配送開關(訂購設定) {
+  const out = {};
+  Object.keys(配送方式定義).forEach(k => {
+    out[k] = cfgGet(訂購設定, 配送方式定義[k].開關欄位);
+  });
+  return out;
+}
 
 
 // ========================================
@@ -347,14 +411,7 @@ window.onload = async function () {
     // 冷啟動：只有在還沒收到任何即時資料時，才用快照填即時層。
     if (!已有即時資料) {
       applyReleaseStatus(cfg['上架狀態']);
-      applySwitches(
-        cfgGet(cfg['首頁'], '訂單開關') || '開',
-        {
-          post:     cfgGet(cfg['訂購'], '中華郵政配送'),
-          '711':    cfgGet(cfg['訂購'], '7-11超取配送'),
-          blackcat: cfgGet(cfg['訂購'], '黑貓配送')
-        }
-      );
+      applySwitches(cfgGet(cfg['首頁'], '訂單開關') || '開', 讀取配送開關(cfg['訂購']));
     }
 
     // 🔑 D1：初始化時設定一次基準，之後 lastKnown 只由 ticker 更新。
@@ -466,24 +523,12 @@ function initVisibilityRefresh() {
 function applyStaticTables(data) {
   window.APP_CONFIG.orderConfig = data || {};
 
-  價格表 = {
-    '當季酪梨(隨機出貨)【優級】': cfgNum(data, '當季酪梨( 隨機出貨 )【優級】單價'),
-    '當季酪梨(隨機出貨)【次級】': cfgNum(data, '當季酪梨( 隨機出貨 )【次級】單價'),
-    '平克頓/哈斯【優級】':        cfgNum(data, '平克頓/哈斯【優級】單價'),
-    '平克頓/哈斯【次級】':        cfgNum(data, '平克頓/哈斯【次級】單價')
-  };
+  // 由「單一真相來源」衍生，不再重複列舉欄位名稱
+  價格表 = {};
+  商品分類.forEach(cat => { 價格表[cat.name] = cfgNum(data, cat.priceKey); });
 
-  運費表 = {
-    郵寄小: cfgNum(data, '郵寄七斤(不含)以下'),
-    郵寄大: cfgNum(data, '郵寄七斤(包含)以上'),
-    '711運費': cfgNum(data, '711運費'),
-    黑貓小: cfgNum(data, '黑貓配送七斤(不含)以下'),
-    黑貓大: cfgNum(data, '黑貓配送七斤(包含)以上'),
-    郵寄離島小: cfgNum(data, '郵寄離島七斤(不含)以下'),
-    郵寄離島大: cfgNum(data, '郵寄離島七斤(包含)以上'),
-    黑貓離島小: cfgNum(data, '黑貓配送離島七斤(不含)以下'),
-    黑貓離島大: cfgNum(data, '黑貓配送離島七斤(包含)以上')
-  };
+  運費表 = {};
+  Object.keys(運費欄位定義).forEach(k => { 運費表[k] = cfgNum(data, 運費欄位定義[k]); });
 
   // ⚠️ 價格全 0 通常代表試算表的 key 被動到（多打/少打空格）。
   // 這種情況下前後端會「一致地」都算成 0 元，後端覆核完全失效，
@@ -523,11 +568,10 @@ function renderOrderCardImages(data) {
 // ========================================
 function applySwitches(newOrderSwitch, newShipping) {
   orderSwitch = String(newOrderSwitch || '開').trim();
-  shippingSwitch = {
-    post:     String((newShipping && newShipping.post) || '').trim(),
-    '711':    String((newShipping && newShipping['711']) || '').trim(),
-    blackcat: String((newShipping && newShipping.blackcat) || '').trim()
-  };
+  shippingSwitch = {};
+  Object.keys(配送方式定義).forEach(k => {
+    shippingSwitch[k] = String((newShipping && newShipping[k]) || '').trim();
+  });
   applySwitchesToDom();
 }
 
@@ -1060,19 +1104,23 @@ function renderPriceMenu() {
     區塊('🥑 當季酪梨', 商品分類[0], 商品分類[1]) +
     區塊('🥑 平克頓 & 哈斯', 商品分類[2], 商品分類[3]);
 
-  const 設 = (id, key) => {
-    const el = document.getElementById(id);
-    if (el) el.innerText = cfgNum(cfg, key);
+  // 價目表上的運費數字。id 對應到 運費欄位定義 的內部名稱，
+  // 欄位名稱不在這裡重複寫，統一由上方的定義區提供。
+  const 運費顯示位置 = {
+    'ship-post-small':            '郵寄小',
+    'ship-post-large':            '郵寄大',
+    'ship-711':                   '711運費',
+    'ship-blackcat-small':        '黑貓小',
+    'ship-blackcat-large':        '黑貓大',
+    'ship-post-island-small':     '郵寄離島小',
+    'ship-post-island-large':     '郵寄離島大',
+    'ship-blackcat-island-small': '黑貓離島小',
+    'ship-blackcat-island-large': '黑貓離島大'
   };
-  設('ship-post-small', '郵寄七斤(不含)以下');
-  設('ship-post-large', '郵寄七斤(包含)以上');
-  設('ship-711', '711運費');
-  設('ship-blackcat-small', '黑貓配送七斤(不含)以下');
-  設('ship-blackcat-large', '黑貓配送七斤(包含)以上');
-  設('ship-post-island-small', '郵寄離島七斤(不含)以下');
-  設('ship-post-island-large', '郵寄離島七斤(包含)以上');
-  設('ship-blackcat-island-small', '黑貓配送離島七斤(不含)以下');
-  設('ship-blackcat-island-large', '黑貓配送離島七斤(包含)以上');
+  Object.keys(運費顯示位置).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = cfgNum(cfg, 運費欄位定義[運費顯示位置[id]]);
+  });
 }
 
 function priceMenuStockText(key, released) {
@@ -1361,6 +1409,21 @@ function updateAddressSection() {
 
   postSection.style.display = (method === 'post' || method === 'blackcat') ? 'block' : 'none';
   storeSection.style.display = (method === '711') ? 'block' : 'none';
+
+  // 🏝️ 選了 7-11 就先講清楚離島不配送，免得客人填完才被擋。
+  // 提示用 JS 動態建立，index.html 不需要改。
+  if (method === '711') {
+    let hint = document.getElementById('store-island-hint');
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.id = 'store-island-hint';
+      hint.className = 'hint-warm-text';
+      hint.style.marginTop = '8px';
+      hint.textContent = '🏝️ 離島地區（澎湖、金門、馬祖、綠島、蘭嶼、小琉球）暫不提供 7-11 配送，請改選宅配';
+      storeSection.appendChild(hint);
+    }
+    hint.style.display = 'block';
+  }
 }
 
 
@@ -1415,14 +1478,7 @@ async function refreshFromSnapshot() {
     // 快照上的庫存與開關可能已經落後 1~2 分鐘，套用它反而會讓數字倒退回舊值。
     if (!firebaseLive) {
       applyReleaseStatus(json.data['上架狀態']);
-      applySwitches(
-        cfgGet(json.data['首頁'], '訂單開關') || '開',
-        {
-          post:     cfgGet(json.data['訂購'], '中華郵政配送'),
-          '711':    cfgGet(json.data['訂購'], '7-11超取配送'),
-          blackcat: cfgGet(json.data['訂購'], '黑貓配送')
-        }
-      );
+      applySwitches(cfgGet(json.data['首頁'], '訂單開關') || '開', 讀取配送開關(json.data['訂購']));
       applyLatestStockMap(json.data['庫存'] || {});
     }
   } catch (err) {
@@ -1696,6 +1752,14 @@ async function submitOrder(e) {
     if (!storeEl || !storeEl.value.trim()) {
       customAlert('☝️請填寫 7-11 門市名稱！');
       if (storeEl) storeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    // 🏝️ 離島門市擋在瀏覽器裡，客人立刻知道，也不用白跑一趟 GAS
+    if (is離島門市(storeEl.value)) {
+      customAlert('🏝️ 不好意思，離島地區的 7-11 門市目前無法配送 🥑\n\n' +
+                  '離島訂單請改選「中華郵政」或「黑貓宅急便」，\n' +
+                  '或直接透過 LINE 與我們聯繫，我們會協助您安排，謝謝您的體諒！');
+      storeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     fullAddress = `7-11 門市：${storeEl.value.trim()}`;
