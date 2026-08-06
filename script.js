@@ -1745,10 +1745,16 @@ async function submitOrder(e) {
   // 🔁 同一筆訂單的重試共用同一組 orderKey。
   // 逾時情境下客人如果重按送出，後端會辨識出是同一筆、直接回傳成功，
   // 不會產生第二筆真訂單、也不會重複扣庫存。
+  //
+  // isRetry 讓後端知道要不要多查一次 Firebase 收據（A4）：
+  // 後端的快取是可被驅逐的，尖峰時有機會失效；但只有重試才需要那道
+  // 額外查詢，第一次下單不可能重複，就不必付那 150ms。
+  const isRetry = !!currentOrderKey;
   if (!currentOrderKey) currentOrderKey = makeOrderKey();
 
   const orderData = {
     orderKey: currentOrderKey,
+    isRetry: isRetry,
     cart,
     subtotal: finalSubtotal,
     shippingMethod,
