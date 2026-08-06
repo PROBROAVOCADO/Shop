@@ -59,6 +59,11 @@ var firebaseLive = false;        // Firebase 是否連線中（決定即時層�
 // 網路亂序時，先到的不一定比較新。
 var lastControlDataAt = 0;
 
+// 🩺 控制節點最後一次被後端更新的時間。
+// 這是比快照更準的健康指標：保底維護每 15 分鐘會無條件推一次控制節點，
+// 所以只要它停了，就代表觸發器真的掛了 —— 而快照現在「內容沒變就不發布」，
+// 快照舊不代表系統壞掉，不能再拿它當判斷依據。
+var lastControlUpdatedAt = 0;
 // 🔑 D3：送單期間是否有累積尚未反映到畫面的更新。
 // 注意這裡只延後「畫面」，資料（stockMap / 開關 / 上架時間）永遠即時更新，
 // 否則送單前的庫存預檢查會拿到舊資料，白白多打一次 GAS。
@@ -628,24 +633,34 @@ function updateReleaseBanner() {
 
 
 // ========================================
-// 🩺 快照新鮮度
+// 🩺 系統健康檢查
+//
+// ⚠️ 這裡的判斷依據換過了，原因很重要：
+//
+// 後端現在會做內容比對，設定沒變就不發布快照。所以「快照很舊」
+// 只代表你最近沒改試算表，完全不代表系統有問題 ——
+// 拿它當依據會讓客人天天看到「庫存資訊可能不是最新的」的假警報。
+//
+// 真正的健康指標是 Firebase 控制節點的 updatedAt：
+// 保底維護每 15 分鐘會無條件推一次（而且不產生任何 commit），
+// 它停了才代表觸發器掛了、或 GAS 出事了。
 // ========================================
 function applySnapshotStamp(json) {
-  const ms = Number(json.updatedAtMs || 0);
   const el = document.getElementById('stale-warning');
   if (!el) return;
 
-  // 🔥 Firebase 連線中時，庫存與開關本來就是即時的，
-  // 快照舊一點完全不影響客人，不需要嚇他們。
+  // Firebase 連線中 → 庫存與開關本來就是即時的，不需要嚇客人
   if (firebaseLive) { el.style.display = 'none'; return; }
 
-  if (!ms) { el.style.display = 'none'; return; }
+  // 有拿到控制節點的時間就用它；完全沒拿到才退回看快照
+  const 基準 = lastControlUpdatedAt || Number((json && json.updatedAtMs) || 0);
+  if (!基準) { el.style.display = 'none'; return; }
 
-  const ageMin = (serverNow() - ms) / 60000;
+  const ageMin = (serverNow() - 基準) / 60000;
   if (ageMin > SNAPSHOT_STALE_MIN) {
     el.style.display = 'block';
     el.textContent = '⚠️ 庫存資訊可能不是最新的，下單前建議與我們確認';
-    console.warn('快照已超過 ' + Math.round(ageMin) + ' 分鐘未更新');
+    console.warn('系統已超過 ' + Math.round(ageMin) + ' 分鐘沒有更新跡象');
   } else {
     el.style.display = 'none';
   }
@@ -1468,6 +1483,10 @@ function applyControl(control) {
   }
 
   if (dataAt) lastControlDataAt = dataAt;
+
+  // 🩺 記下後端最後一次推播的時間，用來判斷系統是否還活著
+  const updatedAt = Number(control.updatedAt || 0);
+  if (updatedAt > lastControlUpdatedAt) lastControlUpdatedAt = updatedAt;
 
   // ---------- 資料層：無論如何都立刻更新 ----------
   const 舊開賣狀態 = isReleasedNow();
