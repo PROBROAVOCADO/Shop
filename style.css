@@ -695,14 +695,6 @@ textarea:focus {
   color: var(--avo-dark);  
 }
 
-/* ⚠️ 未上架警示徽章：橘紅色系警示文字，取代原本過長的日期時間顯示，避免跟按鈕/其他資訊擠在一起 */
-.unreleased-badge {
-  color: #d9534f !important;
-  font-weight: 700 !important;
-  font-style: normal !important;
-  opacity: 1 !important;
-}
-
 /* 🧼 最後一列不要底線 */
 .price-row:last-child {
   border-bottom: none;
@@ -1393,29 +1385,6 @@ textarea:focus {
     font-size: 0.8rem;
   }
 }
-/* ============================================================
-   🥑 波波酪梨 style.css 追加樣式
-   使用方式：把本檔案「整段複製，貼到現有 style.css 的最後面」即可，
-   不需要動到你原本任何一行 CSS。
-
-   另外請順手修一個既有的小 bug（在檔案中段的手機版 RWD 區塊）：
-
-     .info-block,
-     {
-       padding: 25px 20px !important;
-       ...
-     }
-
-   那個多餘的逗號會讓整條規則變成無效的選擇器，
-   所以手機版的 .info-block 內距其實從來沒有生效過。
-   把 .info-block 後面那個逗號刪掉就好：
-
-     .info-block {
-       padding: 25px 20px !important;
-       ...
-     }
-   ============================================================ */
-
 
 /* 🕐 開賣倒數橫幅
    尚未開賣時顯示在頁面最上方，時間一到會自動消失、商品同步解鎖。
@@ -1508,7 +1477,7 @@ textarea:focus {
 
 
 /* ⏳ 未開賣徽章
-   沿用你原本的 .unreleased-badge，只是文案從「未上架」改成「未開賣」，
+   沿用你原本的 ，只是文案從「未上架」改成「未開賣」，
    顏色改成暖橘（原本的正紅偏警告，用在「還沒開始」語意上有點兇）。 */
 .unreleased-badge {
   color: #c47f50 !important;
