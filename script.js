@@ -1984,18 +1984,26 @@ function renderSuccessPage() {
     if (qr) qr.src = resolveImageUrl(window.APP_CONFIG.linePayImgId, 500);
   }
 
-  set('final-amount-display', '$' + finalTotal + ' 元');
-
   if (!currentOrderSummary) return;
   const o = currentOrderSummary;
+
+  // 🔑 金額一律讀 currentOrderSummary，不要讀 finalTotal。
+  //
+  // finalTotal 是「目前購物車」的即時總額，會被 calculateCartTotal() 重算。
+  // 而下單成功後購物車已經清空，只要那之後有任何一次重算
+  // （送單期間收到的 Firebase 推播會在 收尾() 時補套用，就會觸發），
+  // finalTotal 就會變成只剩運費 —— 成功頁顯示 $80 而不是 $330。
+  //
+  // 訂單成交的金額是一個「快照」，不該再跟著購物車變動。
+  set('final-amount-display', '$' + (Number(o.total) || 0) + ' 元');
 
   document.getElementById('order-summary-content').innerHTML = `
     <div class="order-summary-list">
       <div class="order-summary-row"><span class="label">📦 規格細項</span><span class="value js-summary-weight"></span></div>
       <div class="order-summary-row"><span class="label">🚚 配送方式</span><span class="value js-summary-shipping"></span></div>
       <div class="order-summary-row"><span class="label">🏠 收件地址(門市)</span><span class="value js-summary-address"></span></div>
-      <div class="order-summary-row"><span class="label">💰 商品小計</span><span class="value">$${o.subtotal}</span></div>
-      <div class="order-summary-row"><span class="label">🚛 運費</span><span class="value">$${o.shippingFee}</span></div>
+      <div class="order-summary-row"><span class="label">💰 商品小計</span><span class="value">$${Number(o.subtotal) || 0}</span></div>
+      <div class="order-summary-row"><span class="label">🚛 運費</span><span class="value">$${Number(o.shippingFee) || 0}</span></div>
     </div>`;
 
   const weightContainer = document.querySelector('.js-summary-weight');
