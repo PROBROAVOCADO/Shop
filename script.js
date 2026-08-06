@@ -33,6 +33,11 @@ const POLL_MS_FAST = 8000;    // Firebase 沒連上時：靠輪詢快照，8 秒
 const POLL_MS_SLOW = 60000;   // Firebase 正常時：即時層走推播，快照只需慢慢確認靜態內容
 const SNAPSHOT_STALE_MIN = 60;// 快照超過幾分鐘沒更新就顯示柔性提示
 
+// ⏳ 載入畫面的「最短」顯示時間（不是固定等待）。
+// 如果實際載入比它久，不會額外多等；比它快才補到這個秒數。
+// 用意有兩個：一是讓載入動畫真的被看見，二是趁這段時間把該暖的都暖完。
+const MIN_LOADING_MS = 2000;
+
 
 // ========================================
 // 🌟 核心狀態
@@ -251,7 +256,19 @@ async function fetchAddressMap(maxAttempts = 3, baseDelayMs = 1000) {
 // 🚀 頁面啟動
 // ========================================
 window.onload = async function () {
+  const loadStartedAt = Date.now();
   showLoadingScreen(true);
+
+  // 🔥 最重要的一項暖機：Firebase 連線「立刻」開始，不等設定載入完。
+  //
+  // 舊版是 await 完設定才 initFirebaseControl()，等於 WebSocket 握手
+  // 要排在設定載入之後才開始，手機上這段握手常常要 300~800ms。
+  // 客人看到頁面時 Firebase 可能還沒連上，那幾秒的庫存是舊的 ——
+  // 而秒殺最關鍵的就是進站那一瞬間。
+  //
+  // 現在改成平行進行，兩秒的載入畫面結束時，連線通常早就建立好了。
+  window.APP_CONFIG = window.APP_CONFIG || {};
+  initFirebaseControl();
 
   try {
     const [json, addressMap] = await Promise.all([
@@ -260,6 +277,11 @@ window.onload = async function () {
     ]);
 
     const cfg = json.data;
+
+    // 🔑 載入設定的期間，Firebase 可能已經推來更新的即時資料。
+    // 那份一定比快照新，不能被快照蓋回去。
+    const 已有即時資料 = lastControlDataAt > 0;
+    const 保留庫存 = 已有即時資料 ? window.APP_CONFIG.stockMap : null;
 
     window.APP_CONFIG = {
       mainTitle:    cfgGet(cfg['首頁'], '網頁大標題') || '波波酪梨',
@@ -278,17 +300,18 @@ window.onload = async function () {
     window.allVarieties = cfg['品種'] || [];
     window.paymentConfig = cfg['匯款'] || {};
 
-    // 冷啟動：先用快照把即時層填起來，Firebase 連上後會立刻被更新的資料取代。
-    // dataAt 用 0，代表「最舊」，所以任何一次推播都會贏過它。
-    applyReleaseStatus(cfg['上架狀態']);
-    applySwitches(
-      cfgGet(cfg['首頁'], '訂單開關') || '開',
-      {
-        post:     cfgGet(cfg['訂購'], '中華郵政配送'),
-        '711':    cfgGet(cfg['訂購'], '7-11超取配送'),
-        blackcat: cfgGet(cfg['訂購'], '黑貓配送')
-      }
-    );
+    // 冷啟動：只有在還沒收到任何即時資料時，才用快照填即時層。
+    if (!已有即時資料) {
+      applyReleaseStatus(cfg['上架狀態']);
+      applySwitches(
+        cfgGet(cfg['首頁'], '訂單開關') || '開',
+        {
+          post:     cfgGet(cfg['訂購'], '中華郵政配送'),
+          '711':    cfgGet(cfg['訂購'], '7-11超取配送'),
+          blackcat: cfgGet(cfg['訂購'], '黑貓配送')
+        }
+      );
+    }
 
     // 🔑 D1：初始化時設定一次基準，之後 lastKnown 只由 ticker 更新。
     RELEASE.lastKnown = isReleasedNow();
@@ -298,11 +321,15 @@ window.onload = async function () {
     applyStaticTables(cfg['訂購'] || {});
 
     // 庫存 key 統一去空格
-    window.APP_CONFIG.stockMap = {};
-    const rawStock = window.APP_CONFIG.stockData || {};
-    Object.keys(rawStock).forEach(k => {
-      window.APP_CONFIG.stockMap[normKey(k)] = Math.max(0, Number(rawStock[k]) || 0);
-    });
+    if (保留庫存) {
+      window.APP_CONFIG.stockMap = 保留庫存;
+    } else {
+      window.APP_CONFIG.stockMap = {};
+      const rawStock = window.APP_CONFIG.stockData || {};
+      Object.keys(rawStock).forEach(k => {
+        window.APP_CONFIG.stockMap[normKey(k)] = Math.max(0, Number(rawStock[k]) || 0);
+      });
+    }
 
     renderOrderCardImages(window.APP_CONFIG.orderConfig);
 
@@ -312,20 +339,82 @@ window.onload = async function () {
     initAddressSelector();
     initShippingAddressToggle();
     updateReleaseBanner();
-    updateEnterButton();
+    applySwitchesToDom();
 
     configLoaded = true;
     startStockAutoRefresh();
-    initFirebaseControl();
     startReleaseTicker();
+    initVisibilityRefresh();
+
+    // 載入期間收到的推播，這時候才有畫面可以套
+    flushPendingControl();
+
+    // 🖼️ 趁剩下的載入時間把後面幾頁的圖片先抓回來（不阻塞）。
+    // 客人翻到品種頁、訂購頁、成功頁時就不會再等圖。
+    preloadLaterImages(cfg);
+
+    // ⏳ 補滿最短載入時間。實際載入若已超過就不會多等。
+    const 已花時間 = Date.now() - loadStartedAt;
+    if (已花時間 < MIN_LOADING_MS) {
+      await new Promise(r => setTimeout(r, MIN_LOADING_MS - 已花時間));
+    }
 
   } catch (err) {
     console.error('初始化失敗：', err);
     showLoadingError();
+    return; // 已經換掉整個 body，不要再去動載入畫面
   } finally {
     showLoadingScreen(false);
   }
 };
+
+// 🖼️ 預先抓取後續頁面會用到的圖片。
+// 用 new Image() 而不是 fetch：瀏覽器會直接放進圖片快取，
+// 之後 <img src> 指過去是零延遲，而且不會佔用 fetch 的連線配額。
+function preloadLaterImages(cfg) {
+  const urls = [];
+
+  (cfg['品種'] || []).forEach(v => {
+    const u = resolveImageUrl(v.img, 900);
+    if (u) urls.push(u);
+  });
+
+  const 訂購 = cfg['訂購'] || {};
+  [cfgGet(訂購, '訂購頁插圖ID_1'), cfgGet(訂購, '訂購頁插圖ID_2')].forEach(id => {
+    const u = resolveImageUrl(id, 600);
+    if (u) urls.push(u);
+  });
+
+  const qrId = cfgGet(cfg['匯款'], 'LINE_PAY圖片ID');
+  const qrUrl = resolveImageUrl(qrId, 500);
+  if (qrUrl) urls.push(qrUrl);
+
+  // 最多預抓 8 張，避免在行動網路上浪費客人的流量
+  urls.slice(0, 8).forEach(u => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = u;
+  });
+}
+
+// 👀 分頁重新回到前景時強制對一次資料。
+//
+// 這對你的模式特別重要：客人常常 19:50 就把頁面開好、切去別的 App，
+// 20:00 才切回來。手機在背景時瀏覽器會凍結 timer、也可能斷開 WebSocket，
+// 切回來的那一刻畫面有可能是幾分鐘前的。
+function initVisibilityRefresh() {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (isSubmitting) return;
+    refreshRealtime();      // 即時層：庫存 / 開賣時間 / 開關
+    updateReleaseBanner();  // 倒數立刻校正，不等下一秒 tick
+  });
+
+  // iOS Safari 從上一頁返回時是走 bfcache，不會觸發 visibilitychange
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted && !isSubmitting) refreshRealtime();
+  });
+}
 
 // 把「價格表 / 運費表」從設定物件重新建出來。
 // 🔑 A2：獨立成函式，讓背景輪詢也能重新套用，
@@ -649,12 +738,15 @@ function showLoadingScreen(show) {
           .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
           .loading-msg { margin-top: 22px; font-size: 0.85rem; color: #576e37; letter-spacing: 1px; opacity: 0.85; min-height: 1.2em; transition: opacity 0.25s ease; text-align: center; padding: 0 20px; }
           .loading-msg.is-fading { opacity: 0; }
+          .loading-net { margin-top: 14px; font-size: 0.72rem; letter-spacing: 1px; color: #76944a; opacity: 0; transition: opacity 0.4s ease; min-height: 1em; }
+          .loading-net.is-on { opacity: 0.9; }
         </style>
         <div class="avo-bounce">🥑</div>
         <div class="loading-brand">波波酪梨</div>
         <div class="loading-sub">Pro-Bro Avo. | Earth to Table</div>
         <div class="loading-dots"><span></span><span></span><span></span></div>
         <div class="loading-msg" id="loading-msg"></div>
+        <div class="loading-net" id="loading-net"></div>
       `;
       document.body.appendChild(el);
     }
@@ -709,6 +801,16 @@ function startLoadingMessages() {
 
 function stopLoadingMessages() {
   if (loadingMsgTimer) { clearInterval(loadingMsgTimer); loadingMsgTimer = null; }
+}
+
+// 🔌 在載入畫面上顯示即時連線狀態。
+// 對客人是一句安心的話，對你是最快的診斷工具 ——
+// 開賣前自己開一次網站，看到「即時庫存已連線」就知道整條鏈路是通的。
+function setLoadingNet(text) {
+  const el = document.getElementById('loading-net');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.add('is-on');
 }
 
 function showLoadingError() {
@@ -1307,6 +1409,7 @@ function initFirebaseControl() {
 
       firebaseLive = connected;
       setPollInterval(connected ? POLL_MS_SLOW : POLL_MS_FAST);
+      setLoadingNet(connected ? '🔥 即時庫存已連線' : '📡 使用備援連線中');
       console.info(connected
         ? '🔥 Firebase 已連線，即時層改為推播'
         : '⚠️ Firebase 連線中斷，即時層暫時改用輪詢');
@@ -1387,8 +1490,10 @@ function applyControl(control) {
   });
   window.APP_CONFIG.stockMap = newStockMap;
 
-  // ---------- 畫面層：送單期間延後 ----------
-  if (isSubmitting) {
+  // ---------- 畫面層：送單期間、或設定還沒載入完，都先延後 ----------
+  // 資料已經收下了（stockMap / 開關 / 上架時間都是最新的），
+  // 只是還沒有畫面可以套。載入完成時 flushPendingControl() 會補上。
+  if (isSubmitting || !configLoaded) {
     uiNeedsRefresh = true;
     return;
   }
