@@ -54,10 +54,10 @@ var firebaseLive = false;        // Firebase 是否連線中（決定即時層�
 // 網路亂序時，先到的不一定比較新。
 var lastControlDataAt = 0;
 
-// 🔑 D3：送單期間收到的推播先存這裡，送完再套用。
-// 舊版 Firebase 回呼會直接改動購物車，客人按下送出的當下購物車被動到，
-// 雖然送出的 body 已經序列化不受影響，但畫面會跳、體驗很差。
-var pendingControl = null;
+// 🔑 D3：送單期間是否有累積尚未反映到畫面的更新。
+// 注意這裡只延後「畫面」，資料（stockMap / 開關 / 上架時間）永遠即時更新，
+// 否則送單前的庫存預檢查會拿到舊資料，白白多打一次 GAS。
+var uiNeedsRefresh = false;
 
 // 🏝️ 台灣離島判定
 const 離島縣市 = ['澎湖縣', '金門縣', '連江縣'];
@@ -395,7 +395,10 @@ function applySwitches(newOrderSwitch, newShipping) {
     '711':    String((newShipping && newShipping['711']) || '').trim(),
     blackcat: String((newShipping && newShipping.blackcat) || '').trim()
   };
+  applySwitchesToDom();
+}
 
+function applySwitchesToDom() {
   const 設定配送選項 = (id, method, onText, offText) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -408,6 +411,7 @@ function applySwitches(newOrderSwitch, newShipping) {
   設定配送選項('opt-blackcat', 'blackcat', '🐈\u200d⬛ 黑貓宅急便 (限重10斤內)', '🐈\u200d⬛ 黑貓宅急便（目前不支援）');
 
   updateEnterButton();
+  updateOrderPageStopState();
 }
 
 function updateEnterButton() {
@@ -424,6 +428,45 @@ function updateEnterButton() {
   } else {
     btn.classList.remove('is-disabled');
     btn.innerText = '✨ 我已同意，前往選購 👉';
+  }
+}
+
+// 🛑 緊急煞車在訂購頁的呈現。
+//
+// 舊版只有首頁那顆進入按鈕會變灰，已經走到訂購頁的客人畫面上
+// 完全看不出來已經停售 —— 他會填完整張表、按下送出，才被後端打回票。
+// 而秒殺時最積極的那群人正好全部都在這一頁，等於煞車對他們無效，
+// 每個人還會白白吃掉一次 GAS 執行數。
+function updateOrderPageStopState() {
+  const page = document.getElementById('step4-order-form');
+  if (!page) return;
+
+  const 停售 = (orderSwitch === '關') ||
+               !!(window.APP_CONFIG && window.APP_CONFIG.priceConfigBroken);
+
+  // 橫幅用 JS 動態建立，index.html 不需要改
+  let banner = document.getElementById('order-stop-banner');
+  if (停售) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'order-stop-banner';
+      banner.className = 'stale-warning';
+      banner.style.marginBottom = '18px';
+      page.insertBefore(banner, page.firstChild);
+    }
+    banner.textContent = (window.APP_CONFIG && window.APP_CONFIG.priceConfigBroken)
+      ? '⚠️ 系統設定維護中，暫時無法送出訂單，造成不便敬請見諒。'
+      : '🚫 目前已暫停接單，感謝您的體諒 🌱　現在無法送出訂單。';
+    banner.style.display = 'block';
+  } else if (banner) {
+    banner.style.display = 'none';
+  }
+
+  const submitBtn = document.getElementById('submit-btn');
+  if (submitBtn && !isSubmitting) {
+    submitBtn.disabled = 停售;
+    submitBtn.classList.toggle('is-disabled', 停售);
+    submitBtn.innerText = 停售 ? '🚫 暫停接單中' : '✅ 確認訂購';
   }
 }
 
@@ -459,7 +502,7 @@ function startReleaseTicker() {
       renderProductList();
       renderPriceMenu();
       if (nowReleased) {
-        customAlert('🎉 開賣囉！商品已可以選購～');
+        customAlert('🎉 開賣囉！商品已經可以選購，祝您順利下單～');
         refreshRealtime(); // 立刻抓一次最新庫存
       }
     }
@@ -721,6 +764,7 @@ function goToStep(step) {
     renderProductList();
     updateAddressSection();
     calculateCartTotal();
+    updateOrderPageStopState(); // 若在瀏覽期間被停售，進來就要看得到
   }
 
   window.scrollTo(0, 0);
@@ -895,7 +939,7 @@ function updateCart(key, deltaQty, weight, displayName) {
   if (!cart[key] && deltaQty <= 0) return;
 
   if (!isReleasedNow()) {
-    customAlert('⏳ 商品尚未開賣，請稍候...');
+    customAlert('⏳ 商品尚未開賣，請稍候一下～');
     return;
   }
 
@@ -989,10 +1033,16 @@ function trimCartToStock() {
   if (調整.length === 0) return false;
 
   recalcTotalWeight();
+
+  // 🔑 購物車被動過就整塊重繪，不只補數字。
+  // updateStockDisplay() 只會改文字與按鈕的 disabled 狀態，
+  // 品項從「可選購」變成「售罄」時，整列的結構其實需要換掉；
+  // 客人關掉提示後看到的會是搶購前的舊版面，數量也對不起來。
+  renderProductList();
+  renderPriceMenu();
   refreshCartUI();
-  if (!isSubmitting) {
-    customAlert('⚠️ 有品項剛好被其他客人買走，已為您自動調整購物車：\n\n' + 調整.join('\n'));
-  }
+
+  customAlert('⚠️ 有品項剛好被其他客人買走，已為您自動調整購物車：\n\n' + 調整.join('\n'));
   return true;
 }
 
@@ -1284,6 +1334,16 @@ function initFirebaseControl() {
 }
 
 // 套用一份即時層資料（來自 Firebase 推播或 REST 備援）
+//
+// 🔑 這裡的設計原則：「資料永遠即時更新，只有畫面延後」。
+//
+// 上一版把資料和畫面綁在一起延後，結果是送單期間 stockMap 完全凍住，
+// verifyStockBeforeSubmit() 拿到的是按下按鈕那一瞬間的舊庫存 →
+// 前端預檢查通過 → 白打一次 GAS → 被後端擋下來。
+// 這在秒殺時特別糟：最積極的客人全部落在這條路徑上。
+//
+// 現在資料照常更新，只有「重繪畫面 / 修剪購物車 / 跳提示」這些
+// 會干擾客人操作的動作被延後到送單結束。
 function applyControl(control) {
   if (!control || !control.json) return;
 
@@ -1296,17 +1356,6 @@ function applyControl(control) {
     return;
   }
 
-  // 🔑 D3：送單期間先暫存，送完再套用，避免中途改動購物車讓畫面跳動。
-  // 暫存也要比新鮮度：送單期間可能連收到好幾筆，後到的不一定比較新。
-  if (isSubmitting) {
-    if (!pendingControl || dataAt > Number(pendingControl.dataAt || 0)) {
-      pendingControl = control;
-    }
-    return;
-  }
-
-  if (dataAt) lastControlDataAt = dataAt;
-
   let stockMap;
   try {
     stockMap = JSON.parse(control.json);
@@ -1315,37 +1364,63 @@ function applyControl(control) {
     return;
   }
 
-  // 上架時間
+  if (dataAt) lastControlDataAt = dataAt;
+
+  // ---------- 資料層：無論如何都立刻更新 ----------
   const 舊開賣狀態 = isReleasedNow();
+
   applyReleaseStatus({
     releaseAt: control.releaseAt === undefined ? null : control.releaseAt,
     releaseDisplay: control.releaseDisplay || ''
   });
-  // 如果你臨時改了開賣時間、而且改完當下狀態就不一樣了，
-  // 這裡先重繪一次；持續的狀態轉換仍然交給 ticker。
-  if (isReleasedNow() !== 舊開賣狀態) {
+
+  orderSwitch = String(control.orderSwitch || '開').trim();
+  shippingSwitch = {
+    post:     String((control.shipping && control.shipping.post) || '').trim(),
+    '711':    String((control.shipping && control.shipping['711']) || '').trim(),
+    blackcat: String((control.shipping && control.shipping.blackcat) || '').trim()
+  };
+
+  const newStockMap = {};
+  Object.keys(stockMap || {}).forEach(k => {
+    newStockMap[normKey(k)] = Math.max(0, Number(stockMap[k]) || 0);
+  });
+  window.APP_CONFIG.stockMap = newStockMap;
+
+  // ---------- 畫面層：送單期間延後 ----------
+  if (isSubmitting) {
+    uiNeedsRefresh = true;
+    return;
+  }
+
+  refreshUiFromControl(舊開賣狀態);
+}
+
+// 把最新資料反映到畫面上。送單期間不呼叫，送完由 收尾() 補呼叫。
+function refreshUiFromControl(舊開賣狀態) {
+  // 開賣狀態如果因為你臨時改時間而翻轉，這裡先重繪一次；
+  // 持續的狀態轉換仍然交給 ticker 負責（D1）。
+  if (typeof 舊開賣狀態 === 'boolean' && isReleasedNow() !== 舊開賣狀態) {
     renderProductList();
     renderPriceMenu();
   }
   updateReleaseBanner();
 
-  // 開關
-  applySwitches(control.orderSwitch, control.shipping);
-
-  // 庫存
-  applyLatestStockMap(stockMap);
+  applySwitchesToDom();
+  trimCartToStock();
+  updateStockDisplay();
+  calculateCartTotal();
 
   // Firebase 活著時不需要快照過期提示
   const staleEl = document.getElementById('stale-warning');
   if (staleEl && firebaseLive) staleEl.style.display = 'none';
 }
 
-// 把暫存的推播套用掉（送單流程結束時呼叫）
+// 把送單期間累積的畫面更新一次補上（送單流程結束時呼叫）
 function flushPendingControl() {
-  if (!pendingControl) return;
-  const c = pendingControl;
-  pendingControl = null;
-  applyControl(c);
+  if (!uiNeedsRefresh) return;
+  uiNeedsRefresh = false;
+  refreshUiFromControl();
 }
 
 function applyLatestStockMap(rawStock) {
@@ -1370,7 +1445,7 @@ function handleOrderEnter() {
     return;
   }
   if (orderSwitch === '關') {
-    customAlert('目前暫停接單中 🌱\n\n我們會於開放時第一時間公告，感謝您的體諒！');
+    customAlert('目前為停止採收期，暫停接單中 🌱\n\n我們會於開放時第一時間公告，感謝您的體諒！');
     return;
   }
   goToStep(2);
@@ -1397,6 +1472,19 @@ async function submitOrder(e) {
 
   if (!nEl || !pEl || !submitBtn) {
     customAlert('⚠️ 找不到必填欄位，請確認訂購頁已正確顯示！');
+    return;
+  }
+
+  // 🛑 緊急煞車。舊版這裡沒有檢查，客人會一路填完才被後端擋下來。
+  // 這一道同時保護 GAS：停售後的送出不會變成一次執行。
+  if (window.APP_CONFIG && window.APP_CONFIG.priceConfigBroken) {
+    customAlert('⚠️ 系統設定正在維護中，暫時無法送出訂單，造成不便敬請見諒。');
+    updateOrderPageStopState();
+    return;
+  }
+  if (orderSwitch === '關') {
+    customAlert('🚫 不好意思，我們剛剛暫停接單了 🌱\n\n感謝您的支持，開放時會第一時間公告！');
+    updateOrderPageStopState();
     return;
   }
 
@@ -1470,18 +1558,21 @@ async function submitOrder(e) {
     isSubmitting = false;
     submitBtn.disabled = false;
     submitBtn.innerText = '✅ 確認訂購';
-    flushPendingControl(); // 把送單期間暫存的推播套用掉
+    flushPendingControl();      // 補上送單期間延後的畫面更新
+    updateOrderPageStopState(); // 期間若被停售，按鈕要維持灰色
   };
 
-  // 送出前先校對一次庫存，避免客人白等 GAS
+  // 送出前先校對一次庫存，避免客人白等 GAS。
+  // 因為資料層已經改成永遠即時更新，這裡拿到的一定是最新庫存。
   const stockCheck = await verifyStockBeforeSubmit();
   if (!stockCheck.ok) {
     const lines = stockCheck.shortages.map(s =>
       `「${s.displayName} ${s.weight}斤」目前只剩 ${s.avail} 份（您選了 ${s.need} 份）`);
-    isSubmitting = false;
+    // 先講清楚發生什麼事，再講我們幫他做了什麼。
+    // 提示已改成佇列制，兩則都會依序看到，不會互相蓋掉。
+    customAlert('⚠️ 不好意思，部分品項庫存剛好有異動：\n\n' + lines.join('\n'));
+    收尾();          // 先解除 isSubmitting，trimCartToStock 才會發出調整通知
     trimCartToStock();
-    customAlert('⚠️ 不好意思，部分品項庫存剛好有異動：\n\n' + lines.join('\n') + '\n\n已為您自動調整購物車，請確認後再送出一次');
-    收尾();
     return;
   }
 
@@ -1561,7 +1652,15 @@ async function submitOrder(e) {
     } else {
       currentOrderKey = null; // 這是明確的失敗（例如庫存不足），下次是新的一筆
       customAlert(err.message || '送單失敗，請稍後再試');
+      收尾();
+      // 🔑 被後端擋下來通常代表庫存剛剛歸零。
+      // 先用手上最新的資料重繪一次（客人立刻看到正確的畫面與購物車），
+      // 再去抓一次即時層確認。順序不能反，否則客人會盯著舊畫面等網路。
+      renderProductList();
+      renderPriceMenu();
+      trimCartToStock();
       refreshRealtime();
+      return;
     }
     收尾();
   }
@@ -1651,15 +1750,46 @@ function renderSuccessPage() {
 // ========================================
 // 🔧 通用工具
 // ========================================
+// 🔔 提示佇列（D2）
+// 舊版是直接覆寫訊息文字，後一則會把前一則吃掉。
+// 最常見的災情：送單被擋下時，「庫存不足」和「已為您自動調整購物車」
+// 幾乎同時發出，客人只看得到其中一則，於是不知道購物車已經被改過了。
+const alertQueue = [];
+let alertShowing = false;
+
 function customAlert(msg) {
+  const text = String(msg == null ? '' : msg);
+  if (!text) return;
+
+  // 同一則訊息連續出現就不重複排隊（例如短時間內多次推播）
+  if (alertQueue.length && alertQueue[alertQueue.length - 1] === text) return;
+
+  alertQueue.push(text);
+  if (!alertShowing) showNextAlert();
+}
+
+function showNextAlert() {
   const overlay = document.getElementById('custom-alert-overlay');
   const msgText = document.getElementById('alert-message');
-  if (overlay && msgText) { msgText.innerText = msg; overlay.style.display = 'flex'; }
+  if (!overlay || !msgText) { alertQueue.length = 0; alertShowing = false; return; }
+
+  if (alertQueue.length === 0) {
+    alertShowing = false;
+    overlay.style.display = 'none';
+    return;
+  }
+
+  alertShowing = true;
+  msgText.innerText = alertQueue.shift();
+  overlay.style.display = 'flex';
+
+  // 還有排隊中的訊息時，按鈕提示還有下一則
+  const btn = overlay.querySelector('.btn-primary');
+  if (btn) btn.innerText = alertQueue.length > 0 ? `確定（還有 ${alertQueue.length} 則）` : '確定';
 }
 
 function closeAlert() {
-  const el = document.getElementById('custom-alert-overlay');
-  if (el) el.style.display = 'none';
+  showNextAlert(); // 顯示下一則；沒有了就自然關閉
 }
 
 function showLightbox(s) {
