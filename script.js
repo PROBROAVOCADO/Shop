@@ -28,6 +28,7 @@ const ADDRESS_JSON_URL = 'https://probroavocado.com/data/address.json';
 // 🔥 Firebase 即時控制節點（唯讀，這個網址本來就是公開資訊）
 const FIREBASE_DB_URL = 'https://probro-stock-default-rtdb.asia-southeast1.firebasedatabase.app';
 const FIREBASE_CONTROL_PATH = 'control';
+const FIREBASE_ORDERS_PATH  = 'orders';
 
 const POLL_MS_FAST = 8000;    // Firebase 沒連上時：靠輪詢快照，8 秒一次
 const POLL_MS_SLOW = 60000;   // Firebase 正常時：即時層走推播，快照只需慢慢確認靜態內容
@@ -185,6 +186,44 @@ async function fetchSnapshot(url) {
   }
 
   return json;
+}
+
+// 🧾 查詢這筆訂單的「收據」。
+//
+// 壓力測試量到的實況：60 併發時，60 筆裡有 20 筆伺服器其實成功了，
+// 客戶端卻因為 Google 回傳 HTML 錯誤頁而以為失敗 —— 三分之一的成功訂單，
+// 客人看到的是「無法確認結果」。
+//
+// 下單成功時後端會把收據寫進 Firebase，所以這裡直接查 Firebase 就好。
+// 刻意不回頭問 GAS：那個時間點 GAS 正是最塞的，
+// 二十個人同時回去查只會讓壅塞更嚴重，等於自己人踩自己人。
+async function fetchOrderReceipt(orderKey) {
+  if (!orderKey) return null;
+  try {
+    const res = await fetch(
+      `${FIREBASE_DB_URL}/${FIREBASE_ORDERS_PATH}/${encodeURIComponent(orderKey)}.json`,
+      { cache: 'no-store' }
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    return (json && json.row) ? json : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// 送單沒收到回應時，等一下再查幾次。
+// 訂單有可能還在 GAS 的佇列裡排隊，所以要給它一點時間。
+// 間隔帶隨機值，避免所有客人在同一秒一起查。
+async function waitForOrderReceipt(orderKey, onProgress) {
+  const 間隔 = [3000, 5000, 8000, 12000];
+  for (let i = 0; i < 間隔.length; i++) {
+    await new Promise(r => setTimeout(r, 間隔[i] + Math.random() * 1500));
+    if (onProgress) onProgress(i + 1, 間隔.length);
+    const receipt = await fetchOrderReceipt(orderKey);
+    if (receipt) return receipt;
+  }
+  return null;
 }
 
 // 🔥 Firebase REST 備援：SDK 連不上時，用一般 HTTPS 抓即時層。
@@ -1770,9 +1809,41 @@ async function submitOrder(e) {
 
   } catch (err) {
     if (err.message === 'SERVER_TIMEOUT_NON_JSON') {
-      // ⚠️ 這裡刻意「不」清掉 currentOrderKey：
-      // 客人如果再按一次，後端會用同一組識別碼辨識出是同一筆，直接回成功。
+      // ⚠️ 這是壓力測試裡最常見的情況：伺服器其實成功了，
+      // 只是 Google 在壅塞時回傳 HTML 錯誤頁而不是 JSON。
+      // 實測 60 併發時，三分之一的成功訂單會走到這裡。
+      //
+      // 所以先別急著跟客人說失敗 —— 去 Firebase 查收據，
+      // 查到就代表訂單真的成立，直接帶他到成功頁。
+      submitBtn.innerText = '確認訂單中...';
+      const receipt = await waitForOrderReceipt(currentOrderKey, (n, total) => {
+        submitBtn.innerText = `確認訂單中 (${n}/${total})...`;
+      });
+
+      if (receipt) {
+        if (receipt.total !== undefined) {
+          finalSubtotal    = Number(receipt.subtotal);
+          finalShippingFee = Number(receipt.shippingFee);
+          finalTotal       = Number(receipt.total);
+          if (currentOrderSummary) {
+            currentOrderSummary.subtotal    = finalSubtotal;
+            currentOrderSummary.shippingFee = finalShippingFee;
+            currentOrderSummary.total       = finalTotal;
+          }
+        }
+        cart = {};
+        totalWeight = 0;
+        currentOrderKey = null;
+        收尾();
+        goToStep(5);
+        return;
+      }
+
+      // 查不到才是真的無法確認。orderKey 刻意保留：
+      // 客人再按一次時後端會辨識出是同一筆，不會變成兩筆訂單。
       customAlert('⚠️ 系統回應較慢，暫時無法確認結果。\n\n您可以「再按一次確認訂購」，系統會自動辨識、不會重複下單。\n若仍然失敗，請透過 LINE 或電話與我們確認，謝謝您的耐心 🙏');
+      收尾();
+      return;
     } else {
       currentOrderKey = null; // 這是明確的失敗（例如庫存不足），下次是新的一筆
       customAlert(err.message || '送單失敗，請稍後再試');
