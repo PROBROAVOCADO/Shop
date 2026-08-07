@@ -711,7 +711,7 @@ function updateReleaseBanner() {
   banner.innerHTML =
     `<div class="release-banner-title">🕐 ${RELEASE.display} 開賣</div>` +
     `<div class="release-banner-count">距離開賣還有 ${countdown}</div>` +
-    `<div class="release-banner-hint">時間一到會自動開放，不需要重新整理</div>`;
+    `<div class="release-banner-hint">時間一到將自動開放</div>`;
 }
 
 
