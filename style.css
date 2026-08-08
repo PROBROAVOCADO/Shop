@@ -953,6 +953,43 @@ select:focus, input:focus, textarea:focus {
 }
 .shipping-island-price { min-width: 42px; text-align: right; }
 
+/* 🥑 首頁售罄／非產季提示卡
+   放在公告卡內、標題分隔線下方。平常完全隱藏，不佔版面。
+   用虛線框＋淡綠底，跟「注意事項」類區塊同一套語彙。 */
+.sold-out-notice {
+  max-width: 520px;
+  margin: 0 auto 20px;
+  padding: 16px 20px;
+  background: rgba(228, 234, 215, 0.55);
+  border: 1px dashed var(--herb-green);
+  border-radius: var(--r-field);
+  text-align: center;
+}
+
+.sold-out-title {
+  font-family: var(--heading-font);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-indent: 2px;
+  color: var(--avo-dark);
+  margin-bottom: 8px;
+}
+
+.sold-out-text {
+  font-size: 0.85rem;
+  line-height: 1.75;
+  letter-spacing: 0.5px;
+  color: var(--clay-deep);
+  white-space: pre-line; /* 讓副文的換行生效 */
+}
+
+@media screen and (max-width: 767px) {
+  .sold-out-notice { padding: 14px 16px; margin-bottom: 16px; }
+  .sold-out-title { font-size: 0.98rem; letter-spacing: 1.5px; }
+  .sold-out-text { font-size: 0.8rem; }
+}
+
 /* 🌱 淡暖色提示文字（配送方式備註、規格選擇備註）
    white-space: pre-line → 試算表裡按 Alt+Enter 換行，網頁上就會換行 */
 .hint-warm-text {
