@@ -538,13 +538,29 @@ function applyStaticTables(data) {
   運費表 = {};
   Object.keys(運費欄位定義).forEach(k => { 運費表[k] = cfgNum(data, 運費欄位定義[k]); });
 
-  // ⚠️ 價格全 0 通常代表試算表的 key 被動到（多打/少打空格）。
-  // 這種情況下前後端會「一致地」都算成 0 元，後端覆核完全失效，
-  // 所以這裡直接把訂購入口鎖住，而不是讓客人下 0 元訂單。
-  const 有效價格數 = Object.values(價格表).filter(v => v > 0).length;
-  window.APP_CONFIG.priceConfigBroken = (有效價格數 === 0);
+  // ⚠️ 這裡要區分兩種「單價 = 0」，它們數值上完全一樣但意義相反：
+  //
+  //   ① 試算表 key 被改壞（多打/少打空格）→ cfgGet 查不到欄位，回傳 undefined
+  //      這種要鎖住訂購入口，否則前後端會「一致地」都算成 0 元，
+  //      後端覆核完全失效，客人會下到 0 元訂單。
+  //
+  //   ② 這一級真的非產季，B 欄就是填 0 → 欄位存在，值是 0
+  //      這是正常營運狀態，要顯示「非產季」而不是「系統維護中」。
+  //
+  // 所以判斷依據是「欄位找不找得到」，不是「值大不大於 0」。
+  // 舊版用 `有效價格數 === 0` 判斷，會把整季休耕誤判成系統故障。
+  const 找不到的欄位 = 商品分類
+    .filter(cat => cfgGet(data, cat.priceKey) === undefined)
+    .map(cat => cat.priceKey);
+
+  window.APP_CONFIG.priceConfigBroken = (找不到的欄位.length === 商品分類.length);
+
   if (window.APP_CONFIG.priceConfigBroken) {
-    console.error('價格設定全部為 0，已鎖定訂購入口');
+    console.error('所有單價欄位都讀不到，已鎖定訂購入口。請檢查試算表「3-訂購與運費」A 欄的參數名稱', 找不到的欄位);
+  } else if (找不到的欄位.length > 0) {
+    // 只壞了一部分：那幾項會安靜地變成「非產季」，不鎖入口但要留下線索。
+    // 這種局部故障最難發現 —— 畫面看起來完全正常，只是少賣了幾個品項。
+    console.warn('以下單價欄位讀不到，這些品項會顯示為非產季：', 找不到的欄位);
   }
 }
 
