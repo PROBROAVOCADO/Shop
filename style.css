@@ -81,6 +81,24 @@ html, body {
   color: var(--text-main);
 }
 
+/* 🏞️ 背景等高線
+   兩組丘陵線橫貫整個視窗，每組一濃一淡（深褐 + 暖褐）。
+   固定在視窗上不隨捲動移動，所以捲頁時卡片像是在地景上滑過。
+   手機版卡片是滿版的，線條只會從卡片之間的縫隙透出來。 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 900' preserveAspectRatio='xMidYMid slice'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath d='M-40,300 C180,250 320,345 500,330 C700,313 820,235 1000,258 C1180,281 1300,345 1480,312' stroke='%239A7E5D' stroke-opacity='0.20' stroke-width='1.6'/%3E%3Cpath d='M-40,346 C170,300 330,392 505,378 C700,362 830,290 1005,312 C1180,334 1305,392 1480,360' stroke='%237A6449' stroke-opacity='0.10' stroke-width='1.1'/%3E%3Cpath d='M-40,600 C200,645 340,540 520,552 C720,565 840,648 1020,636 C1200,624 1320,562 1480,588' stroke='%239A7E5D' stroke-opacity='0.18' stroke-width='1.6'/%3E%3Cpath d='M-40,646 C200,690 345,588 525,600 C720,613 845,694 1025,682 C1200,670 1325,610 1480,634' stroke='%237A6449' stroke-opacity='0.09' stroke-width='1.1'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: cover;
+  background-position: center;
+}
+
+/* 內容永遠疊在等高線之上 */
+.main-wrapper { position: relative; z-index: 1; }
+
 /* --- 🧱 全站通用卡片外觀（唯一正版） --- */
 .info-block {
   background-color: var(--creamy);
@@ -704,6 +722,15 @@ select {
     max-width: 420px !important;
     padding: 42px 38px !important;
   }
+
+  /* 🏞️ 山丘拉齊卡片寬度
+     footer 在 app-container 裡面，桌機版卡片左右各有 44px padding，
+     山丘原本會被縮進去 88px。用負邊距把它推回卡片的真實邊緣。
+     ⚠️ 這裡的 -44px 必須跟上面 .app-container 的 padding 左右值一致。 */
+  .site-footer {
+    margin-left: -44px;
+    margin-right: -44px;
+  }
 }
 
 /* 🖼️ 頂部橫幅（原本 inline 寫死 25px 圓角＋重陰影，改由此控制） */
@@ -915,13 +942,18 @@ select:focus, input:focus, textarea:focus {
 }
 .shipping-island-price { min-width: 42px; text-align: right; }
 
-/* 🌱 淡暖色提示文字 */
+/* 🌱 淡暖色提示文字（配送方式備註、規格選擇備註）
+   white-space: pre-line → 試算表裡按 Alt+Enter 換行，網頁上就會換行 */
 .hint-warm-text {
   font-size: 0.85rem;
   line-height: 1.7;
   letter-spacing: 0.5px;
   color: var(--avo-accent);
+  white-space: pre-line;
 }
+
+/* 規格選擇下方的備註：跟商品清單之間留一點呼吸 */
+#spec-note { margin-bottom: 12px; }
 
 /* 🧯 價格表不吃 info-block 的段落樣式 */
 #price-menu-container p {
