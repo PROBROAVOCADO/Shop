@@ -20,10 +20,13 @@
     <!-- 🥑 分頁小圖示 -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🥑</text></svg>">
 
-    <!-- 🖋️ 標題字體：Huninn（粉圓）／內文字體：Noto Sans TC -->
+    <!-- 🖋️ v7 字體改版
+         標題：Noto Serif TC（思源宋體）－ 對應「配送時間」海報的標題字
+         內文：Noto Sans TC － 訂購流程要好讀，維持黑體
+         ⚠️ Huninn（粉圓）已移除，改宋體是這次品牌一致性改版的核心 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Huninn&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;600;700&display=swap" rel="stylesheet">
 
     <link rel="preconnect" href="https://lh3.googleusercontent.com">
     <link rel="preconnect" href="https://script.google.com">
@@ -49,10 +52,10 @@
 
     <div class="main-wrapper">
 
-      <!-- 頂部橫幅（由 JS 動態填入） -->
-      <div class="banner-container" id="banner-container" style="width: 100%; margin-bottom: 25px; overflow: hidden; border-radius: 25px; box-shadow: 0 8px 25px rgba(0,0,0,0.15); display:none;">
+      <!-- 頂部橫幅（由 JS 動態填入）
+           ⚡ v7：圓角與陰影原本寫死在 inline，改由 style.css 的 .banner-container 控制 -->
+      <div class="banner-container" id="banner-container" style="display:none;">
         <img id="banner-img" src=""
-             style="width: 100%; aspect-ratio: 3 / 1; object-fit: cover; display: block;"
              referrerpolicy="no-referrer"
              onerror="this.parentElement.style.display='none';">
       </div>
@@ -63,11 +66,12 @@
       <!-- ⚠️ 快照過期柔性提示：GITHUB_TOKEN 過期或觸發器停擺時會出現 -->
       <div id="stale-warning" class="stale-warning" style="display:none;"></div>
 
-      <div class="app-container" style="border-radius: 30px;">
+      <!-- ⚡ v7：移除 inline border-radius:30px，改由 style.css 統一控制 -->
+      <div class="app-container">
 
 <!-- ------ 第1頁 : 公告頁面 ------ -->
 <div id="step1-announcement" class="page-content">
-  <h2 class="main-title" id="main-title" style="margin-top: 0;">波波酪梨</h2>
+  <h2 class="main-title" id="main-title">波波酪梨</h2>
   <div class="sub-title">Pro-Bro Avo. | Earth to Table</div>
   <div class="origin-slogan">| 來自南投名間 小農自產自銷．現採現送 |</div>
   <div class="title-divider"></div>
@@ -87,11 +91,11 @@
 
 <!-- ------ 第2頁 : 品種介紹頁面 ------ -->
 <div id="step2-varieties" class="page-content" style="display:none;">
-  <h2 class="main-title" id="variety-title" style="margin-top: 0;">我們的當季酪梨</h2>
+  <h2 class="main-title" id="variety-title">我們的當季酪梨</h2>
   <div class="sub-title">Pro-Bro's Seasonal Picks!</div>
   <div class="title-divider"></div>
   <div id="varieties-container">
-    <p style="text-align:center; color:var(--avo-dark);">正在準備當季品種資訊...🥑</p>
+    <p class="loading-note">正在準備當季品種資訊...🥑</p>
   </div>
   <div class="button-group">
     <button class="btn-secondary" onclick="goToStep(1)">⬅️ 返回公告</button>
@@ -112,7 +116,8 @@
   <div id="price-menu-container"></div>
 
   <div class="info-block">
-    <h3 style="text-align:center;">🚚 配送方式與運費</h3>
+    <!-- ⚡ v7：原本是沒有 class 的裸 h3，吃不到標題樣式，補上 .section-title -->
+    <h3 class="section-title">🚚 配送方式與運費</h3>
     <div class="product-divider"></div>
     <div class="shipping-content">
       <div class="shipping-method-block">
@@ -173,12 +178,13 @@
 
 <!-- ------ 第4頁 : 訂購頁面 ------ -->
 <div id="step4-order-form" class="page-content" style="display:none;">
-  <h2 class="main-title" id="order-title" style="margin-top: 0;">訂購資訊</h2>
+  <h2 class="main-title" id="order-title">訂購資訊</h2>
   <div class="sub-title">Harvested for You by Pro-Bro Avo.</div>
   <div class="title-divider"></div>
 
   <div class="info-block">
-    <p><strong>🚚 1. 配送方式選擇</strong></p>
+    <!-- ⚡ v7：表單標題原本用 <p style="margin-top:..."><strong>，改為 .form-label -->
+    <p class="form-label">🚚 1. 配送方式選擇</p>
     <div class="hint-warm-text" id="shipping-note"></div>
 
     <!-- ⚡ 拿掉 onchange：原本 HTML 的 onchange 跟 script.js 的 addEventListener
@@ -190,7 +196,7 @@
       <option value="blackcat" id="opt-blackcat">🐈‍⬛ 黑貓宅配 (限重10斤內)</option>
     </select>
 
-    <p style="margin-top: 25px;"><strong>📦 2. 規格選擇</strong></p>
+    <p class="form-label">📦 2. 規格選擇</p>
     <div id="product-list-container"></div>
   </div>
 
@@ -211,34 +217,35 @@
     </div>
   </div>
 
-  <!-- 訂購頁面圖片 -->
-  <div id="order-middle-card" class="info-block" style="display: none; padding: 25px !important;">
-    <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 15px;">
-      <div id="container-img1" class="variety-img-container" style="margin-bottom: 0;">
-        <img id="order-card-img1" src="" class="variety-img" loading="lazy" onclick="showLightbox(this.src)" style="cursor: zoom-in; height: 220px; object-fit: contain; background-color: #fff;">
+  <!-- 訂購頁面圖片
+       ⚡ v7：移除 padding !important 與圖片寫死的 height，改由 style.css 控制 -->
+  <div id="order-middle-card" class="info-block" style="display: none;">
+    <div class="order-img-stack">
+      <div id="container-img1" class="variety-img-container">
+        <img id="order-card-img1" src="" class="variety-img" loading="lazy" onclick="showLightbox(this.src)">
       </div>
-      <div id="container-img2" class="variety-img-container" style="margin-bottom: 0;">
-        <img id="order-card-img2" src="" class="variety-img" loading="lazy" onclick="showLightbox(this.src)" style="cursor: zoom-in; height: 220px; object-fit: contain; background-color: #fff;">
+      <div id="container-img2" class="variety-img-container">
+        <img id="order-card-img2" src="" class="variety-img" loading="lazy" onclick="showLightbox(this.src)">
       </div>
     </div>
-    <div id="order-card-text" class="variety-grading-note" style="text-align: center; display: none;"></div>
+    <div id="order-card-text" class="variety-grading-note" style="display: none;"></div>
   </div>
 
   <!-- 訂購資料填寫 -->
   <div class="info-block">
-    <p><strong>👤 收件人姓名</strong></p>
+    <p class="form-label">👤 收件人姓名</p>
     <input type="text" id="cust-name" placeholder="請輸入姓名" maxlength="40">
 
-    <p style="margin-top: 20px;"><strong>📞 連絡電話</strong></p>
+    <p class="form-label">📞 連絡電話</p>
     <input type="tel" id="cust-phone" placeholder="請輸入手機號碼" inputmode="numeric" maxlength="20">
 
     <div id="store-address-section" style="display:none;">
-      <p style="margin-top: 20px;"><strong>🏪 7-11 取件門市</strong></p>
+      <p class="form-label">🏪 7-11 取件門市</p>
       <input type="text" id="store-name" placeholder="請填寫 7-11 門市名稱或門市編號" maxlength="60">
     </div>
 
     <div id="post-address-section" style="display:none;">
-      <p style="margin-top: 20px;"><strong>🏠 收件地址</strong></p>
+      <p class="form-label">🏠 收件地址</p>
       <div class="address-grid">
         <div class="grid-item">
           <select id="county"><option value="">選擇縣市</option></select>
@@ -250,17 +257,17 @@
           <input type="text" id="zipcode" readonly class="readonly-input" placeholder="區號">
         </div>
       </div>
-      <div id="address-error-hint" class="address-error-hint" style="display:none; margin-bottom: 10px;">
+      <div id="address-error-hint" class="address-error-hint" style="display:none;">
         請先選擇縣市與行政區
       </div>
-      <div id="island-shipping-hint" class="hint-warm-text" style="display:none; margin-bottom: 10px;">
+      <div id="island-shipping-hint" class="hint-warm-text" style="display:none;">
         🏝️ 您選擇的地區屬於離島，運費將依離島價格計算
       </div>
       <input type="text" id="delivery-address" placeholder="請輸入詳細道路、巷弄、號樓" maxlength="100">
     </div>
 
-    <p style="margin-top: 20px;"><strong>✨ 小小許願區 (備註)</strong></p>
-    <textarea id="order-note" maxlength="300" placeholder="如欲購買同地址、兩箱(含)以上&#10;請與我們聯繫~" style="min-height: 100px; width: 100%; box-sizing: border-box;"></textarea>
+    <p class="form-label">✨ 小小許願區 (備註)</p>
+    <textarea id="order-note" maxlength="300" placeholder="如欲購買同地址、兩箱(含)以上&#10;請與我們聯繫~"></textarea>
   </div>
 
   <div class="button-group">
@@ -271,12 +278,13 @@
 
 <!-- ------ 第5頁：匯款成功頁面 ------ -->
 <div id="step5-payment-info" class="page-content" style="display: none;">
-  <h2 class="main-title" style="margin-top: 0;">✨ 已收到資料 謝謝您 ✨</h2>
+  <h2 class="main-title">✨ 已收到資料 謝謝您 ✨</h2>
   <div class="sub-title">Your Trust, Our Harvest. Thank You.</div>
   <div class="title-divider"></div>
 
-  <div id="order-summary-card" class="info-block" style="margin-top:20px;">
-    <h3 style="text-align:center;">🧾 本次訂購內容</h3>
+  <div id="order-summary-card" class="info-block">
+    <!-- ⚡ v7：補上 .section-title -->
+    <h3 class="section-title">🧾 本次訂購內容</h3>
     <div id="order-summary-content"></div>
     <div class="order-total-inside">
       總金額：
@@ -293,8 +301,8 @@
 
     <div id="content-bank" class="payment-content active">
       <div class="payment-detail-card">
-        <h3 style="text-align: center !important; margin-top: 0; color: var(--avo-dark);">💰 匯款資料</h3>
-        <div style="font-size: 1.1rem; line-height: 2; color: var(--avo-dark);">
+        <h3 class="payment-card-title">💰 匯款資料</h3>
+        <div class="payment-fields">
           <p><strong>銀行：</strong><span id="bank-val"></span></p>
           <p><strong>帳號：</strong><span id="account-val"></span></p>
           <p><strong>戶名：</strong><span id="name-val"></span></p>
@@ -304,40 +312,43 @@
 
     <div id="content-linepay" class="payment-content">
       <div class="payment-detail-card">
-        <h3 style="margin-top: 0; color: #00b900;">🟢 LINE Pay 付款</h3>
-        <p id="lp-announcement" style="font-size: 0.95rem; color: var(--avo-dark); margin-bottom: 15px; font-weight: 600;"></p>
-        <div class="variety-img-container" style="max-width: 250px; margin: 0 auto 15px auto; padding: 10px;">
-          <img id="lp-qrcode" src="" loading="lazy" style="width: 100%; aspect-ratio: 1 / 1; display: block; border-radius: 10px;" onclick="showLightbox(this.src)">
+        <!-- ⚡ v7：原本寫死 LINE 官方綠 #00b900，與品牌色衝突，改用統一標題樣式 -->
+        <h3 class="payment-card-title">🟢 LINE Pay 付款</h3>
+        <p id="lp-announcement"></p>
+        <div class="variety-img-container qr-frame">
+          <img id="lp-qrcode" src="" loading="lazy" onclick="showLightbox(this.src)">
         </div>
-        <p style="font-size: 0.85rem; color: #888;">( 點擊圖片可放大掃描 )</p>
+        <p class="caption-note">( 點擊圖片可放大掃描 )</p>
       </div>
     </div>
 
-    <hr style="border: none; border-top: 1px dashed #ddd; margin: 15px 0;">
+    <hr class="soft-divider">
     <p id="success-reminder-msg" class="success-warm-text"></p>
 
     <div class="button-group">
-      <a id="final-line-btn" href="javascript:void(0)" onclick="handleLineJump()" class="btn-primary" style="flex: 2;">
+      <a id="final-line-btn" href="javascript:void(0)" onclick="handleLineJump()" class="btn-primary btn-wide">
         確認匯款回報
       </a>
-      <button type="button" onclick="goToStep(1)" class="btn-secondary" style="flex: 1;">回首頁</button>
+      <button type="button" onclick="goToStep(1)" class="btn-secondary">回首頁</button>
     </div>
   </div>
 </div>
 
-<!-- ------ 燈箱效果 ------ -->
-<div id="lightbox-overlay" onclick="this.style.display='none'" style="display: none; position: fixed; z-index: 9998; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); cursor: zoom-out; justify-content: center; align-items: center;">
-  <div style="text-align: center; width: 100%;">
-    <img id="lightbox-img" src="" loading="lazy" style="max-width: 90%; max-height: 80vh; border-radius: 10px; box-shadow: 0 0 30px rgba(0,0,0,0.5);">
-    <div style="margin-top: 20px; color: white;">✕ 點擊畫面任意處關閉</div>
+<!-- ------ 燈箱效果 ------
+     ⚡ v7：整組 inline style 改為 .lightbox-* class -->
+<div id="lightbox-overlay" class="lightbox-overlay" onclick="this.style.display='none'" style="display: none;">
+  <div class="lightbox-inner">
+    <img id="lightbox-img" class="lightbox-img" src="" loading="lazy">
+    <div class="lightbox-hint">✕ 點擊畫面任意處關閉</div>
   </div>
 </div>
 
-<!-- ------ 彈跳視窗 ------ -->
-<div id="custom-alert-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; align-items:center; justify-content:center; backdrop-filter: blur(3px);">
-  <div class="info-block" style="width:85%; max-width:320px; text-align:center; padding:30px !important; border: 2px solid var(--avo-green) !important;">
-    <p id="alert-message" style="margin-bottom:25px !important; font-weight:600; color: var(--avo-dark); line-height: 1.6;"></p>
-    <button class="btn-primary" onclick="closeAlert()" style="width:100%; padding:10px !important; border-radius: 50px;">確定</button>
+<!-- ------ 彈跳視窗 ------
+     ⚡ v7：原本 inline 帶 !important，會直接蓋掉 style.css，全部移除 -->
+<div id="custom-alert-overlay" style="display:none;">
+  <div class="info-block alert-dialog">
+    <p id="alert-message" class="alert-message"></p>
+    <button class="btn-primary" onclick="closeAlert()">確定</button>
   </div>
 </div>
 
