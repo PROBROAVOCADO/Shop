@@ -1,6 +1,42 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08 Firebase 控制節點版 (v4) + v7 樣式改版配套
+ * 版本：2026-08 Firebase 控制節點版 (v5) + v7 樣式改版配套
+ *
+ * 【v5 主要改動】共四項
+ *
+ *  🔴 1. 重試時先查收據，不再被自己的成功訂單鎖死
+ *
+ *     舊版的死路：第一次送出其實成功了（但 Google 回傳 HTML 錯誤頁，
+ *     客人看到「無法確認」），庫存已經扣掉。客人依照提示再按一次時：
+ *       → 先跑庫存預檢查 → 發現庫存不足（被自己買走的）
+ *       → 提示 + trimCartToStock() 把購物車清空
+ *       → 再按 → 「購物車還是空的」
+ *       → 客人卡死，但訂單其實成立了
+ *
+ *     秒殺尾聲最容易踩到 —— 那正是「最後一份剛好被自己買走」的時候。
+ *
+ *     修法：只要 currentOrderKey 還在（代表這是重試），送出前先查一次
+ *     Firebase 收據。查到就直接帶去成功頁，完全跳過庫存預檢查。
+ *
+ *  🟠 2. 配送方式被臨時關閉時，擋在瀏覽器裡
+ *
+ *     applySwitchesToDom 只設 option.disabled，但已經選中的值不會被清掉，
+ *     送出前也沒有檢查。你緊急關掉黑貓 → 已經選了黑貓的客人一路填完、
+ *     送出、被後端打回票，每個人白吃一次 GAS 執行數。
+ *     updateOrderPageStopState 早就處理了全站停售，這裡補上同樣的邏輯。
+ *
+ *  🟠 3. 移除 7-11 離島阻擋
+ *
+ *     門市是自由輸入欄位，客人可能填店名、也可能只填店號 ——
+ *     填店號的完全比對不到，所以這道判斷天生就有漏網。
+ *     既然只能是輔助、不可能是最終防線，做成會擋下訂單的硬檢查
+ *     就不划算（誤判的客人當場流失，而且前後端兩份清單要人工同步）。
+ *     未來若要做，會改成「後台可控文案的軟提示」，不擋送出。
+ *
+ *     註：isIslandAddress / 離島縣市 / 離島鄉鎮 全部保留 ——
+ *     那是宅配與郵寄的離島運費計算，跟這件事無關。
+ *
+ *  🟡 4. 社群連結在網址被清空時會正確隱藏（舊版只有 show 沒有 hide）
  *
  * 【v4 主要改動】
  *  A1  Firebase 推播加上 dataAt 新鮮度比對，舊資料一律丟棄
@@ -77,7 +113,13 @@ var lastControlUpdatedAt = 0;
 // 否則送單前的庫存預檢查會拿到舊資料，白白多打一次 GAS。
 var uiNeedsRefresh = false;
 
-// 🏝️ 台灣離島判定
+// 🏝️ 台灣離島判定（只用於運費計算）
+//
+// ⚠️ v5 說明：7-11 的離島門市關鍵字阻擋已經整組移除。
+// 門市是自由輸入欄位，客人可能填「馬公門市」、也可能只填店號 ——
+// 填店號的完全比對不到，所以那道判斷天生就有漏網，
+// 永遠只能是輔助而非最終防線。做成會擋下訂單的硬檢查不划算。
+// 下面這兩份清單是宅配/郵寄的離島運費判定，跟那件事無關，保留。
 const 離島縣市 = ['澎湖縣', '金門縣', '連江縣'];
 const 離島鄉鎮 = ['綠島鄉', '蘭嶼鄉', '琉球鄉'];
 
@@ -106,26 +148,6 @@ function cfgGet(obj, key) {
 }
 function cfgNum(obj, key) {
   return Number(cfgGet(obj, key)) || 0;
-}
-
-// 🏝️ 7-11 不提供離島配送。
-// 超取只有一個自由輸入的門市名稱欄位（宅配才有縣市/行政區下拉選單），
-// 所以只能比對關鍵字。這份清單要跟後端 code.gs 的 離島門市關鍵字 保持一致。
-//
-// 刻意只放「幾乎不可能誤判」的詞。像「白沙」「金城」這種本島也有同名
-// 地點的一律不放 —— 漏掉的你出貨前看得到門市名稱，還來得及聯繫；
-// 誤擋的客人則是當場就走了，而且你永遠不會知道。
-const 離島門市關鍵字 = [
-  '澎湖', '馬公', '望安', '七美', '西嶼',
-  '金門', '烈嶼', '大膽',
-  '連江', '馬祖', '南竿', '北竿', '東引', '莒光',
-  '綠島', '蘭嶼', '小琉球'
-];
-
-function is離島門市(storeText) {
-  const s = String(storeText || '');
-  if (!s) return false;
-  return 離島門市關鍵字.some(k => s.indexOf(k) !== -1);
 }
 
 function isIslandAddress(county, district) {
@@ -676,7 +698,7 @@ function updateOrderPageStopState() {
 // ========================================
 
 // 🔑 D1 修正的核心。
-// 舊版這個函式最後有一行 `RELEASE.lastKnown = isReleadNow()`，
+// 舊版這個函式最後有一行 `RELEASE.lastKnown = isReleasedNow()`，
 // 而它會被快照輪詢每 8 秒呼叫一次。結果是：
 // 如果輪詢剛好落在開賣的那一秒、且跑在 ticker 之前，
 // lastKnown 會被搶先設成 true，ticker 的「狀態變化」偵測就永遠不會觸發
@@ -788,6 +810,10 @@ function applyConfigToPage(cfg) {
 
   document.title = cfgGet(h, '分頁標題') || '波波酪梨｜線上訂購';
 
+  // 🔗 v5：補上 else 分支。
+  // 舊版只有「有網址才顯示」，沒有「沒網址就隱藏」——
+  // 你在試算表裡把某個社群連結清空後，輪詢時那顆按鈕不會消失，
+  // 客人點下去會跳到 href="#"（等於原地重整，購物車還會被清掉）。
   const socialMap = {
     'social-line': cfgGet(h, 'LINE連結'),
     'social-ig':   cfgGet(h, 'IG連結'),
@@ -795,8 +821,14 @@ function applyConfigToPage(cfg) {
   };
   Object.keys(socialMap).forEach(id => {
     const el = document.getElementById(id);
+    if (!el) return;
     const url = (socialMap[id] || '').toString().trim();
-    if (el && url) { el.href = url; el.style.display = 'flex'; }
+    if (url) {
+      el.href = url;
+      el.style.display = 'flex';
+    } else {
+      el.style.display = 'none';
+    }
   });
 
   const annTitle = document.getElementById('announcement-title');
@@ -1501,6 +1533,10 @@ function initShippingAddressToggle() {
   updateAddressSection();
 }
 
+// ⚠️ v5：這裡原本會為 7-11 動態插入一則「離島不配送」的提示。
+// 隨著離島阻擋一起移除了 —— 那則提示的意義建立在「送出會被擋」之上，
+// 現在不擋了，留著會讓客人以為填了也沒用而直接離開。
+// 未來若要加，會做成後台可控文案（跟 #shipping-note / #spec-note 同一套機制）。
 function updateAddressSection() {
   const method = document.getElementById('shipping-method').value;
   const postSection = document.getElementById('post-address-section');
@@ -1509,21 +1545,6 @@ function updateAddressSection() {
 
   postSection.style.display = (method === 'post' || method === 'blackcat') ? 'block' : 'none';
   storeSection.style.display = (method === '711') ? 'block' : 'none';
-
-  // 🏝️ 選了 7-11 就先講清楚離島不配送，免得客人填完才被擋。
-  // 提示用 JS 動態建立，index.html 不需要改。
-  if (method === '711') {
-    let hint = document.getElementById('store-island-hint');
-    if (!hint) {
-      hint = document.createElement('div');
-      hint.id = 'store-island-hint';
-      hint.className = 'hint-warm-text';
-      hint.style.marginTop = '8px';
-      hint.textContent = '🏝️ 離島地區（澎湖、金門、馬祖、綠島、蘭嶼、小琉球）暫不提供 7-11 配送，請改選宅配';
-      storeSection.appendChild(hint);
-    }
-    hint.style.display = 'block';
-  }
 }
 
 
@@ -1775,6 +1796,26 @@ function normalizePhone(raw) {
   return String(raw || '').replace(/[\s\-()+.]/g, '');
 }
 
+// 🧾 把一份收據套進成功頁需要的狀態，然後帶客人過去。
+// 兩個地方會用到（送單前的重試檢查、送單後的逾時救援），抽出來避免走樣。
+function 套用收據並前往成功頁(receipt, 收尾) {
+  if (receipt && receipt.total !== undefined) {
+    finalSubtotal    = Number(receipt.subtotal);
+    finalShippingFee = Number(receipt.shippingFee);
+    finalTotal       = Number(receipt.total);
+    if (currentOrderSummary) {
+      currentOrderSummary.subtotal    = finalSubtotal;
+      currentOrderSummary.shippingFee = finalShippingFee;
+      currentOrderSummary.total       = finalTotal;
+    }
+  }
+  cart = {};
+  totalWeight = 0;
+  currentOrderKey = null;   // 這筆已完成，下一筆要用新的識別碼
+  收尾();
+  goToStep(5);
+}
+
 async function submitOrder(e) {
   if (e) e.preventDefault();
   if (isSubmitting) return;
@@ -1822,6 +1863,25 @@ async function submitOrder(e) {
   const shippingMethodEl = document.getElementById('shipping-method');
   const shippingMethod = shippingMethodEl ? shippingMethodEl.value : '';
 
+  // 🛑 v5：某個配送方式被臨時關閉的情況。
+  //
+  // applySwitchesToDom 只會把 <option> 設成 disabled，但「已經選中的值」
+  // 不會被清掉 —— 客人在你關掉黑貓之前就選好了，畫面上完全沒有變化，
+  // 他會一路填完、按送出、然後被後端打回票。
+  // 秒殺時最積極的那群人正好都在這一頁，等於煞車對他們無效，
+  // 而且每個人都白吃一次 GAS 執行數。
+  if (shippingMethod && shippingSwitch[shippingMethod] !== '開') {
+    customAlert(`🚫 不好意思，「${配送名稱[shippingMethod]}」剛剛暫停服務了 🌱\n\n` +
+                `請改選其他配送方式，謝謝您的體諒！`);
+    if (shippingMethodEl) {
+      shippingMethodEl.value = '';
+      shippingMethodEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    updateAddressSection();
+    calculateCartTotal();
+    return;
+  }
+
   if (!n || !p) { customAlert('☝️請填寫收件人姓名與電話！'); return; }
   if (n.length > 40) { customAlert('☝️ 姓名長度超過限制，請確認填寫內容'); return; }
   if (!/^09\d{8}$/.test(p)) {
@@ -1854,14 +1914,7 @@ async function submitOrder(e) {
       if (storeEl) storeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    // 🏝️ 離島門市擋在瀏覽器裡，客人立刻知道，也不用白跑一趟 GAS
-    if (is離島門市(storeEl.value)) {
-      customAlert('🏝️ 不好意思，離島地區的 7-11 門市目前無法配送 🥑\n\n' +
-                  '離島訂單請改選「中華郵政」或「黑貓宅急便」，\n' +
-                  '或直接透過 LINE 與我們聯繫，我們會協助您安排，謝謝您的體諒！');
-      storeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
+    // 🏝️ v5：離島門市阻擋已移除（見檔案開頭的說明）。
     fullAddress = `7-11 門市：${storeEl.value.trim()}`;
   } else {
     customAlert('☝️請選擇配送方式！');
@@ -1888,6 +1941,30 @@ async function submitOrder(e) {
     flushPendingControl();      // 補上送單期間延後的畫面更新
     updateOrderPageStopState(); // 期間若被停售，按鈕要維持灰色
   };
+
+  // 🔴 v5：重試的話，先查一次收據再說。
+  //
+  // 修的是這條死路：第一次送出其實成功了（Google 回了 HTML 錯誤頁，
+  // 客人看到「無法確認」），庫存已經扣掉。客人依照提示再按一次時 ——
+  //
+  //   舊版：跑庫存預檢查 → 發現不足（被自己買走的）→ 提示 →
+  //         trimCartToStock() 清空購物車 → 再按只會說「購物車是空的」
+  //         → 客人卡死，但他的訂單其實成立了
+  //
+  // 秒殺尾聲最容易踩到，因為那正是「最後一份被自己買走」的時刻。
+  //
+  // currentOrderKey 還在就代表這是重試（成功後會被清成 null），
+  // 所以這道查詢完全不會影響第一次下單的速度。
+  if (currentOrderKey) {
+    submitBtn.innerText = '確認先前的訂單中...';
+    const 先前收據 = await fetchOrderReceipt(currentOrderKey);
+    if (先前收據) {
+      console.info('重試前查到收據，這筆先前已經成立（第 ' + 先前收據.row + ' 列）');
+      套用收據並前往成功頁(先前收據, 收尾);
+      return;
+    }
+    submitBtn.innerText = '確認庫存中...';
+  }
 
   // 送出前先校對一次庫存，避免客人白等 GAS。
   // 因為資料層已經改成永遠即時更新，這裡拿到的一定是最新庫存。
@@ -1991,28 +2068,16 @@ async function submitOrder(e) {
       });
 
       if (receipt) {
-        if (receipt.total !== undefined) {
-          finalSubtotal    = Number(receipt.subtotal);
-          finalShippingFee = Number(receipt.shippingFee);
-          finalTotal       = Number(receipt.total);
-          if (currentOrderSummary) {
-            currentOrderSummary.subtotal    = finalSubtotal;
-            currentOrderSummary.shippingFee = finalShippingFee;
-            currentOrderSummary.total       = finalTotal;
-          }
-        }
-        cart = {};
-        totalWeight = 0;
-        currentOrderKey = null;
-        收尾();
-        goToStep(5);
+        套用收據並前往成功頁(receipt, 收尾);
         return;
       }
 
       // 查不到才是真的無法確認。orderKey 刻意保留：
       // 客人再按一次時，後端會從快取辨識出是同一筆並直接回成功，
-      // 絕不會變成兩筆訂單。所以這裡要明確鼓勵他再按一次，
-      // 而不是讓他自己猜該怎麼辦 —— 猶豫的客人多半就直接放棄了。
+      // 絕不會變成兩筆訂單。而 v5 起前端還會在送出前先自己查一次收據，
+      // 所以就算庫存已經被這筆扣光，他也不會卡在「庫存不足」。
+      // 這裡要明確鼓勵他再按一次，而不是讓他自己猜該怎麼辦 ——
+      // 猶豫的客人多半就直接放棄了。
       customAlert('⚠️ 系統目前比較忙碌，還在確認您的訂單。\n\n請稍等約一分鐘後「再按一次確認訂購」，\n系統會自動辨識，不會重複下單、也不會重複扣款。\n\n若仍然無法確認，請透過 LINE 或電話與我們聯繫，\n我們會直接為您查詢，謝謝您的耐心 🙏');
       收尾();
       return;
