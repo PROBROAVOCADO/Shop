@@ -450,6 +450,7 @@ window.onload = async function () {
     applySwitchesToDom();
 
     configLoaded = true;
+    updateSoldOutNotice(); // configLoaded 之前的呼叫都會被擋掉，這裡補一次
     startStockAutoRefresh();
     startReleaseTicker();
     initVisibilityRefresh();
@@ -596,6 +597,7 @@ function applySwitchesToDom() {
 
   updateEnterButton();
   updateOrderPageStopState();
+  updateSoldOutNotice(); // 停止接單/恢復接單都會影響這張卡要不要出現
 }
 
 function updateEnterButton() {
@@ -685,6 +687,7 @@ function startReleaseTicker() {
       RELEASE.lastKnown = nowReleased;
       renderProductList();
       renderPriceMenu();
+      updateSoldOutNotice(); // 未開賣時隱藏、開賣後才依庫存判斷
       if (nowReleased) {
         customAlert('🎉 開賣囉！商品已經可以選購，祝您順利下單～');
         refreshRealtime(); // 立刻抓一次最新庫存
@@ -1301,6 +1304,84 @@ function updateStockDisplay() {
       if (pmEl) pmEl.innerText = priceMenuStockText(key, released);
     });
   });
+
+  updateSoldOutNotice();
+}
+
+// 🥑 首頁的售罄／非產季提示卡
+//
+// 三種狀態，不能混為一談：
+//   ① 有貨            → 完全隱藏
+//   ② 全部非產季      → 「目前非產季」（單價 0 = 這一級這季不賣）
+//   ③ 有在賣但全數 0  → 「這一批賣光光囉」
+//
+// ⚠️ 大品項的判定：同一個大品項（當季酪梨 / 平克頓·哈斯）底下的
+//    優級與次級「都」沒有單價，才算整個大品項非產季。只有一級沒單價
+//    不算 —— 那種情況另一級還在賣，庫存要照常列入判斷。
+//
+// ⚠️ 刻意不計入購物車：這張卡在首頁，客人還沒開始選購，
+//    要反映的是「架上還有沒有東西」，不是「扣掉我選的還剩多少」。
+function updateSoldOutNotice() {
+  const el = document.getElementById('sold-out-notice');
+  if (!el) return;
+
+  const 隱藏 = () => { el.style.display = 'none'; el.innerHTML = ''; };
+
+  const cfg = (window.APP_CONFIG && window.APP_CONFIG.orderConfig) || {};
+  const stockMap = (window.APP_CONFIG && window.APP_CONFIG.stockMap) || {};
+
+  // 冷啟動那一瞬間設定還沒到位，先不判斷，免得誤報「賣光」
+  if (!configLoaded) return 隱藏();
+
+  // 以下三種狀況各自已經有專屬提示，不要疊在一起講：
+  //   價格設定壞掉 → 進入按鈕顯示「系統維護中」
+  //   暫停接單     → 進入按鈕顯示「現在暫停接單」
+  //   尚未開賣     → 頂部有開賣倒數橫幅
+  if (window.APP_CONFIG.priceConfigBroken) return 隱藏();
+  if (orderSwitch === '關') return 隱藏();
+  if (!isReleasedNow()) return 隱藏();
+
+  const 大品項 = [
+    { 標籤: '當季酪梨',      分類: [商品分類[0], 商品分類[1]] },
+    { 標籤: '平克頓 / 哈斯', 分類: [商品分類[2], 商品分類[3]] }
+  ];
+
+  const 非產季清單 = [];
+  let 有販售中的品項 = false;
+  let 有庫存 = false;
+
+  大品項.forEach(g => {
+    const 整組非產季 = g.分類.every(cat => cfgNum(cfg, cat.priceKey) <= 0);
+    if (整組非產季) { 非產季清單.push(g.標籤); return; }
+
+    有販售中的品項 = true;
+    g.分類.forEach(cat => {
+      if (cfgNum(cfg, cat.priceKey) <= 0) return; // 這一級非產季，不列入庫存判斷
+      cat.weights.forEach(w => {
+        if ((stockMap[stockKeyOf(cat.name, w)] || 0) > 0) 有庫存 = true;
+      });
+    });
+  });
+
+  if (有販售中的品項 && 有庫存) return 隱藏();
+
+  let 主文, 副文;
+  if (!有販售中的品項) {
+    主文 = '🌱 目前非產季';
+    副文 = '這一季的採收還沒開始，新品項上架時會在這裡公告。';
+  } else {
+    主文 = '🥑 這一批賣光光囉';
+    副文 = '感謝大家的支持！下一批採收上架時會在這裡公告。';
+    if (非產季清單.length > 0) {
+      副文 += `\n（${非產季清單.join('、')} 目前為非產季）`;
+    }
+  }
+
+  // 用 textContent 填入，不讓文字有機會被當成 HTML 解析
+  el.innerHTML = '<div class="sold-out-title"></div><div class="sold-out-text"></div>';
+  el.querySelector('.sold-out-title').textContent = 主文;
+  el.querySelector('.sold-out-text').textContent = 副文;
+  el.style.display = 'block';
 }
 
 // 庫存被別人買走時，自動把購物車修正到還買得到的數量
