@@ -1,59 +1,82 @@
+/* =========================================================
+   🥑 波波酪梨 Pro-Bro Avocado
+   style.css ｜ v7・品牌一致性改版（文青田園）
+
+   設計依據：LINE 圖文選單、配送時間海報、社群貼文
+   ─ 米白紙底 + 鼠尾草綠山丘 + 暖褐棕印章色
+   ─ 標題改用宋體（思源宋體），內文維持黑體確保訂購好讀
+   ─ 卡片：細框線 + 顆粒紙紋，去掉大面積柔光陰影
+   ─ 按鈕：膠囊型（沿用 LINE 選單的膠囊標籤）
+   ─ 圖片：米色卡紙裱框（沿用「Avo Season 2026」貼文）
+
+   ⚠️ 所有原有 class / id 選擇器都保留，script.js 不需要改動
+   ⚠️ index.html 需同步更新（字體連結 + 移除寫死的 inline style）
+   ========================================================= */
+
 :root {
-  --avo-green: #e9edc9;
-  --avo-dark: #576e37; 
-  --avo-accent: #cc9247;
-  --creamy: #fefae0; 
-  --text-main: #2d3e10;
-  --herb-green: #76944a;
+  /* 🎨 主色票 ─────────────────────────────── */
+  --creamy:      #FAF7EF;   /* 卡片紙色（最亮） */
+  --avo-green:   #EDE8DA;   /* 頁面底色・霧米（比卡片深一階） */
+  --avo-dark:    #3E4C33;   /* 深墨綠・標題與主要文字 */
+  --text-main:   #4B5540;   /* 內文墨色 */
+  --herb-green:  #6F8A54;   /* 主行動綠・按鈕 */
+  --avo-accent:  #9A7E5D;   /* 暖褐棕・金額與強調（取自 LOGO 緞帶） */
+
+  /* 🎨 延伸色票 ───────────────────────────── */
+  --sage:        #A9BE94;   /* 山丘綠（深） */
+  --sage-pale:   #D6DFC4;   /* 山丘綠（淺） */
+  --sage-mist:   #E4EAD7;   /* 極淺綠底 */
+  --clay-deep:   #7A6449;   /* 印章棕・深 */
+  --clay-pale:   #EDE4D3;   /* 卡紙米・圖片裱框 */
+  --rule:        rgba(122, 100, 73, 0.22);  /* 細框線 */
+  --rule-soft:   rgba(122, 100, 73, 0.14);  /* 更淡的分隔線 */
+
+  /* 📐 圓角尺度 ───────────────────────────── */
+  --r-card:  20px;   /* 卡片 */
+  --r-field: 14px;   /* 輸入框 */
+  --r-img:   16px;   /* 圖片外框 */
+  --r-pill:  999px;  /* 按鈕・膠囊 */
+
   --transition-smooth: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  --heading-font: "Huninn", "Kosugi Maru", "YuGothic", "Yu Gothic", "Hiragino Sans GB", "Microsoft JhengHei", sans-serif; /* 🖋️ 標題專用：Huninn 粉圓，圓潤親切 */
+
+  /* 🖋️ 標題專用：思源宋體，對應配送海報的標題字 */
+  --heading-font: "Noto Serif TC", "Source Han Serif TC", "Songti TC",
+                  "PMingLiU", "MingLiU", serif;
 }
 
-/* ✅ 全站盒模型修正（避免手機偏移） */
-*, *::before, *::after {
-  box-sizing: border-box;
-}
+/* ✅ 全站盒模型修正 */
+*, *::before, *::after { box-sizing: border-box; }
+
 .page-content {
   display: flex;
   flex-direction: column;
-  align-items: stretch;   /* ✅ 關鍵 */
-  justify-content: center; /* 垂直置中 */
-  padding: 20px;           /* 根據需要調整內邊距 */
+  align-items: stretch;
+  justify-content: center;
+  padding: 20px;
 }
 
 /* 🧱 全站字級基準 */
-html {
-  font-size: 16px; /* 🔑 1rem = 16px（標準、安全） */
-}
+html { font-size: 16px; }
 
 body {
   font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
-  font-size: 0.9375rem; /* 15px */
-  line-height: 1.7;
-  letter-spacing: 0.4px;
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  letter-spacing: 0.5px;
   color: var(--text-main);
-}
-
-
-.info-block p {
-  font-size: 1rem;
-  white-space: pre-line; /* 換行必備*/  
-}
-
-/* 🏷️ 卡片內小標題（如：配送方式、宅配 / 超商） */
-.info-block h3 {
-  font-size: 1.1rem;
-  font-weight: 800;
-  letter-spacing: 0.6px;
-  margin-bottom: 12px;
-  color: var(--avo-dark);
 }
 
 html, body {
   background-color: var(--avo-green) !important;
   margin: 0; padding: 0;
-  font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Ctext y='50%25' x='50%25' style='dominant-baseline:central;text-anchor:middle;font-size:40px;opacity:0.15;'%3E🥑%3C/text%3E%3C/svg%3E");
+  /* 🌾 極淡的紙纖維橫紋，取代原本的 🥑 emoji 滿版底圖 */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(122, 100, 73, 0.028) 0px,
+    rgba(122, 100, 73, 0.028) 1px,
+    transparent 1px,
+    transparent 7px
+  );
   background-attachment: fixed;
   color: var(--text-main);
 }
@@ -61,274 +84,371 @@ html, body {
 /* --- 🧱 全站通用卡片外觀（唯一正版） --- */
 .info-block {
   background-color: var(--creamy);
-  /* 🎨 紙感紋理：純SVG噪點疊在底色上，透明度直接烤進SVG的alpha值裡（約5%），不用額外圖片檔 */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix in='noise' type='matrix' values='0 0 0 0 0.34  0 0 0 0 0.22  0 0 0 0 0.1  0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  padding: 35px 30px;
-  border-radius: 24px;
-  box-shadow: 0 12px 40px rgba(93, 122, 50, 0.08);
-  margin-bottom: 30px;
+  /* 🎨 顆粒紙紋：對應你素材上的噪點質感，色調改為暖褐 */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix in='noise' type='matrix' values='0 0 0 0 0.48  0 0 0 0 0.39  0 0 0 0 0.29  0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  padding: 32px 28px;
+  border-radius: var(--r-card);
+  border: 1px solid var(--rule);
+  box-shadow: 0 1px 2px rgba(122, 100, 73, 0.04);
+  margin-bottom: 26px;
   margin-left: auto;
   margin-right: auto;
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.5);
   box-sizing: border-box;
   transition: var(--transition-smooth);
   width: 100%;
   max-width: 700px;
-  color: var(--avo-dark);  
+  color: var(--avo-dark);
 }
 
+/* 📄 卡片內文 */
+.info-block p {
+  font-size: 1rem;
+  white-space: pre-line;
+}
+
+/* 🏷️ 卡片內小標題 */
+.info-block h3 {
+  font-family: var(--heading-font);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  margin-bottom: 14px;
+  color: var(--avo-dark);
+}
 
 /* ---【頁面標題】--- */
 .main-title {
   font-family: var(--heading-font);
-  font-size: 2.2rem;
-  font-weight: 500;
+  font-size: 1.95rem;
+  font-weight: 600;
   text-align: center;
-  color: #2d3e10;
-  margin-top: 60px;
-  margin-bottom: 15px;
-  letter-spacing: 4px;
-  text-shadow: 2px 2px 4px rgba(0,0,0,0.05);
+  color: var(--avo-dark);
+  margin-top: 0;              /* ⬅️ 統一由此控制，index 不再寫 inline */
+  margin-bottom: 12px;
+  letter-spacing: 6px;
+  text-indent: 6px;           /* 補回字距造成的視覺偏移 */
+  text-shadow: none;
 }
 
 /* ---【頁面副標題】--- */
-.sub-title { 
+.sub-title {
   text-align: center;
-  color: var(--herb-green); 
-  margin-bottom: 50px;
-  font-size: 0.8rem; 
-  letter-spacing: 4px;
-  font-weight: 600;
+  color: var(--avo-accent);
+  margin-bottom: 0;
+  font-size: 0.72rem;
+  letter-spacing: 3.5px;
+  font-weight: 500;
   text-transform: uppercase;
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
-/* ---【頁面分隔線】--- */
-.title-divider {
-  width: 240px; height: 3px; background: var(--avo-accent);
-  margin: 9px auto 25px auto; border-radius: 5px; opacity: 0.7;
-}
-/* ---【第1頁公告，中文slogan】--- */
+/* ---【第1頁公告・中文 slogan】--- */
 .origin-slogan {
   text-align: center;
-  color: var(--herb-green); 
-  margin: -25px auto 25px auto !important;
-  font-size: 0.9rem;
-  letter-spacing: 4px;
-  font-weight: 600;
-  text-transform: uppercase;
+  color: var(--clay-deep);
+  margin: 10px auto 0 auto !important;
+  font-size: 0.85rem;
+  letter-spacing: 2.5px;
+  font-weight: 500;
   opacity: 0.8;
 }
 
-/* 📢 公告區－標題樣式（可自由調整） */
+/* ---【頁面分隔線】---
+   取自配送海報的「●──── 配送日一覽 ────●」，兩端點綴圓點 */
+.title-divider {
+  width: 200px;
+  height: 1px;
+  background: var(--rule);
+  margin: 20px auto 30px auto;
+  border-radius: 0;
+  opacity: 1;
+  position: relative;
+}
+.title-divider::before,
+.title-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--avo-accent);
+  transform: translateY(-50%);
+}
+.title-divider::before { left: -3px; }
+.title-divider::after  { right: -3px; }
+
+/* 📢 公告區－標題樣式 */
 .section-title {
   font-family: var(--heading-font);
-  text-align: center;          /* 標題置中 */
-  font-size: 1.3rem;           /* 標題大小 */
-  font-weight: 500;
-  letter-spacing: 1px;
-  color: var(--avo-dark);      /* 品牌深綠 */
-  margin-bottom: 12px;
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 3px;
+  text-indent: 3px;
+  color: var(--avo-dark);
+  margin-top: 0;
+  margin-bottom: 14px;
 }
 
-/* 📄 公告區－內文文字置中（最終版） */
+/* 📄 公告區－內文 */
 .text-story {
-  text-align: center !important;   /* 文字本身置中 */
-  margin-left: auto !important;    /* 讓區塊在父元素中置中 */
-  margin-right: auto !important;   /* 同上 */
-  max-width: 800px;                /* 限制最大寬度 */
-  line-height: 1.8;                /* 調整行距，使文本顯得更清晰 */
-  padding-left: 15px;              /* 適度的內邊距 */
-  padding-right: 15px;             /* 同上 */
+  text-align: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  max-width: 800px;
+  line-height: 1.9;
+  padding-left: 15px;
+  padding-right: 15px;
 }
 
-/* --- [按鈕精品化] --- */
+/* 🏷️ 表單欄位標題（取代 index 裡寫死的 margin-top inline） */
+.form-label {
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: var(--avo-dark);
+  letter-spacing: 1px;
+  margin: 26px 0 10px;
+  white-space: normal !important;
+}
+.form-label:first-child,
+.info-block > .form-label:first-of-type { margin-top: 0; }
+
+/* ⏳ 載入中提示 */
+.loading-note {
+  text-align: center;
+  color: var(--avo-accent);
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+}
+
+/* --- [按鈕・膠囊型] ---
+   沿用 LINE 圖文選單下方那三顆膠囊標籤的語彙 */
 .btn-primary, .btn-secondary, #submit-btn {
-  padding: 15px 10px !important; border-radius: 12px !important; 
-  font-weight: 600; font-size: 0.95rem !important;
-  letter-spacing: 1px; cursor: pointer !important; 
-  transition: var(--transition-smooth); border: none;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+  padding: 15px 10px !important;
+  border-radius: var(--r-pill) !important;
+  font-weight: 600;
+  font-size: 0.95rem !important;
+  letter-spacing: 2px;
+  cursor: pointer !important;
+  transition: var(--transition-smooth);
+  border: 1px solid transparent;
+  box-shadow: none;
   display: flex; align-items: center; justify-content: center;
+  text-decoration: none;
 }
 
-.btn-primary, #submit-btn { background-color: var(--herb-green) !important; color: white !important; }
-.btn-secondary { background-color: white !important; color: var(--avo-dark) !important; border: 1.5px solid var(--herb-green) !important; }
-
-/* 🖱️ 按鈕懸停效果：輕微上浮 + 陰影加深，幅度保守不浮誇 */
-.btn-primary:hover, .btn-secondary:hover, #submit-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+.btn-primary, #submit-btn {
+  background-color: var(--herb-green) !important;
+  color: #FAF7EF !important;
+  border-color: var(--herb-green) !important;
+}
+.btn-secondary {
+  background-color: var(--creamy) !important;
+  color: var(--clay-deep) !important;
+  border: 1px solid var(--avo-accent) !important;
 }
 
-.button-group { 
+/* 🖱️ 懸停：改為顏色加深，取消上浮（紙感不該飄） */
+.btn-primary:hover, #submit-btn:hover {
+  background-color: #5F7A46 !important;
+  border-color: #5F7A46 !important;
+}
+.btn-secondary:hover {
+  background-color: var(--clay-pale) !important;
+}
+
+/* ⌨️ 鍵盤可及性 */
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+#submit-btn:focus-visible,
+.social-item:focus-visible,
+.btn-qty:focus-visible {
+  outline: 2px solid var(--clay-deep);
+  outline-offset: 3px;
+}
+
+.button-group {
   display: flex !important; flex-direction: row !important;
-  justify-content: space-between !important; gap: 12px !important; 
+  justify-content: space-between !important; gap: 12px !important;
   margin-top: 30px !important; width: 100% !important;
 }
 .button-group .btn-secondary, .button-group .btn-primary { flex: 1; }
+.button-group .btn-wide { flex: 2; }
 
 /* 🥑 第二頁｜品種名稱標題 */
 .variety-title {
   font-family: var(--heading-font);
   text-align: center;
   margin: 0;
-  font-weight: 500;
-  font-size: 1.1rem;
+  font-weight: 600;
+  font-size: 1.15rem;
   color: var(--avo-dark);
-  letter-spacing: 1px;
+  letter-spacing: 2.5px;
+  text-indent: 2.5px;
 }
 
-/* 🥑 品種頁－內文設定（只影響第二頁） */
+/* 🥑 品種頁－內文 */
 #varieties-container .info-block p {
   font-size: 1rem;
-  line-height: 1.7;
+  line-height: 1.85;
   letter-spacing: 0.6px;
-  color: var(--avo-dark);
+  color: var(--text-main);
 }
 
-/* 🥑 品種頁｜圖片外框（承接舊版本精華） */
+/* 🥑 品種頁｜圖片米色卡紙裱框
+   取自「Avo Season 2026」貼文的米色厚邊框 */
 .variety-images {
   width: 100%;
-  max-width: 560px;              /* 👈 控制圖片最大寬度（桌機好看） */
-  margin: 0 auto 22px;           /* 置中 + 與標題留距離 */
-
-  padding: 10px;                 /* 👈 白邊厚度 */
-  background: #ffffff;
-  border: 1px solid #e2d9c8;
-  border-radius: 26px;
-
-  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+  max-width: 560px;
+  margin: 0 auto 22px;
+  padding: 12px;
+  background: var(--clay-pale);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-img);
+  box-shadow: none;
   box-sizing: border-box;
 }
 
-/* 🥑 品種頁｜品種主圖（大圖版） */
 .avocado-img {
   width: 100%;
-  height: 260px;                 /* 👈 桌機主視覺高度 */
+  height: 260px;
   object-fit: cover;
-
-  border-radius: 18px;           /* 👈 內層圓角，比外框小一點 */
+  border-radius: 10px;
   display: block;
-
   cursor: zoom-in;
   transition: transform 0.35s ease;
 }
 
-/* 🥑 品種頁｜圖片放大效果） */
-.variety-images:hover .avocado-img {
-  transform: scale(1.02);
-}
+.variety-images:hover .avocado-img { transform: scale(1.015); }
 
 /* ------------------------------ */
 /* ----------【訂購頁面】---------- */
 /* ------------------------------ */
 
-/* 🥑 品種 / step 圖片限制容器（上下置中、不裁切） */
+/* 🥑 圖片限制容器（上下置中、不裁切） */
 .variety-img-container {
   width: 100%;
   max-width: 100%;
-  max-height: 270px;          /* 控制整體高度 */
+  max-height: 270px;
   overflow: hidden;
-  border-radius: 40px;
-  background: #fff;
-
-  display: flex;              /* ⭐ 關鍵 */
-  align-items: center;        /* ⭐ 垂直置中 */
-  justify-content: center;    /* 水平置中（保險） */
+  border-radius: var(--r-img);
+  background: var(--clay-pale);
+  padding: 10px;
+  border: 1px solid var(--rule-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* 圖片本體 */
 .variety-img-container img {
   max-width: 100%;
   max-height: 100%;
-  object-fit: contain;        /* 不裁切 */
+  object-fit: contain;
   display: block;
+  border-radius: 8px;
 }
 
+/* 訂購頁中段圖卡（原本 index 寫死 height:220px，改由此控制） */
+#order-middle-card .variety-img-container { margin-bottom: 0; }
+#order-middle-card .variety-img {
+  height: 220px;
+  object-fit: contain;
+  background-color: var(--creamy);
+  cursor: zoom-in;
+  width: 100%;
+}
+.order-img-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 15px;
+}
 
 /* --- [下拉選單與輸入框] --- */
 select, input, textarea {
-  width: 100%; box-sizing: border-box; 
-  border: 1.5px solid #e2d9c8 !important; border-radius: 12px !important;
-  padding: 14px 16px !important; font-size: 0.95rem !important; 
-  color: var(--avo-dark) !important; background-color: #fff !important;
+  width: 100%; box-sizing: border-box;
+  border: 1px solid var(--rule) !important;
+  border-radius: var(--r-field) !important;
+  padding: 14px 16px !important;
+  font-size: 0.95rem !important;
+  font-family: inherit;
+  color: var(--avo-dark) !important;
+  background-color: #FFFDF8 !important;
   transition: var(--transition-smooth);
 }
 select {
   appearance: none; -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235d7a32' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239A7E5D' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
   background-repeat: no-repeat !important;
-  background-position: right 22px center !important; padding-right: 45px !important; 
+  background-position: right 22px center !important;
+  padding-right: 45px !important;
 }
 
-/* 🥑 波波酪梨地址 UI 補丁 */
+#order-note {
+  min-height: 100px;
+  width: 100%;
+  resize: vertical;
+}
+
+/* 🥑 地址 UI */
 .address-grid {
   display: flex;
-  gap: 8px; /* 欄位間距 */
+  gap: 8px;
   margin-bottom: 12px;
   width: 100%;
 }
+.address-grid .grid-item { flex: 2; min-width: 0; }
+.address-grid .zip-box { flex: 1; }
 
-.address-grid .grid-item {
-  flex: 2; /* 讓縣市與行政區佔據較多空間 */
-  min-width: 0; /* 關鍵：防止 Select 標籤在手機上撐破寬度 */
-}
-
-.address-grid .zip-box {
-  flex: 1; /* 郵遞區號佔據較窄空間 */
-}
-
-/* 讓郵遞區號輸入框的文字置中，看起來更像專業標籤 */
 #zipcode {
   text-align: center;
   padding-left: 5px !important;
   padding-right: 5px !important;
-  background-color: #f3f3f3 !important; /* 保持唯讀感 */
-  border-style: dashed !important; /* 虛線感，增加設計細節 */
+  background-color: var(--clay-pale) !important;
+  border-style: dashed !important;
 }
 
-/* --- [品種等級小字備註] --- */
+/* --- [品種等級小字備註]（虛線框，取自海報「注意事項」區塊） --- */
 .variety-grading-note {
-  margin-top: 10px !important; padding: 10px 12px !important;
-  font-size: 0.82rem !important; color: #a67c52 !important;
-  background-color: #fff9f0 !important; border-radius: 10px !important;
-  border-left: 3px solid #d4a373 !important; opacity: 0.9;
+  margin-top: 12px !important;
+  padding: 14px 16px !important;
+  font-size: 0.85rem !important;
+  line-height: 1.7;
+  color: var(--clay-deep) !important;
+  background-color: rgba(237, 228, 211, 0.5) !important;
+  border-radius: var(--r-field) !important;
+  border: 1px dashed var(--avo-accent) !important;
+  opacity: 1;
 }
 .variety-grading-note div { margin-bottom: 4px; }
 
-/* 🥑 波波酪梨愛用分隔線（品種頁小標題分隔線） */
+/* 🥑 小標題分隔線 */
 .product-divider {
   width: 90%;
   max-width: 500px;
   height: 0;
-  border-top: 3px dashed #d4a373; /* ← 關鍵：3px + 實色 */
-  margin: 20px auto;
-  opacity: 0.7; /* 只留一層透明 */
-  height: 0;  
+  border-top: 1px dashed var(--rule);
+  margin: 18px auto;
+  opacity: 1;
 }
-
-/* 🥑 價格表卡片：左右對齊虛線的關鍵 */
 
 /* 價格表暖色備註 */
 .price-note-warm {
   text-align: center;
-  margin: 14px auto 6px;
-  font-size: 0.9rem;
-  line-height: 1.6;
-
-  color: var(--avo-accent); /* 你已定義的暖色 */
+  margin: 0 auto 18px;
+  font-size: 0.88rem;
+  line-height: 1.7;
+  color: var(--avo-accent);
   letter-spacing: 1px;
-
-  opacity: 0.9;
 }
 
 /* 膠囊切換器外框 */
 .payment-switch-container {
   display: flex;
-  background: #eee;
-  border-radius: 50px;
+  background: var(--clay-pale);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-pill);
   position: relative;
   margin-bottom: 25px;
   padding: 4px;
@@ -340,369 +460,389 @@ select {
   position: absolute;
   width: calc(50% - 4px);
   height: calc(100% - 8px);
-  background: white;
-  border-radius: 40px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  background: var(--creamy);
+  border-radius: var(--r-pill);
+  box-shadow: 0 1px 3px rgba(122, 100, 73, 0.12);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 1;
 }
 
-/* 選項文字 */
 .switch-option {
   flex: 1;
   text-align: center;
   padding: 10px 0;
   font-weight: 600;
+  letter-spacing: 1.5px;
   z-index: 2;
-  color: #888;
+  color: var(--avo-accent);
   transition: color 0.3s;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
 }
-
 .switch-option.active { color: var(--avo-dark); }
 
-/* 內容切換控制 */
 .payment-content { display: none; }
 .payment-content.active { display: block; animation: fadeIn 0.4s ease; }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* --- [匯款資料卡片優化：內容全置中] --- */
+/* --- [匯款資料卡片] --- */
 .payment-detail-card {
-  background: #fffdf7;
-  padding: 25px;
-  border-radius: 20px;
-  border: 1px solid var(--avo-green);
-  /* 🌟 加入以下屬性確保內部所有內容置中 */
-  text-align: center !important; 
+  background: rgba(237, 228, 211, 0.4);
+  padding: 24px;
+  border-radius: var(--r-card);
+  border: 1px dashed var(--avo-accent);
+  text-align: center !important;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
-#lp-announcement {
-  white-space: pre-line; /* 讓試算表的換行也能生效 */
-}
 
-.payment-detail-card h3 {
-  margin-top: 0;
-  margin-bottom: 15px;
+.payment-card-title {
+  font-family: var(--heading-font);
+  margin-top: 0 !important;
+  margin-bottom: 16px !important;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 2px;
   color: var(--avo-dark);
+  text-align: center;
 }
 
-.payment-detail-card div {
-  width: 100%; /* 確保內容寬度正常 */
+.payment-fields {
+  font-size: 1.05rem;
+  line-height: 2;
+  color: var(--avo-dark);
+  width: 100%;
 }
 
 .payment-detail-card p {
-  text-align: center !important; /* 強制文字置中 */
-  margin: 8px 0 !important;   /* 縮小行距讓資料更緊湊 */
+  text-align: center !important;
+  margin: 8px 0 !important;
 }
 
-/* --- [彈跳視窗精品優化] --- */
+/* QR code 裱框 */
+.qr-frame {
+  max-width: 250px;
+  margin: 0 auto 15px auto;
+}
+#lp-qrcode {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: block;
+  border-radius: 8px;
+  cursor: zoom-in;
+}
+
+#lp-announcement {
+  white-space: pre-line;
+  font-size: 0.95rem;
+  color: var(--avo-dark);
+  margin-bottom: 15px !important;
+  font-weight: 600;
+}
+
+.caption-note {
+  font-size: 0.8rem;
+  color: var(--avo-accent);
+  letter-spacing: 1px;
+  opacity: 0.85;
+}
+
+/* 柔性分隔線 */
+.soft-divider {
+  border: none;
+  border-top: 1px dashed var(--rule);
+  margin: 18px 0;
+}
+
+/* --- [彈跳視窗] --- */
 #custom-alert-overlay {
   display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(45, 62, 16, 0.4) !important; z-index: 10000;
-  align-items: center; justify-content: center; backdrop-filter: blur(5px);
+  background: rgba(62, 76, 51, 0.42) !important;
+  z-index: 10000;
+  align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
 }
-#custom-alert-overlay .info-block {
-  width: 85% !important; max-width: 320px !important;
-  margin-bottom: 0 !important; text-align: center;
+#custom-alert-overlay .info-block,
+.alert-dialog {
+  width: 86% !important;
+  max-width: 340px !important;
+  margin-bottom: 0 !important;
+  text-align: center;
+  padding: 30px 26px !important;
+  border: 1px solid var(--avo-accent) !important;
+  border-radius: var(--r-card) !important;
+}
+.alert-message {
+  margin-bottom: 24px !important;
+  font-weight: 600;
+  color: var(--avo-dark);
+  line-height: 1.7;
+  white-space: pre-line;
+}
+.alert-dialog .btn-primary { width: 100%; }
+
+/* --- [燈箱] --- */
+.lightbox-overlay {
+  position: fixed; z-index: 9998; top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(45, 40, 30, 0.92);
+  cursor: zoom-out;
+  justify-content: center; align-items: center;
+}
+.lightbox-inner { text-align: center; width: 100%; }
+.lightbox-img {
+  max-width: 90%; max-height: 80vh;
+  border-radius: 10px;
+  border: 8px solid var(--clay-pale);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+.lightbox-hint {
+  margin-top: 20px;
+  color: var(--clay-pale);
+  font-size: 0.85rem;
+  letter-spacing: 2px;
 }
 
+/* --- [📱 手機版 RWD] --- */
 
-/* --- [📱 手機版 RWD 深度優化] --- */
-
-/* 本部分為縣市行政區微調 */
 @media screen and (max-width: 380px) {
-  .address-grid {
-    gap: 4px;
-  }
+  .address-grid { gap: 4px; }
   .address-grid select, .address-grid input {
     font-size: 0.85rem !important;
-    padding: 14px 8px !important; /* 縮小左右內邊距 */
+    padding: 14px 8px !important;
   }
 }
 
 @media screen and (max-width: 767px) {
+  .main-wrapper { width: 100% !important; margin: 0 auto !important; }
 
-  /* 📱【版面結構｜必須保留 !important】 */
-  .main-wrapper {
-    width: 100% !important;
-    margin: 0 auto !important;
-  }
-
-  .info-block
-  {
-    padding: 25px 20px !important;
-    border-radius: 20px !important;
+  .info-block {
+    padding: 24px 20px !important;
+    border-radius: 18px !important;
   }
 
   .origin-slogan {
-    font-size: 0.85rem !important;     /* 🔽 縮小字級 */
-    letter-spacing: 2.5px !important; /* 🔽 字距收斂 */
-    margin: -5px auto 10px auto !important; /* 🔽 上下呼吸感 */
+    font-size: 0.8rem !important;
+    letter-spacing: 2px !important;
+    margin: 8px auto 0 auto !important;
   }
 
-  /* 📱【標題尺寸｜暫時保留】 */
   .main-title {
-    font-size: 1.65rem !important;
-    margin-top: 30px !important;
+    font-size: 1.5rem !important;
+    letter-spacing: 4px !important;
+    text-indent: 4px !important;
   }
   .sub-title {
-    font-size: 0.75rem !important;
-    letter-spacing: 2px !important;
-    margin-bottom: 15px !important;
+    font-size: 0.65rem !important;
+    letter-spacing: 2.5px !important;
   }
-  /* 🥑 品種頁圖片（手機版） */
-  .variety-images {
-    padding: 8px;
-    border-radius: 22px;
+  .title-divider {
+    width: 150px;
+    margin: 16px auto 24px auto;
   }
 
-  .avocado-img {
-    height: 200px;               /* 👈 手機高度比較剛好 */
-    border-radius: 16px;
-  }
+  .variety-images { padding: 9px; border-radius: 14px; }
+  .avocado-img { height: 200px; border-radius: 8px; }
 
-  /* 📱【文字節奏｜未來可瘦身】 */
   .info-block p {
-    font-size: 0.98rem !important;
-    line-height: 1.75 !important;
+    font-size: 0.95rem !important;
+    line-height: 1.8 !important;
   }
 
-  /* 📱【價格表緊湊化｜必留】 */
-  .product-divider {
-    width: 80%;
-    margin: 16px auto !important;
-  }
+  .product-divider { width: 85%; margin: 14px auto !important; }
+  .price-info.info-block { padding: 16px 16px !important; }
+  .price-info p { margin: 4px 0 !important; font-size: 0.9rem !important; }
 
-  .price-info.info-block {
-    padding: 14px 16px !important;
-  }
-
-  .price-info p {
-    margin: 4px 0 !important;
-    font-size: 0.9rem !important;
-  }
+  .form-label { font-size: 0.94rem; margin: 22px 0 9px; }
 }
 
-/* 🚚🏝️【價目表｜配送方式卡片分組】桌機／手機都套用，讓不同配送方式視覺上明確分開 */
+/* 🚚🏝️【價目表｜配送方式卡片分組】 */
 .shipping-method-block {
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(87, 110, 55, 0.14);
-  border-radius: 16px;
+  background: rgba(228, 234, 215, 0.45);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-field);
   padding: 14px 16px 6px;
   margin-bottom: 14px;
 }
+.shipping-method-block .shipping-title { margin-top: 0; }
+.shipping-method-block .shipping-row:last-child { margin-bottom: 8px; }
 
-.shipping-method-block .shipping-title {
-  margin-top: 0;
-}
-
-.shipping-method-block .shipping-row:last-child {
-  margin-bottom: 8px;
-}
-
-/* 💻 桌機版：卡片再大氣一點，帶一點陰影跟外層卡片做出層次感 */
 @media screen and (min-width: 768px) {
   .shipping-method-block {
     padding: 18px 22px 10px;
     margin-bottom: 18px;
-    box-shadow: 0 4px 14px rgba(93, 122, 50, 0.06);
+    box-shadow: none;
   }
 }
 
-/* ✅ 商品規格列手機標準已改由檔案最後的 #product-list-container 規則統一控制，此處歷史殘留死代碼已移除 */
-
-
-/* --- [📱 手機版 RWD 深度優化] --- */
-
-/* --- [💻 桌機版 RWD 專業優化] --- */
+/* --- [💻 桌機版] --- */
 @media screen and (min-width: 768px) {
-  .variety-img { height: 350px !important; }
-
   body:not(.is-mobile) .app-container {
-    background-color: white !important;
-    max-width: 720px;              /* 🔽 原 800 */
-    margin: 40px auto;             /* 🔽 原 60 */
-    padding: 48px 44px !important; /* 🔽 原 60 / 50 */
-    border-radius: 32px;
-    box-shadow: 0 18px 48px rgba(93, 122, 50, 0.12) !important;
+    background-color: var(--creamy) !important;
+    border: 1px solid var(--rule);
+    max-width: 720px;
+    margin: 40px auto;
+    padding: 48px 44px !important;
+    border-radius: 28px;
+    box-shadow: 0 2px 10px rgba(122, 100, 73, 0.05) !important;
   }
-  /* 🔹 整個頁面外框（banner + 白卡） */
   .main-wrapper {
     max-width: 720px;
     margin: 40px auto;
     padding-bottom: 40px;
   }
-
-  /* 🔹 Banner 本身微調比例 */
   .banner-container {
     margin-bottom: 28px;
-    border-radius: 22px;
+    border-radius: var(--r-img);
   }
-
-  /* 🔹 Banner 圖片比例不變，只是視覺更精緻 */
-  .banner-container img {
-    aspect-ratio: 3 / 1;
-  }
-
-  #custom-alert-overlay .info-block {
-    max-width: 480px !important;
-    padding: 45px 40px !important;
+  #custom-alert-overlay .info-block,
+  .alert-dialog {
+    max-width: 420px !important;
+    padding: 42px 38px !important;
   }
 }
-/* --- [💻 桌機版 RWD 專業優化] --- */
 
+/* 🖼️ 頂部橫幅（原本 inline 寫死 25px 圓角＋重陰影，改由此控制） */
+.banner-container {
+  width: 100%;
+  margin-bottom: 22px;
+  overflow: hidden;
+  border-radius: var(--r-img);
+  border: 1px solid var(--rule-soft);
+  box-shadow: none;
+}
+#banner-img {
+  width: 100%;
+  aspect-ratio: 3 / 1;
+  object-fit: cover;
+  display: block;
+}
 
 /* 成功頁－訂購內容區塊 */
-#order-summary-content p {
-  margin: 6px 0;      /* 原本可能是 16px，這裡縮小 */
-  line-height: 1.4;   /* 行高縮小一點 */
-}
+#order-summary-content p { margin: 6px 0; line-height: 1.5; }
 
-/* 成功頁－總計樣式 */
 .order-total {
   margin-top: 14px;
   padding-top: 12px;
-
-  text-align: center;  /* 置中 */
-  font-size: 20px;     /* 放大字體 */
-  font-weight: 700;
+  text-align: center;
+  font-family: var(--heading-font);
+  font-size: 1.2rem;
+  font-weight: 600;
   color: var(--avo-accent);
 }
 
 /* 訂購成功頁－卡片內總金額 */
 .order-total-inside {
-  margin-top: 14px;
-  padding-top: 12px;
-
-  border-top: 2px dashed #ddd; /* 分隔線 */
-
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--rule);
   text-align: center;
-  font-size: 1.3rem;
-  font-weight: 700;
-  letter-spacing: 1px;
+  font-family: var(--heading-font);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 2px;
   color: var(--avo-dark);
 }
-
 .order-total-inside span {
   display: inline-block;
-  margin-left: 6px;
-  font-size: 1.6rem;
+  margin-left: 8px;
+  font-size: 1.5rem;
   color: var(--avo-accent);
+  font-variant-numeric: tabular-nums;
 }
 
 .success-warm-text {
-  color: var(--avo-accent) !important; font-size: 0.9rem !important;
-  text-align: center; letter-spacing: 1.1px; display: block; font-weight: 500 !important;
+  color: var(--avo-accent) !important;
+  font-size: 0.88rem !important;
+  text-align: center;
+  letter-spacing: 1.2px;
+  display: block;
+  font-weight: 500 !important;
 }
 
-/* 🥑 波波酪梨｜輸入框聚焦光暈（精緻版） */
-select:focus,
-input:focus,
-textarea:focus {
+/* 🥑 輸入框聚焦 */
+select:focus, input:focus, textarea:focus {
   outline: none !important;
-
-  /* 邊框變化：溫潤深綠 */
   border-color: var(--herb-green) !important;
-
-  /* 柔霧光暈：使用你現有色系 */
-  box-shadow:
-    0 0 0 3px rgba(118, 148, 74, 0.18),
-    0 4px 12px rgba(93, 122, 50, 0.12);
-
-  /* 微微被托起的安心感 */
-  transform: translateY(-1px);
-
-  /* 背景稍微暖一點（非常淡） */
-  background-color: #fffef8 !important;
+  box-shadow: 0 0 0 3px rgba(111, 138, 84, 0.14);
+  background-color: #FFFEFA !important;
 }
 
-/* 🥑 填寫完成感（完成一次就好） */
+/* 🥑 填寫完成感 */
 .input-completed {
-  border-color: var(--herb-green) !important;
-  background-color: #fefef6 !important;
-
-  box-shadow:
-    0 0 0 2px rgba(118, 148, 74, 0.12),
-    0 2px 8px rgba(93, 122, 50, 0.08);
-
+  border-color: var(--sage) !important;
+  background-color: #FCFBF4 !important;
+  box-shadow: 0 0 0 2px rgba(169, 190, 148, 0.18);
   transition: all 0.4s ease;
 }
 
-/* 🥑【價格表｜單列容器】 */
-/* 價格列：三欄對齊 */
+/* 🥑【價格表｜單列】 */
 .price-row {
   display: grid;
   grid-template-columns: 1fr 90px 90px;
   align-items: center;
-  padding: 6px 0;
-  border-bottom: 1px dashed rgba(212, 163, 115, 0.4);  
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--rule-soft);
 }
 
-/* 共用欄位 */
-.price-col {
-  white-space: nowrap;
-}
+.price-col { white-space: nowrap; }
 
-/* 左：斤兩 */
 .price-col.weight {
-  padding-left: 15px;   /* 👈 這就是你要的「往右一點」 */
+  padding-left: 15px;
   text-align: left;
   font-size: 0.9rem;
-  color: var(--avo-dark);  
-}
-
-/* 中：$$金額（全部左對齊） */
-.price-col.amount {
-  justify-self: end;     /* ⭐ 關鍵補上 */  
-  text-align: left;  
-  width: 80px;          /* ⭐ 關鍵：給它一個實際寬度 */  
-  margin-right: -10px; /* 👈 現在這個會真的動 */
-  font-weight: 700;
-  font-size: 0.9rem;  
-  min-width: 70px;
   color: var(--avo-dark);
 }
 
-/* 右：庫存（切齊右側） */
+.price-col.amount {
+  justify-self: end;
+  text-align: left;
+  width: 80px;
+  margin-right: -10px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  min-width: 70px;
+  color: var(--avo-accent);
+  font-variant-numeric: tabular-nums;
+}
+
 .price-col.stock {
-  justify-self: end;      /* 保持靠右 */  
+  justify-self: end;
   text-align: right;
-  margin-right: 15px;     /* 👈 整組往左推 */ 
-  font-size: 0.85rem;
-  opacity: 0.85;
-  color: #999;        /* 灰色 */
-  font-style: italic; /* 斜體 */  
+  margin-right: 15px;
+  font-size: 0.82rem;
+  opacity: 1;
+  color: var(--avo-accent);
+  font-style: normal;
+  letter-spacing: 0.5px;
 }
 
 .price-title {
   font-family: var(--heading-font);
   font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: 2px;
   text-align: center;
-  color: var(--avo-dark);  
+  color: var(--avo-dark);
 }
 
-/* 【價格表|小標題優次級】 */
 .price-subtitle {
-  text-align: center;  
-  font-size: 0.95rem;
+  text-align: center;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 1.5px;
   margin-top: 18px;
-  color: var(--avo-dark);  
+  color: var(--avo-dark);
 }
 
-/* 🧼 最後一列不要底線 */
-.price-row:last-child {
-  border-bottom: none;
-}
+.price-row:last-child { border-bottom: none; }
 
-/* 🌿【價格表｜滑過微互動】 */
 .price-row:hover {
-  background: rgba(233, 237, 201, 0.35);
+  background: rgba(228, 234, 215, 0.4);
   border-radius: 8px;
 }
 
@@ -711,66 +851,57 @@ textarea:focus {
   text-align: center;
   color: var(--avo-accent);
   letter-spacing: 8px;
-  font-size: 0.75rem;
-  opacity: 0.7;
-  margin: 0px 0 14px;
+  font-size: 0.7rem;
+  opacity: 0.6;
+  margin: 0 0 14px;
 }
 
 /* 🚚 配送方式內容容器 */
 .shipping-content {
-  width: 90%;
-  max-width: 500px;
+  width: 100%;
+  max-width: 520px;
   margin: 0 auto;
 }
 
-/* 只針對 配送區塊 裡的 p */
 .shipping-content p {
-  font-size: 0.9rem;       /* 你要的大小 */
-  line-height: 1.5;        /* 行距 */
+  font-size: 0.9rem;
+  line-height: 1.6;
   letter-spacing: 0.6px;
-  color: var(--avo-dark); /* 或你要的顏色 */
+  color: var(--avo-dark);
 }
 
-/* 🚚 價格表|配送方式標題（中華郵政 / 7-11 / 黑貓） */
 .shipping-title {
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
   margin: 24px 0 10px;
-  font-weight: 650;
+  font-weight: 700;
   font-size: 0.95rem;
   line-height: 1.4;
   color: var(--avo-dark);
 }
+.shipping-title:first-of-type { margin-top: 2px; }
 
-/* 第一個配送方式標題不用留太多上方空間 */
-.shipping-title:first-of-type {
-  margin-top: 2px;
-}
-
-/* 🏝️ 價格表|本島＋離島同列：斤兩固定寬度、價格靠右對齊，
-   離島區塊獨立推到最右側，區塊內部離島價格自身也靠右對齊 */
 .shipping-row {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   gap: 6px 20px;
-  line-height: 1.6;
+  line-height: 1.7;
   letter-spacing: 1.2px;
   margin: 0 0 10px;
-  font-size: 1rem;
+  font-size: 0.98rem;
   color: var(--avo-dark);
 }
 
-.shipping-weight {
-  flex: 0 0 auto;
-  min-width: 58px;
-}
+.shipping-weight { flex: 0 0 auto; min-width: 58px; }
 
 .shipping-price {
   flex: 0 0 auto;
   min-width: 48px;
   text-align: right;
-  font-weight: 600;
-  margin-right: auto; /* 把離島區塊推到最右側，留出明顯間距 */
+  font-weight: 700;
+  color: var(--avo-accent);
+  font-variant-numeric: tabular-nums;
+  margin-right: auto;
 }
 
 .shipping-island {
@@ -778,34 +909,27 @@ textarea:focus {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 0.9rem;
-  opacity: 0.75;
+  font-size: 0.88rem;
+  opacity: 0.8;
   white-space: nowrap;
 }
+.shipping-island-price { min-width: 42px; text-align: right; }
 
-.shipping-island-price {
-  min-width: 42px;
-  text-align: right;
-}
-
-/* 🌱 淡暖色提示文字（備註 / 提醒） */
+/* 🌱 淡暖色提示文字 */
 .hint-warm-text {
   font-size: 0.85rem;
-  line-height: 1.6;
+  line-height: 1.7;
   letter-spacing: 0.5px;
   color: var(--avo-accent);
 }
 
-
-
-/* 🧯 修正：價格表不要吃 info-block 的段落樣式 */
+/* 🧯 價格表不吃 info-block 的段落樣式 */
 #price-menu-container p {
   margin: 0 !important;
   white-space: normal !important;
   line-height: normal !important;
 }
 
-/* 🥑 價格表主容器（最終版） */
 #price-menu-container {
   width: 100%;
   margin: 0 auto;
@@ -813,12 +937,9 @@ textarea:focus {
   box-sizing: border-box;
 }
 
-/* 🔥 價格表內容改用左對齊基準 */
-.price-info {
-  text-align: left !important;
-}
+.price-info { text-align: left !important; }
 
-/* 每一列（小計 / 運費） */
+/* 小計 / 運費 */
 .summary-row {
   display: flex;
   justify-content: space-between;
@@ -826,28 +947,17 @@ textarea:focus {
   color: var(--avo-dark);
   font-size: 0.95rem;
 }
-
-.summary-row .label {
-  opacity: 0.9;
-}
-
-.summary-row .value {
-  font-weight: 600;
-}
-
-.variety-img-container img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
+.summary-row .label { opacity: 0.9; }
+.summary-row .value { font-weight: 600; }
 
 /* ✅ 成功頁－訂購摘要 */
 .order-summary-list {
-  background: rgba(255,255,255,0.6);
-  border-radius: 18px;
+  background: rgba(237, 228, 211, 0.45);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-field);
   padding: 20px;
   margin: 20px auto;
-  box-shadow: 0 6px 18px rgba(93,122,50,0.08);
+  box-shadow: none;
 }
 
 .order-summary-row {
@@ -858,49 +968,30 @@ textarea:focus {
   font-size: 0.95rem;
   color: var(--avo-dark);
 }
+.order-summary-row:last-child { margin-bottom: 0; }
+.order-summary-row .label { opacity: 0.85; font-weight: 500; }
+.order-summary-row .value { font-weight: 700; }
 
-.order-summary-row:last-child {
-  margin-bottom: 0;
-}
+/* ✅ 價格表頁標題節奏 */
+#step3-price-list .title-divider { margin: 16px auto 24px; }
 
-.order-summary-row .label {
-  opacity: 0.85;
-  font-weight: 500;
-}
-
-.order-summary-row .value {
-  font-weight: 700;
-}
-
-/* ✅ 價格表頁：對齊訂購頁的標題節奏 */
-#step3-price-list .main-title {
-  margin-top: 0;
-}
-
-#step3-price-list .title-divider {
-  margin: 12px auto;
-}
-
-/* 👑 大魔王封印區：成功頁訂單摘要 */
+/* 👑 成功頁訂單摘要 */
 #step5-payment-info .order-summary-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-
 #step5-payment-info .order-summary-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-
 #step5-payment-info .order-summary-row .label {
   font-size: 0.9rem;
   color: var(--avo-dark);
   opacity: 0.85;
   margin: 0;
 }
-
 #step5-payment-info .order-summary-row .value {
   font-size: 0.95rem;
   font-weight: 600;
@@ -909,163 +1000,148 @@ textarea:focus {
   text-align: right;
 }
 
-/* 🌿 訂購成功卡片｜微浮起完成感 */
+/* 🌿 訂購成功卡片｜溫和浮現（原本的彈跳縮放對紙感太吵） */
 @keyframes successFloat {
-  0% {
-    transform: scale(0.98);
-    box-shadow: 0 6px 18px rgba(93,122,50,0.08);
-  }
-  60% {
-    transform: scale(1.02);
-    box-shadow: 0 16px 40px rgba(93,122,50,0.18);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 12px 32px rgba(93,122,50,0.12);
-  }
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
-
-/* 只給成功頁用 */
-.success-animate {
-  animation: successFloat 0.8s ease-out;
-}
+.success-animate { animation: successFloat 0.6s ease-out; }
 
 .readonly-input {
-  background: #f3f3f3;
-  color: #555;
+  background: var(--clay-pale);
+  color: var(--clay-deep);
   cursor: not-allowed;
 }
 
-/* 🚨 地址欄位錯誤提示 */
+/* 🚨 地址欄位錯誤提示（磚紅，不用刺眼正紅） */
 .address-error {
-  border: 2px solid #d9534f !important;
-  background-color: #fff5f5;
+  border: 1.5px solid #A85B47 !important;
+  background-color: #FDF4F1 !important;
 }
-
 .address-error-hint {
-  color: #d9534f;
-  font-size: 0.9rem;
+  color: #A85B47;
+  font-size: 0.85rem;
   margin-top: 4px;
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
 }
 
-/* 🛒 購物車條列式品項樣式 */
+/* 🛒 購物車條列式品項 */
 .product-group-label {
-  background: var(--avo-green);
+  background: var(--sage-mist);
   color: var(--avo-dark);
-  padding: 8px 15px;
-  border-radius: 10px;
-  font-weight: 800;
-  margin: 20px 0 10px 0;
-  font-size: 0.95rem;
+  border: 1px solid var(--rule-soft);
+  padding: 8px 16px;
+  border-radius: var(--r-pill);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  margin: 22px 0 10px 0;
+  font-size: 0.92rem;
+  display: inline-block;
 }
 
 .btn-qty:hover:not(:disabled) {
-  background-color: var(--avo-dark);
-  color: #fff;
+  background-color: var(--herb-green);
+  color: var(--creamy);
+  border-color: var(--herb-green);
 }
-
-.btn-qty:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
+.btn-qty:disabled { opacity: 0.3; cursor: not-allowed; }
 .btn-qty:active { transform: scale(0.9); }
-
 
 /* ===== 訂購頁面專用 ===== */
 .qty-num {
   display: inline-block;
-  width: 20px; 
+  width: 20px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--avo-dark);
+  font-weight: 600;
 }
 
-.price-col.action {
-  width: 100px; /* 原本可能太寬 */
-}
-
+.price-col.action { width: 100px; }
 .price-col.action .qty-control {
   display: flex;
   gap: 5px;
-  justify-content: flex-start; /* 往左對齊 */
-  margin-left: -8px;         /* 整組往左微調 */
-  width: 115px;               /* 保持足夠寬度 */
+  justify-content: flex-start;
+  margin-left: -8px;
+  width: 115px;
 }
 
 #product-list-container .price-row {
   display: grid;
-  grid-template-columns: 1fr 90px 90px;  /* 左:斤兩 / 中:庫存 / 右:按鈕 */
+  grid-template-columns: 1fr 90px 90px;
   align-items: center;
-  padding: 6px 0;
-  border-bottom: 1px dashed rgba(212, 163, 115, 0.4);
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--rule-soft);
 }
 
 #product-list-container .price-col.stock {
-  justify-self: start; /* 由靠右變靠左 */
+  justify-self: start;
   text-align: right;
-  margin-left: 20px; /* 往右微調 */
-  font-size: 0.85rem;
-  opacity: 0.85;
-  color: #999;
-  font-style: italic;
+  margin-left: 20px;
+  font-size: 0.82rem;
+  color: var(--avo-accent);
+  font-style: normal;
 }
 
-#product-list-container .price-col.action {
-  width: 100px; /* 調整按鈕欄寬度 */
-}
+#product-list-container .price-col.action { width: 100px; }
 
-/* 按鈕位置*/
 #product-list-container .price-col.action .qty-control {
   display: flex;
-  gap: 6px;              /* 按鈕間距 */
-  justify-content: flex-start; /* 左對齊整組按鈕 */
-  margin-left: -10px;      /* 微調整位置 */
+  gap: 6px;
+  justify-content: flex-start;
+  margin-left: -10px;
   width: auto;
 }
 
-/* 按鈕大小統一 */
 #product-list-container .btn-qty {
-  width: 25px;   /* 和 height 一樣 */
+  width: 25px;
   height: 25px;
-  border-radius: 50%; /* 完全圓形 */
-  border: 1.5px solid var(--avo-dark);
-  background: #fff;
-  color: var(--avo-dark);
-  font-size: 1.2rem;
+  border-radius: 50%;
+  border: 1px solid var(--avo-accent);
+  background: var(--creamy);
+  color: var(--clay-deep);
+  font-size: 1.1rem;
   cursor: pointer;
-  display: inline-flex;   /* 確保內容置中 */
-  align-items: center;    /* 垂直置中 */
-  justify-content: center;/* 水平置中 */
-  padding: 0;             /* 移除多餘內距 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   transition: all 0.2s ease;
 }
 
-
-/* 波波酪梨版權所有 */
+/* 🌾 版權 + 山丘裝飾
+   兩座山丘取自 LINE 圖文選單底部，是全站唯一的插畫元素 */
 .site-footer {
-  margin-top: 40px;
-  padding: 15px 10px;
+  position: relative;
+  margin-top: 50px;
+  padding: 78px 10px 15px;
   text-align: center;
-  font-size: 0.7rem;
-  color: var(--avo-accent);   /* ✅ 暖色 */
-  letter-spacing: 0.5px;
+  font-size: 0.68rem;
+  color: var(--avo-accent);
+  letter-spacing: 0.8px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 130' preserveAspectRatio='none'%3E%3Cpath d='M0,130 L0,74 C80,26 165,96 250,88 C332,80 386,40 470,52 C556,64 622,20 720,58 L720,130 Z' fill='%23E6EBD6'/%3E%3Cpath d='M0,130 L0,100 C110,68 195,112 300,104 C420,95 505,74 604,86 C662,93 692,104 720,98 L720,130 Z' fill='%23D6DFC4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center top 6px;
+  background-size: 100% 72px;
 }
 
-/* 🔗 footer 社群連結（LINE / IG / FB）：方形圓角徽章＋下方文字標籤，配色採用品牌色票 */
+/* 🔗 footer 社群連結：細框膠囊徽章 */
 .social-links {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  gap: 20px;
+  gap: 22px;
   flex-wrap: wrap;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .social-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  min-width: 68px; /* 👈 固定寬度，不受「LINE」「Instagram」文字長短不同影響，確保三者間距真正平均 */
+  gap: 6px;
+  min-width: 68px;
   text-decoration: none;
 }
 
@@ -1075,238 +1151,202 @@ textarea:focus {
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 10px;           /* 👈 方形圓角，不是全圓 */
-  background: var(--avo-accent); /* 品牌金棕色，跟各平台官方色區隔開來 */
-  color: var(--creamy);          /* 圖示線條顏色 */
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--avo-accent);
+  color: var(--clay-deep);
   transition: var(--transition-smooth);
 }
+.social-icon svg { width: 20px; height: 20px; }
 
 .social-label {
-  font-size: 0.68rem;
-  color: var(--avo-dark);
-  letter-spacing: 0.3px;
-  opacity: 0.8;
+  font-size: 0.66rem;
+  color: var(--clay-deep);
+  letter-spacing: 0.8px;
+  opacity: 0.75;
 }
 
 .social-item:hover .social-icon {
-  background: var(--avo-dark);
-  transform: translateY(-2px);
+  background: var(--avo-accent);
+  color: var(--creamy);
 }
-
-.social-item:hover .social-label {
-  opacity: 1;
-}
+.social-item:hover .social-label { opacity: 1; }
 
 /* ------------------------ */
-/* 浮動購物車容器 */
+/* 浮動購物車 */
 /* ------------------------ */
 #floating-cart {
-  height: 335px;      /* 原本可能是 65px，改成你想要的 */ 
+  height: 335px;
   position: fixed;
   top: 50%;
   display: flex;
-  flex-direction: row; /* 把手在左，內容在右 */
-  background: #fffaf0; /* 柔和背景 */
-  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
-  border-radius: 12px 0 0 12px; /* 左上左下圓角 */
+  flex-direction: row;
+  background: var(--creamy);
+  border: 1px solid var(--rule);
+  border-right: none;
+  box-shadow: -2px 4px 16px rgba(122, 100, 73, 0.14);
+  border-radius: var(--r-card) 0 0 var(--r-card);
   z-index: 9999;
   transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  font-family: "Noto Sans", sans-serif;
-  align-items: stretch; /* 讓所有子元素高度撐滿 */  
+  align-items: stretch;
 }
 
-/* 展開 */
 #floating-cart.show {
   transform: translateY(-50%) translateX(0);
-  width: 420px; /* 改成你想要的寬度 */
-  max-width: 80vw; /* 桌機太寬也不行時可限制 */  
+  width: 420px;
+  max-width: 80vw;
 }
 
-/* ------------------------ */
 /* 把手 */
-/* ------------------------ */
-#floating-cart-handle { 
-  height: auto; /* 交給 flex 撐滿父元素 */
-  padding: 10px 12px; 
-  box-sizing: border-box;  
-  background: #c47f50;
-  color: #fff;
+#floating-cart-handle {
+  height: auto;
   padding: 10px 12px;
-  font-weight: bold;
+  box-sizing: border-box;
+  background: var(--clay-deep);
+  color: var(--creamy);
+  font-weight: 600;
   writing-mode: vertical-rl;
   text-align: center;
-  border-radius: 12px 0 0 12px; /* 左上左下圓角 */
+  border-radius: var(--r-card) 0 0 var(--r-card);
   cursor: pointer;
   user-select: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.3s, transform 0.2s;
-  z-index: 10; /* 確保在購物車上方 */
-  letter-spacing: 3.5px;  /* 調整數值增加字間距 */
+  transition: background 0.3s;
+  z-index: 10;
+  letter-spacing: 3.5px;
+  font-size: 0.9rem;
 }
+#floating-cart-handle:hover { background: var(--avo-accent); }
 
-#floating-cart-handle:hover {
-  background: #d19d5a; /* 較亮暖色*/
-  transform: scale(1.03);
-}
+.cart-hint { font-size: 0.75rem; opacity: 0.8; }
 
-/* ------------------------ */
-/* 購物車內容 */
-/* ------------------------ */
 #floating-cart-content {
   display: flex;
   flex-direction: column;
-  width: 350px; /* 減少寬度，留把手透出空間 */
-  padding: 10px;
+  width: 350px;
+  padding: 12px;
   overflow-y: auto;
-  position: relative;   /* ⭐ 讓 totals 的 absolute 以此為參考 */
-  padding-bottom: 100px; /* ⭐ 留出 totals 區塊高度 */
+  position: relative;
+  padding-bottom: 100px;
 }
 
-/* ------------------------ */
-/* 購物車項目 */
-/* 購物車提醒文字（最上方） */
-/* ------------------------ */
+/* 購物車提醒 */
 #cart-note {
-  padding: 8px 12px;          /* 內邊距 */
-  background: #fff3cd;        /* 淡黃色背景 */
-  color: #856404;             /* 深黃色文字 */
-  font-size: 0.9rem;          /* 稍小字體 */
-  border-radius: 6px;         /* 圓角 */
-  margin-bottom: 10px;        /* 與商品列表間隔 */
-  text-align: center;          /* 文字置中 */
-  font-weight: bold;           /* 文字加粗 */
-  box-shadow: 0 2px 4px rgba(0,0,0,0.08); /* 微小陰影，讓提醒浮起 */
-  line-height: 1.4;           /* 行高舒適 */
+  padding: 8px 12px;
+  background: rgba(237, 228, 211, 0.7);
+  border: 1px dashed var(--avo-accent);
+  color: var(--clay-deep);
+  font-size: 0.85rem;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  text-align: center;
+  font-weight: 600;
+  box-shadow: none;
+  line-height: 1.5;
 }
-/* 購物車項目 */
+
 .floating-cart-item {
   display: flex;
   justify-content: space-between;
   padding: 8px 10px;
-  border-bottom: 1px solid #f0e6d6; /* 柔和分隔線 */
-  font-size: 0.95rem;
+  border-bottom: 1px dashed var(--rule-soft);
+  font-size: 0.92rem;
 }
 
-/*購物車內品項名稱*/
-.floating-cart-item .item-name {
-  flex: 1;
-  color: var(--avo-dark);
-}
-/*購物車內品項數量、金額*/
+.floating-cart-item .item-name { flex: 1; color: var(--avo-dark); }
+
 .floating-cart-item .item-qty,
 .floating-cart-item .item-subtotal {
   margin-left: 10px;
   white-space: nowrap;
-  color: var(--herb-green);
-  font-weight: bold;
+  color: var(--avo-accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ------------------------ */
-/* 小計 / 運費 / 總計區塊 */
-/* ------------------------ */
 .totals-divider {
   height: 1px;
   width: 100%;
-  border-top: 1px dashed var(--avo-accent); /* 細虛線分隔 */
+  border-top: 1px dashed var(--avo-accent);
   margin-bottom: 4px;
+  opacity: 0.5;
 }
 
 #floating-cart-totals {
   margin-top: 12px;
-  padding: 8px 0;
+  padding: 10px 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  
-  left: 0;             /* ⭐ 加上 */
-  right: 0;            /* ⭐ 加上，讓 totals 自動撐滿整個購物車內容寬度 */
+  left: 0; right: 0;
   box-sizing: border-box;
-  position: absolute;  /* 固定位置 */
-  bottom: 0;           /* 貼在購物車內容底部 */  
-  padding-left: 10px;  /* 內邊距，控制文字不要貼邊 */
-  padding-right: 10px; /* 內邊距 */  
+  position: absolute;
+  bottom: 0;
+  padding-left: 12px;
+  padding-right: 12px;
+  background: var(--creamy);
 }
 
 #floating-cart-totals div {
   text-align: left;
-  padding-left: 6px; /* 與購物車卡片留空 */
-  color: var(--herb-green);
-  font-weight: bold;
+  padding-left: 6px;
+  color: var(--avo-dark);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-/*購物車內總計重點加強*/
 #floating-total,
 #floating-total .label,
 #floating-total .amount {
-  font-size: 1.1rem; /* 比小計運費大 */  
+  font-family: var(--heading-font);
+  font-size: 1.08rem;
   color: var(--avo-accent);
 }
 
-/* ------------------------ */
 /* 桌機 */
 @media screen and (min-width: 768px) {
   #floating-cart {
     flex-direction: row;
     right: 0;
     left: auto;
-    transform: translateY(-50%) translateX(250px);  
-    overflow: hidden;  
+    transform: translateY(-50%) translateX(250px);
+    overflow: hidden;
   }
-  #floating-cart-content {
-    width: 250px; /* 調整寬度 */
-  }
-
-  #floating-cart.show {
-    transform: translateY(-50%) translateX(0);
-  }
-
-  /* 展開時寬度 */
-  #floating-cart.show #floating-cart-content {
-    width: 380px; /* 展開後更寬 */
-  }  
+  #floating-cart-content { width: 250px; }
+  #floating-cart.show { transform: translateY(-50%) translateX(0); }
+  #floating-cart.show #floating-cart-content { width: 380px; }
 }
 
-/* ------------------------ */
 /* 手機 */
 @media screen and (max-width: 767px) {
-
   #floating-cart {
     position: fixed;
-    left: 0;                 /* ⭐ 不再動 left */
+    left: 0;
     bottom: 70px;
     top: auto;
-
     flex-direction: row-reverse;
     display: flex;
-
     min-height: 80px;
     max-height: 65vh;
     height: auto;
-
-    background: #fffaf0;
-    border-radius: 0 12px 12px 0;
-
-    /* ⭐ 收合狀態：內容藏到左邊，只露把手 */
+    background: var(--creamy);
+    border: 1px solid var(--rule);
+    border-left: none;
+    border-radius: 0 var(--r-card) var(--r-card) 0;
     transform: translateX(calc(-100% + 48px));
     transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
-
     overflow: visible;
     z-index: 9999;
   }
 
-  /* 展開 */
-  #floating-cart.show {
-    transform: translateX(0);   /* ⭐ 從把手邊緣平移出來 */
-    width: 300px;
-  }
+  #floating-cart.show { transform: translateX(0); width: 300px; }
 
-  /* 把手在右側，露在畫面內 */
   #floating-cart-handle {
     height: auto;
     min-height: 80px;
-    border-radius: 0 12px 12px 0;
+    border-radius: 0 var(--r-card) var(--r-card) 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1315,57 +1355,45 @@ textarea:focus {
 
   #floating-cart-content {
     width: 280px;
-    max-height: calc(65vh - 20px); /* ⭐ 跟 cart 的 max-height 呼應 */
+    max-height: calc(65vh - 20px);
     overflow-y: auto;
-    padding-bottom: 100px; /* totals 空間 */
+    padding-bottom: 100px;
   }
 
-  /* 手機購物車提醒字樣*/
-  #cart-note {
-  padding: 6px 10px;
-  font-size: 0.85rem;
-  }
+  #cart-note { padding: 6px 10px; font-size: 0.8rem; }
 }
 
-/* 🚫 停止接單 - 按鈕灰化樣式 */
+/* 🚫 停止接單 - 按鈕灰化 */
 .btn-primary.is-disabled {
-  background: #cfcfcf !important;
-  color: #666 !important;
-  border-color: #bbb !important;
+  background: #D5D0C4 !important;
+  color: #8A8377 !important;
+  border-color: #C8C2B4 !important;
   cursor: not-allowed;
   box-shadow: none !important;
-  opacity: 0.75;
+  opacity: 0.9;
+}
+.btn-primary.is-disabled:hover {
+  background: #D5D0C4 !important;
+  border-color: #C8C2B4 !important;
 }
 
-/* hover 也維持灰色，不給活躍感 */
-.btn-primary.is-disabled:hover {
-  background: #cfcfcf !important;
-  transform: none !important;
-}
-/* ============================================
-   📱【規格選擇區塊｜手機版數量按鈕縮小 + 庫存欄防裁切】
-   只在手機生效，桌機版排版不受影響。
-   放在檔案最後、選擇器優先權與前面 #product-list-container 規則相同，
-   確保能真的覆蓋掉之前沒生效的舊規則。
-   ============================================ */
+/* 📱【規格選擇區塊｜手機版數量按鈕縮小 + 庫存欄防裁切】 */
 @media screen and (max-width: 767px) {
   #product-list-container .price-row {
-    grid-template-columns: 1fr 66px 78px; /* 左:斤兩 / 中:庫存 / 右:按鈕，庫存欄給足空間 */
-    column-gap: 10px; /* 👈 欄位之間留白，避免庫存數字貼著 -/+ 按鈕 */
+    grid-template-columns: 1fr 66px 78px;
+    column-gap: 10px;
   }
 
   #product-list-container .price-col.stock {
     justify-self: start;
     text-align: right;
-    margin-left: 0;      /* 移除容易裁切的硬推寫法 */
+    margin-left: 0;
     width: 100%;
-    padding-right: 10px; /* 👈 讓數字往左挪一點，避免貼近按鈕 */
-    font-size: 0.8rem;
+    padding-right: 10px;
+    font-size: 0.78rem;
   }
 
-  #product-list-container .price-col.action {
-    width: auto;
-  }
+  #product-list-container .price-col.action { width: auto; }
 
   #product-list-container .price-col.action .qty-control {
     margin-left: 0;
@@ -1377,111 +1405,106 @@ textarea:focus {
     width: 22px;
     height: 22px;
     font-size: 0.85rem;
-    border-width: 1px;
   }
 
-  #product-list-container .qty-num {
-    width: 16px;
-    font-size: 0.8rem;
-  }
+  #product-list-container .qty-num { width: 16px; font-size: 0.8rem; }
 }
 
-/* 🕐 開賣倒數橫幅
-   尚未開賣時顯示在頁面最上方，時間一到會自動消失、商品同步解鎖。
-   放在 app-container 外面，所以不管客人停在哪一頁都看得到。 */
+/* 🕐 開賣倒數橫幅（虛線框，對應海報的「注意事項」語彙） */
 .release-banner {
   width: 100%;
   max-width: 720px;
-  margin: 0 auto 22px auto;
-  padding: 18px 20px;
+  margin: 0 auto 20px auto;
+  padding: 20px;
   box-sizing: border-box;
-
-  background: linear-gradient(135deg, #fff4e0 0%, #ffe9c9 100%);
-  border: 1.5px solid var(--avo-accent);
-  border-radius: 20px;
-  box-shadow: 0 8px 24px rgba(204, 146, 71, 0.18);
-
+  background: var(--creamy);
+  border: 1px dashed var(--avo-accent);
+  border-radius: var(--r-card);
+  box-shadow: none;
   text-align: center;
   color: var(--avo-dark);
   animation: releaseBannerIn 0.5s ease both;
 }
 
 @keyframes releaseBannerIn {
-  from { opacity: 0; transform: translateY(-8px); }
+  from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 .release-banner-title {
   font-family: var(--heading-font);
-  font-size: 1.15rem;
-  font-weight: 500;
-  letter-spacing: 2px;
-  margin-bottom: 6px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 3px;
+  text-indent: 3px;
+  margin-bottom: 8px;
 }
 
 .release-banner-count {
-  font-size: 1.45rem;
-  font-weight: 700;
+  font-family: var(--heading-font);
+  font-size: 1.5rem;
+  font-weight: 600;
   color: var(--avo-accent);
   letter-spacing: 2px;
-  font-variant-numeric: tabular-nums; /* 數字等寬，倒數時不會左右跳動 */
+  font-variant-numeric: tabular-nums;
 }
 
 .release-banner-hint {
-  margin-top: 8px;
-  font-size: 0.78rem;
-  opacity: 0.75;
-  letter-spacing: 0.5px;
+  margin-top: 10px;
+  font-size: 0.76rem;
+  color: var(--avo-accent);
+  opacity: 0.85;
+  letter-spacing: 0.8px;
 }
 
-
-/* ⚠️ 快照過期柔性提示
-   GITHUB_TOKEN 過期或觸發器停擺時，站台看起來一切正常，
-   但賣的其實是幽靈庫存 —— 這種靜默故障最難發現，所以給客人一個提醒。 */
+/* ⚠️ 快照過期柔性提示 */
 .stale-warning {
   width: 100%;
   max-width: 720px;
   margin: 0 auto 18px auto;
   padding: 12px 18px;
   box-sizing: border-box;
-
-  background: #fff3cd;
-  border: 1px solid #f0d48a;
-  border-radius: 14px;
-
+  background: #F5EEDD;
+  border: 1px solid #D9C89E;
+  border-radius: var(--r-field);
   text-align: center;
-  font-size: 0.85rem;
-  line-height: 1.6;
-  color: #856404;
+  font-size: 0.84rem;
+  line-height: 1.7;
+  color: #7A6449;
   letter-spacing: 0.4px;
 }
 
-
-/* 📱 手機版微調 */
+/* 📱 橫幅手機微調 */
 @media screen and (max-width: 767px) {
   .release-banner {
-    padding: 14px 16px;
+    padding: 16px 16px;
     border-radius: 16px;
     margin-bottom: 16px;
   }
-  .release-banner-title { font-size: 1rem; letter-spacing: 1.5px; }
-  .release-banner-count { font-size: 1.25rem; }
-  .release-banner-hint  { font-size: 0.72rem; }
+  .release-banner-title { font-size: 0.98rem; letter-spacing: 2px; }
+  .release-banner-count { font-size: 1.3rem; }
+  .release-banner-hint  { font-size: 0.7rem; }
 
-  .stale-warning {
-    font-size: 0.8rem;
-    padding: 10px 14px;
-    border-radius: 12px;
-  }
+  .stale-warning { font-size: 0.78rem; padding: 10px 14px; border-radius: 12px; }
+
+  .site-footer { padding-top: 62px; background-size: 100% 56px; }
 }
 
-
-/* ⏳ 未開賣徽章
-   沿用你原本的 ，只是文案從「未上架」改成「未開賣」，
-   顏色改成暖橘（原本的正紅偏警告，用在「還沒開始」語意上有點兇）。 */
+/* ⏳ 未開賣徽章 */
 .unreleased-badge {
-  color: #c47f50 !important;
+  color: var(--clay-deep) !important;
   font-weight: 700 !important;
   font-style: normal !important;
   opacity: 1 !important;
+  letter-spacing: 0.5px;
+}
+
+/* ♿ 尊重系統的「減少動態效果」設定 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .variety-images:hover .avocado-img { transform: none; }
 }
