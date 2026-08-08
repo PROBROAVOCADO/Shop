@@ -84,10 +84,11 @@ html, body {
 /* 🏞️ 背景等高線
    兩組丘陵線橫貫整個視窗，每組一深一淡（暖褐 + 深褐）。
 
-   ⚠️ 兩條線是「反相」的，不是平移複製：
-      深色線往上爬的地方，淡色線正好往下沉，但兩者的中線高度接近，
-      所以每組會交錯穿插三次。如果把淡色線改成深色線的垂直平移，
-      它們會變成永遠不相交的平行線，畫面會顯得呆板。
+   ⚠️ 四條線刻意做成節奏不一致，不要改回對稱：
+      ・同一組內的兩條是「反相」而非垂直平移 —— 平移的話永遠不會相交
+      ・上組 = 遠山：波長長、振幅小（約 58px）、只交會 2 次，整體略往下飄
+      ・下組 = 近坡：波長短、振幅大（約 97px）、交會 4 次，起伏明顯陡
+      ・線寬也各不相同（1.7 / 1.0 / 1.4 / 1.2），避免看起來像同一支筆畫的
 
    固定在視窗上不隨捲動移動，所以捲頁時卡片像是在地景上滑過。
    手機版卡片是滿版的，線條只會從卡片之間的縫隙透出來。 */
@@ -729,13 +730,17 @@ select {
     padding: 42px 38px !important;
   }
 
-  /* 🏞️ 山丘拉齊卡片寬度
-     footer 在 app-container 裡面，桌機版卡片左右各有 44px padding，
-     山丘原本會被縮進去 88px。用負邊距把它推回卡片的真實邊緣。
-     ⚠️ 這裡的 -44px 必須跟上面 .app-container 的 padding 左右值一致。 */
+  /* 🏞️ 山丘拉齊卡片寬度、並貼齊卡片底緣
+     footer 在 app-container 裡面，桌機版卡片 padding 是 48px 44px，
+     山丘原本會被四周縮進去。用負邊距把它推回卡片的真實邊緣。
+     ⚠️ 這三個負值必須跟 .app-container 的 padding 對應：
+        左右 -44px、下 -48px。之後調卡片內距記得一起改。
+     圓角 27px = 卡片的 28px 減掉 1px 邊框，避免綠色溢出圓角外。 */
   .site-footer {
     margin-left: -44px;
     margin-right: -44px;
+    margin-bottom: -48px;
+    border-radius: 0 0 27px 27px;
   }
 }
 
@@ -1148,20 +1153,27 @@ select:focus, input:focus, textarea:focus {
   transition: all 0.2s ease;
 }
 
-/* 🌾 版權 + 山丘裝飾
-   兩座山丘取自 LINE 圖文選單底部，是全站唯一的插畫元素 */
+/* 🌾 版權 + 山丘
+   兩座山丘取自 LINE 圖文選單底部，是全站唯一的插畫元素。
+
+   ⚠️ SVG 是整塊背景（不是只有稜線那一條帶），山丘下方一路實色填到底，
+      所以社群圖示與版權文字是「站在草地上」的。前景山丘內建一個由深到淺
+      的漸層，讓底部的文字區塊顏色淡一點、字才讀得清楚。
+   ⚠️ preserveAspectRatio='none' + background-size:100% 100%：
+      viewBox 高度 220 是照頁尾實際高度抓的，比例接近 1:1，曲線幾乎不變形。
+      如果之後大幅改動 padding，稜線會跟著被拉扁或拉高。 */
 .site-footer {
   position: relative;
   margin-top: 50px;
-  padding: 78px 10px 15px;
+  padding: 112px 10px 22px;
   text-align: center;
   font-size: 0.68rem;
-  color: var(--avo-accent);
+  color: var(--clay-deep);
   letter-spacing: 0.8px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 130' preserveAspectRatio='none'%3E%3Cpath d='M0,130 L0,74 C80,26 165,96 250,88 C332,80 386,40 470,52 C556,64 622,20 720,58 L720,130 Z' fill='%23E6EBD6'/%3E%3Cpath d='M0,130 L0,100 C110,68 195,112 300,104 C420,95 505,74 604,86 C662,93 692,104 720,98 L720,130 Z' fill='%23D6DFC4'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 220' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23D6DFC4'/%3E%3Cstop offset='0.55' stop-color='%23E2E7D6'/%3E%3Cstop offset='1' stop-color='%23EBEEE2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M0,220 L0,74 C80,26 165,96 250,88 C332,80 386,40 470,52 C556,64 622,20 720,58 L720,220 Z' fill='%23E6EBD6'/%3E%3Cpath d='M0,220 L0,100 C110,68 195,112 300,104 C420,95 505,74 604,86 C662,93 692,104 720,98 L720,220 Z' fill='url(%23g)'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: center top 6px;
-  background-size: 100% 72px;
+  background-position: center bottom;
+  background-size: 100% 100%;
 }
 
 /* 🔗 footer 社群連結：細框膠囊徽章 */
@@ -1525,7 +1537,7 @@ select:focus, input:focus, textarea:focus {
 
   .stale-warning { font-size: 0.78rem; padding: 10px 14px; border-radius: 12px; }
 
-  .site-footer { padding-top: 62px; background-size: 100% 56px; }
+  .site-footer { padding-top: 92px; padding-bottom: 20px; }
 }
 
 /* ⏳ 未開賣徽章 */
