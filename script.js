@@ -1,8 +1,8 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08 Firebase 控制節點版 (v4)
+ * 版本：2026-08 Firebase 控制節點版 (v4) + v7 樣式改版配套
  *
- * 本次主要改動：
+ * 【v4 主要改動】
  *  A1  Firebase 推播加上 dataAt 新鮮度比對，舊資料一律丟棄
  *      （秒殺尾聲最容易出現亂序推播，客人會看到已售完的品項還有貨）
  *  A2  成功頁金額改用後端實際成交金額，保證跟試算表與 PDF 一致
@@ -11,6 +11,12 @@
  *  D1  applyReleaseStatus 不再重設 lastKnown，開賣狀態轉換只由 ticker 負責
  *      （舊版快照輪詢與 ticker 搶著決定，開賣那一秒有機率不解鎖）
  *  D3  送單期間收到的推播先暫存，送完再套用，不再中途改動購物車
+ *
+ * 【v7 樣式改版配套】共四處，都只動外觀不動邏輯
+ *  ・applyConfigToPage   新增「規格選擇備註」，文字由試算表控制
+ *  ・showLoadingScreen   配色換成 v7 品牌色票（原本寫死舊版亮綠漸層）
+ *  ・showLoadingError    同上
+ *  ・updateFloatingCart  空購物車文字的寫死灰色改用品牌色
  *
  * 📝 資料來源分工（依「變動速度」而非「資料種類」）
  *   即時層 → Firebase control 節點：庫存、上架時間、訂單開關、配送開關
@@ -65,6 +71,7 @@ var lastControlDataAt = 0;
 // 所以只要它停了，就代表觸發器真的掛了 —— 而快照現在「內容沒變就不發布」，
 // 快照舊不代表系統壞掉，不能再拿它當判斷依據。
 var lastControlUpdatedAt = 0;
+
 // 🔑 D3：送單期間是否有累積尚未反映到畫面的更新。
 // 注意這裡只延後「畫面」，資料（stockMap / 開關 / 上架時間）永遠即時更新，
 // 否則送單前的庫存預檢查會拿到舊資料，白白多打一次 GAS。
@@ -156,11 +163,11 @@ function resolveImageUrl(raw, width) {
 
 /* ========================================
    📦 單一真相來源（E1 / E2）
-   
+
    商品規格、單價欄位、配送限重、運費欄位，全部在這一區定義一次，
    其餘的表格都由它衍生。以前這些散在四、五個地方，
    改一個品項要動好幾處，改漏了前後端就會算出不同金額。
-   
+
    ⚠️ 這一區的內容要跟 code.gs 的「單一真相來源」保持一致。
    兩邊一個在瀏覽器、一個在 GAS，沒辦法共用程式碼，只能人工同步。
    ======================================== */
@@ -750,20 +757,21 @@ function applySnapshotStamp(json) {
 }
 
 
-/* ============================================================
-   1️⃣ applyConfigToPage
-   改動：新增 #spec-note，文字讀自試算表「3-訂購與運費」的
-        「規格選擇備註」。順便讓 #shipping-note 沒內容時自動隱藏。
-   ============================================================ */
+// ========================================
+// 🖼️ 填入頁面靜態文字
+//
+// 這個函式在冷啟動與每次快照輪詢時都會被呼叫，所以裡面的每一項
+// 都必須是「重複執行也不會出問題」的寫法。
+// ========================================
 function applyConfigToPage(cfg) {
   const h = cfg['首頁'] || {};
   const 訂購 = cfg['訂購'] || {};
- 
+
   const mainTitle = document.getElementById('main-title');
   if (mainTitle) mainTitle.textContent = cfgGet(h, '網頁大標題') || '波波酪梨';
- 
+
   document.title = cfgGet(h, '分頁標題') || '波波酪梨｜線上訂購';
- 
+
   const socialMap = {
     'social-line': cfgGet(h, 'LINE連結'),
     'social-ig':   cfgGet(h, 'IG連結'),
@@ -774,20 +782,24 @@ function applyConfigToPage(cfg) {
     const url = (socialMap[id] || '').toString().trim();
     if (el && url) { el.href = url; el.style.display = 'flex'; }
   });
- 
+
   const annTitle = document.getElementById('announcement-title');
   if (annTitle) annTitle.textContent = cfgGet(h, '公告區標題') || '最新公告';
- 
+
   const annContent = document.getElementById('announcement-content');
   if (annContent) annContent.innerHTML = String(cfgGet(h, '公告內容') || '').replace(/\n/g, '<br>');
- 
+
   const varietyTitle = document.getElementById('variety-title');
   if (varietyTitle) varietyTitle.textContent = cfgGet(h, '品種分頁大標題') || '我們的當季酪梨';
- 
+
   const orderTitle = document.getElementById('order-title');
   if (orderTitle) orderTitle.textContent = cfgGet(h, '訂購分頁大標題') || '訂購資訊';
- 
-  // 📝 兩個提示小字：沒填內容就整塊隱藏，避免留下一段空白。
+
+  // 📝 訂購頁的兩則提示小字，文字都由試算表「3-訂購與運費」控制：
+  //      #shipping-note ← 配送方式備註
+  //      #spec-note     ← 規格選擇備註
+  //    沒填內容就整塊隱藏，避免留下一段莫名的空白。
+  //
   //    用 textContent 不用 innerHTML —— 試算表的內容是你自己打的沒錯，
   //    但那份表未來可能會共用給別人編輯，不給它塞 HTML 的機會比較安全。
   //    換行由 CSS 的 white-space: pre-line 處理，試算表裡按 Alt+Enter 就會換行。
@@ -799,11 +811,11 @@ function applyConfigToPage(cfg) {
     el.style.display = t ? 'block' : 'none';
   };
   設定提示('shipping-note', cfgGet(訂購, '配送方式備註'));
-  設定提示('spec-note',     cfgGet(訂購, '規格選擇備註'));   // 🆕
- 
+  設定提示('spec-note',     cfgGet(訂購, '規格選擇備註'));
+
   const lineBtn = document.getElementById('final-line-btn');
   if (lineBtn) lineBtn.textContent = cfgGet(cfg['匯款'], '跳轉按鈕名稱') || '確認匯款回報';
- 
+
   const bannerId = cfgGet(h, '網頁頂部橫幅網址') || '';
   if (bannerId) {
     const bannerContainer = document.getElementById('banner-container');
@@ -814,19 +826,18 @@ function applyConfigToPage(cfg) {
     }
   }
 }
- 
-/* ============================================================
-   2️⃣ showLoadingScreen
-   改動：配色全部換成 v7 品牌色票。
- 
-   ⚠️ 為什麼這個重要：載入畫面的樣式是寫死在 JS 字串裡的，
-      不會被 style.css 影響。原本是 #e9edc9 → #d4e09b 的亮綠漸層，
-      客人進站看到亮綠色，兩秒後畫面切成米白 —— 中間那一下很突兀，
-      而且那是整個品牌給人的第一印象。
- 
-   ⚠️ 這裡的顏色刻意寫死而不用 var()：載入畫面有可能在 style.css
-      還沒下載完就先出現，那時候 CSS 變數是空的。
-   ============================================================ */
+
+
+// ========================================
+// ⏳ 載入畫面
+//
+// ⚠️ 這一區的樣式是寫死在 JS 字串裡的，style.css 影響不到它。
+//    改站台配色時記得連這裡一起改，否則客人進站會先看到舊配色，
+//    兩秒後才切成新的 —— 那是整個品牌給人的第一印象。
+//
+// ⚠️ 顏色刻意寫死而不用 var()：載入畫面有可能在 style.css
+//    還沒下載完就先出現，那時候 CSS 變數是空的。
+// ========================================
 function showLoadingScreen(show) {
   let el = document.getElementById('loading-screen');
   if (show) {
@@ -966,11 +977,8 @@ function setLoadingNet(text) {
   el.classList.add('is-on');
 }
 
-
-/* ============================================================
-   3️⃣ showLoadingError
-   改動：配色與圓角換成 v7（按鈕改膠囊型，跟站上其他按鈕一致）
-   ============================================================ */
+// ⚠️ 這個函式會整個換掉 <body>，呼叫之後不要再操作任何原本的元素。
+//    配色同樣寫死，理由跟 showLoadingScreen 一樣。
 function showLoadingError() {
   document.body.innerHTML = `
     <style>
@@ -1379,18 +1387,13 @@ function recalcTotalWeight() {
   totalWeight = Object.values(cart).reduce((sum, item) => sum + item.qty * item.weight, 0);
 }
 
-
-/* ============================================================
-   4️⃣ updateFloatingCart
-   改動：只有空購物車那行的寫死灰色 #888 換成品牌暖褐色，其餘完全不變
-   ============================================================ */
 function updateFloatingCart() {
   const container = document.getElementById('floating-cart-items');
   if (!container) return;
- 
+
   container.innerHTML = '';
   const visibleItems = Object.values(cart).filter(item => item.qty > 0);
- 
+
   visibleItems.forEach(item => {
     const div = document.createElement('div');
     div.className = 'floating-cart-item';
@@ -1399,15 +1402,16 @@ function updateFloatingCart() {
                     `<span class="item-subtotal">$${item.subtotal}</span>`;
     container.appendChild(div);
   });
- 
+
   if (visibleItems.length === 0) {
     container.innerHTML = '<div style="text-align:center; color:var(--avo-accent); opacity:0.8; padding:10px 0;">購物車空空如也</div>';
   }
- 
+
   document.getElementById('floating-subtotal').innerHTML = `<span class="label">小計：</span><span class="amount">$${finalSubtotal}</span>`;
   document.getElementById('floating-shipping').innerHTML = `<span class="label">運費：</span><span class="amount">$${finalShippingFee}</span>`;
   document.getElementById('floating-total').innerHTML = `<span class="label">總計：</span><span class="amount">$${finalTotal}</span>`;
 }
+
 
 // ========================================
 // 🥑 品種頁
@@ -1418,7 +1422,7 @@ function renderVarieties() {
 
   const data = window.allVarieties || (window.APP_CONFIG && window.APP_CONFIG.varieties) || [];
   if (data.length === 0) {
-    container.innerHTML = '<p style="text-align:center; color:var(--avo-dark); padding:20px;">目前尚無當季品種資訊。🥑</p>';
+    container.innerHTML = '<p class="loading-note">目前尚無當季品種資訊。🥑</p>';
     return;
   }
 
@@ -2009,7 +2013,6 @@ async function submitOrder(e) {
       refreshRealtime();
       return;
     }
-    收尾();
   }
 }
 
