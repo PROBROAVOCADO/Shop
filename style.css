@@ -82,7 +82,13 @@ html, body {
 }
 
 /* 🏞️ 背景等高線
-   兩組丘陵線橫貫整個視窗，每組一濃一淡（深褐 + 暖褐）。
+   兩組丘陵線橫貫整個視窗，每組一深一淡（暖褐 + 深褐）。
+
+   ⚠️ 兩條線是「反相」的，不是平移複製：
+      深色線往上爬的地方，淡色線正好往下沉，但兩者的中線高度接近，
+      所以每組會交錯穿插三次。如果把淡色線改成深色線的垂直平移，
+      它們會變成永遠不相交的平行線，畫面會顯得呆板。
+
    固定在視窗上不隨捲動移動，所以捲頁時卡片像是在地景上滑過。
    手機版卡片是滿版的，線條只會從卡片之間的縫隙透出來。 */
 body::before {
@@ -91,7 +97,7 @@ body::before {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 900' preserveAspectRatio='xMidYMid slice'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath d='M-40,300 C180,250 320,345 500,330 C700,313 820,235 1000,258 C1180,281 1300,345 1480,312' stroke='%239A7E5D' stroke-opacity='0.20' stroke-width='1.6'/%3E%3Cpath d='M-40,346 C170,300 330,392 505,378 C700,362 830,290 1005,312 C1180,334 1305,392 1480,360' stroke='%237A6449' stroke-opacity='0.10' stroke-width='1.1'/%3E%3Cpath d='M-40,600 C200,645 340,540 520,552 C720,565 840,648 1020,636 C1200,624 1320,562 1480,588' stroke='%239A7E5D' stroke-opacity='0.18' stroke-width='1.6'/%3E%3Cpath d='M-40,646 C200,690 345,588 525,600 C720,613 845,694 1025,682 C1200,670 1325,610 1480,634' stroke='%237A6449' stroke-opacity='0.09' stroke-width='1.1'/%3E%3C/g%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 900' preserveAspectRatio='xMidYMid slice'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath d='M-40,300 C180,250 320,345 500,330 C700,313 820,235 1000,258 C1180,281 1300,345 1480,312' stroke='%239A7E5D' stroke-opacity='0.20' stroke-width='1.6'/%3E%3Cpath d='M-40,340 C200,300 330,268 520,285 C700,301 830,360 1010,340 C1190,320 1310,262 1480,290' stroke='%237A6449' stroke-opacity='0.12' stroke-width='1.1'/%3E%3Cpath d='M-40,600 C200,645 340,540 520,552 C720,565 840,648 1020,636 C1200,624 1320,562 1480,588' stroke='%239A7E5D' stroke-opacity='0.18' stroke-width='1.6'/%3E%3Cpath d='M-40,558 C180,600 350,655 540,632 C730,610 850,548 1030,566 C1210,584 1330,640 1480,612' stroke='%237A6449' stroke-opacity='0.11' stroke-width='1.1'/%3E%3C/g%3E%3C/svg%3E");
   background-size: cover;
   background-position: center;
 }
