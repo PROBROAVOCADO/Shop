@@ -1317,31 +1317,48 @@ select:focus, input:focus, textarea:focus {
   flex-direction: column;
   width: 350px;
   padding: 12px;
-  overflow: hidden;        /* 👈 原本是 overflow-y: auto，捲動改交給品項區 */
+  overflow: hidden;   /* 捲動交給品項區，不是整個容器 */
   position: relative;
-  /* padding-bottom: 100px;  👈 整行刪掉，不再需要預留空間 */
 }
 
-/* 👇 三段式：提醒固定 / 品項捲動 / 小計固定在底 */
-#cart-note { flex: 0 0 auto; }
+/* 👇 三段式：提醒固定 / 品項捲動 / 小計固定在底
+   垂直順序：提醒 → 分隔線 → 品項 → 分隔線 → 金額 */
+
+/* ① 提醒（固定在最上，不捲動） */
+#cart-note {
+  flex: 0 0 auto;
   padding: 8px 12px;
   background: rgba(237, 228, 211, 0.7);
   border: 1px dashed var(--avo-accent);
   color: var(--clay-deep);
   font-size: 0.85rem;
   border-radius: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   text-align: center;
   font-weight: 600;
   box-shadow: none;
   line-height: 1.5;
 }
 
+/* ② 品項清單（唯一會捲動的區域）
+   上緣的分隔線由這裡的 border-top 提供 */
 #floating-cart-items {
   flex: 1 1 auto;
   overflow-y: auto;
   min-height: 0;   /* ⚠️ 必要，沒有它 flex 子元素不會縮到小於內容高度 */
+  border-top: 1px dashed var(--rule);
+  padding-top: 8px;
 }
+
+/* ③ 單一品項列 */
+.floating-cart-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--rule-soft);
+  font-size: 0.92rem;
+}
+.floating-cart-item:last-child { border-bottom: none; }
 
 .floating-cart-item .item-name { flex: 1; color: var(--avo-dark); }
 
@@ -1371,7 +1388,6 @@ select:focus, input:focus, textarea:focus {
   gap: 4px;
   box-sizing: border-box;
   background: var(--creamy);
-  border-top: 1px solid var(--rule-soft);   /* 👈 新增，取代原本靠 padding 撐開的視覺分界 */
 }
 
 #floating-cart-totals div {
