@@ -1406,7 +1406,7 @@ select:focus, input:focus, textarea:focus {
   color: var(--avo-accent);
 }
 
-/* 桌機 */
+/* 桌機購物車 */
 @media screen and (min-width: 768px) {
   #floating-cart {
     flex-direction: row;
@@ -1420,8 +1420,11 @@ select:focus, input:focus, textarea:focus {
   #floating-cart.show #floating-cart-content { width: 380px; }
 }
 
-/* 手機 */
+/* 手機購物車 */
 @media screen and (max-width: 767px) {
+  /* ⚠️ 容器本身不再有任何外觀，只負責定位與滑出動畫。
+     視覺搬到 #floating-cart-content 與 #floating-cart-handle 各自身上 ——
+     否則把手一旦不再撐滿高度，收合時容器的米色底會在把手上下露出一截。 */
   #floating-cart {
     position: fixed;
     left: 0;
@@ -1429,13 +1432,14 @@ select:focus, input:focus, textarea:focus {
     top: auto;
     flex-direction: row-reverse;
     display: flex;
-    min-height: 80px;
+    align-items: center;      /* 👈 關鍵：從 stretch 改成 center，把手不再被拉伸 */
+    min-height: 0;            /* 👈 原本的 80px 會反過來把把手撐高 */
     max-height: 65vh;
     height: auto;
-    background: var(--creamy);
-    border: 1px solid var(--rule);
-    border-left: none;
-    border-radius: 0 var(--r-card) var(--r-card) 0;
+    background: transparent;  /* 👈 搬到 content */
+    border: none;             /* 👈 搬到 content */
+    box-shadow: none;         /* 👈 搬到 content / handle */
+    border-radius: 0;
     transform: translateX(calc(-100% + 48px));
     transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: visible;
@@ -1444,21 +1448,30 @@ select:focus, input:focus, textarea:focus {
 
   #floating-cart.show { transform: translateX(0); width: 300px; }
 
+  /* 把手：高度只跟自己的文字有關，購物車再長都不會變
+     刻意不寫死 height —— 之後改把手文字也不用回來調數字 */
   #floating-cart-handle {
+    align-self: center;
     height: auto;
-    min-height: 80px;
+    min-height: 0;
+    padding: 18px 12px;   /* ⚠️ 左右 12px 不要改，收合時露出的 48px 是照它算的 */
     border-radius: 0 var(--r-card) var(--r-card) 0;
+    box-shadow: 2px 3px 12px rgba(122, 100, 73, 0.18);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 10;
   }
 
+  /* 內容區：接手原本容器的外觀 */
   #floating-cart-content {
     width: 280px;
     max-height: calc(65vh - 20px);
-    /* overflow-y: auto;      ❌ 刪 */
-    /* padding-bottom: 100px; ❌ 刪 */
+    background: var(--creamy);
+    border: 1px solid var(--rule);
+    border-right: none;
+    border-radius: 0;
+    box-shadow: -2px 3px 12px rgba(122, 100, 73, 0.12);
   }
 
   #cart-note { padding: 6px 10px; font-size: 0.8rem; }
