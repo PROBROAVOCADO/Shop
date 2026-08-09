@@ -1458,6 +1458,15 @@ function updateFloatingCart() {
   document.getElementById('floating-subtotal').innerHTML = `<span class="label">小計：</span><span class="amount">$${finalSubtotal}</span>`;
   document.getElementById('floating-shipping').innerHTML = `<span class="label">運費：</span><span class="amount">$${finalShippingFee}</span>`;
   document.getElementById('floating-total').innerHTML = `<span class="label">總計：</span><span class="amount">$${finalTotal}</span>`;
+  
+  // 🛒 手機底部橫條的摘要。桌機看不到這個元素，寫了也無妨。
+  //    金額放在收合狀態就看得到 —— 秒殺時客人最想確認的就是這個數字。
+  const barSummary = document.getElementById('cart-bar-summary');
+  if (barSummary) {
+    const 件數 = visibleItems.reduce((n, i) => n + i.qty, 0);
+    barSummary.textContent = 件數 > 0 ? `${件數} 項　$${finalTotal}` : '尚未選購';
+    barSummary.classList.toggle('is-empty', 件數 === 0);
+  }
 }
 
 
