@@ -2009,11 +2009,17 @@ async function submitOrder(e) {
     weight: Object.values(cart).map(i => `${i.displayName} ${i.weight} 斤 x${i.qty}`).join('，'),
     county: countyEl ? countyEl.value : '',
     district: districtEl ? districtEl.value : ''
-    // 📊 GA4 識別碼。後端補送 purchase 事件時要用它把訂單歸回
-    //    同一位使用者、同一次工作階段。
-    //    包在條件裡：analytics.js 沒載入時就是空物件，送單完全不受影響。
-    ...(window.PBTrack ? PBTrack.getIds() : {})
   };
+
+  // 📊 GA4 識別碼（供後端補送 purchase 事件用）。
+  //    寫在物件外面而不是用展開語法，相容性最穩。
+  //    analytics.js 沒載入時整段跳過，送單完全不受影響。
+  if (window.PBTrack) {
+    const gaIds = PBTrack.getIds();
+    orderData.gaClientId  = gaIds.gaClientId;
+    orderData.gaSessionId = gaIds.gaSessionId;
+    orderData.gaEnv       = gaIds.gaEnv;
+  }
 
   currentOrderSummary = orderData;
 
