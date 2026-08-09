@@ -248,6 +248,36 @@ body::before {
 }
 .form-label:first-child,
 .info-block > .form-label:first-of-type { margin-top: 0; }
+/* 📐 訂購頁｜統一垂直節奏
+   規則只有三個數字：
+     區塊標題上方   28px（手機 24px）
+     標題 → 提示小字  8px
+     提示 → 控制項   12px
+   ⚠️ 用 #step4-order-form 包住，不影響其他頁面的 .form-label */
+#step4-order-form .form-label {
+  margin: 28px 0 8px;
+}
+
+/* 卡片裡的第一個標題不用再往上推 —— 但只限「卡片的直接子元素」。
+   7-11 門市 / 收件地址那兩個區塊裡的標題不算，它們前面有欄位，該留距離。 */
+#step4-order-form .info-block > .form-label:first-child {
+  margin-top: 0;
+}
+
+#step4-order-form .hint-warm-text {
+  margin: 0 0 12px;
+}
+
+/* 商品清單的第一個分類標籤：上方交給 #spec-note 的 12px，這裡歸零，
+   否則兩個邊距會合併成 22px，比其他間距都大 */
+#product-list-container .product-group-label:first-child {
+  margin-top: 0;
+}
+
+@media screen and (max-width: 767px) {
+  #step4-order-form .form-label { margin: 24px 0 8px; }
+  #step4-order-form .info-block > .form-label:first-child { margin-top: 0; }
+}
 
 /* ⏳ 載入中提示 */
 .loading-note {
@@ -1287,13 +1317,13 @@ select:focus, input:focus, textarea:focus {
   flex-direction: column;
   width: 350px;
   padding: 12px;
-  overflow-y: auto;
+  overflow: hidden;        /* 👈 原本是 overflow-y: auto，捲動改交給品項區 */
   position: relative;
-  padding-bottom: 100px;
+  /* padding-bottom: 100px;  👈 整行刪掉，不再需要預留空間 */
 }
 
-/* 購物車提醒 */
-#cart-note {
+/* 👇 三段式：提醒固定 / 品項捲動 / 小計固定在底 */
+#cart-note { flex: 0 0 auto; }
   padding: 8px 12px;
   background: rgba(237, 228, 211, 0.7);
   border: 1px dashed var(--avo-accent);
@@ -1307,12 +1337,10 @@ select:focus, input:focus, textarea:focus {
   line-height: 1.5;
 }
 
-.floating-cart-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 10px;
-  border-bottom: 1px dashed var(--rule-soft);
-  font-size: 0.92rem;
+#floating-cart-items {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;   /* ⚠️ 必要，沒有它 flex 子元素不會縮到小於內容高度 */
 }
 
 .floating-cart-item .item-name { flex: 1; color: var(--avo-dark); }
@@ -1335,18 +1363,15 @@ select:focus, input:focus, textarea:focus {
 }
 
 #floating-cart-totals {
+  flex: 0 0 auto;          /* 👈 新增 */
   margin-top: 12px;
-  padding: 10px 0;
+  padding: 10px 12px 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  left: 0; right: 0;
   box-sizing: border-box;
-  position: absolute;
-  bottom: 0;
-  padding-left: 12px;
-  padding-right: 12px;
   background: var(--creamy);
+  border-top: 1px solid var(--rule-soft);   /* 👈 新增，取代原本靠 padding 撐開的視覺分界 */
 }
 
 #floating-cart-totals div {
@@ -1416,8 +1441,8 @@ select:focus, input:focus, textarea:focus {
   #floating-cart-content {
     width: 280px;
     max-height: calc(65vh - 20px);
-    overflow-y: auto;
-    padding-bottom: 100px;
+    /* overflow-y: auto;      ❌ 刪 */
+    /* padding-bottom: 100px; ❌ 刪 */
   }
 
   #cart-note { padding: 6px 10px; font-size: 0.8rem; }
