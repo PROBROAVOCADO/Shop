@@ -221,10 +221,20 @@ body::before {
   text-align: center !important;
   margin-left: auto !important;
   margin-right: auto !important;
+  margin-top: 0;        /* 👈 新增 */
+  margin-bottom: 0;     /* 👈 新增 */   
   max-width: 800px;
   line-height: 1.9;
   padding-left: 15px;
   padding-right: 15px;
+}
+
+/* 公告卡：讓分隔線到文字的距離 = 文字到卡片底緣的距離
+   數字要跟 .info-block 的 padding-bottom 一致（桌機 32px / 手機 24px） */
+#step1-announcement .product-divider { margin-bottom: 32px; }
+
+@media screen and (max-width: 767px) {
+  #step1-announcement .product-divider { margin-bottom: 24px; }
 }
 
 /* 🏷️ 表單欄位標題（取代 index 裡寫死的 margin-top inline） */
