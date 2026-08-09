@@ -401,6 +401,9 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
+    <!-- 📊 GA4 追蹤模組。必須在 script.js「之前」，
+         因為 script.js 的送單流程會呼叫 PBTrack.getIds() -->
+    <script src="analytics.js?v=2.0"></script>
     <script src="script.js"></script>
   </body>
 </html>
