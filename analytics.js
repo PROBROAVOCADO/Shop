@@ -29,7 +29,7 @@
    * ============================================================ */
   var CONFIG = {
     // GA4 資料串流的評估 ID，格式 G-XXXXXXXXXX
-    MEASUREMENT_ID: 'G-XXXXXXXXXX',
+    MEASUREMENT_ID: 'G-99EP460CDY',
 
     CURRENCY: 'TWD',
 
