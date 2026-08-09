@@ -1,70 +1,76 @@
-/**
- * ===================================================================
- * 波波酪梨 GA4 追蹤模組  analytics.js  v1.0
- * ===================================================================
+/*************************************************************
+ * 波波酪梨 GA4 追蹤模組 — analytics.js  v2.0
+ * 評估 ID：G-99EP460CDY
  *
- * 設計原則（秒殺場景專用）：
- *   1. 絕對不能拖慢或中斷下單流程 —— 所有對外 API 都包 try/catch，
- *      任何內部錯誤都只寫 console，不往外拋。
- *   2. gtag 尚未載入（網速慢 / 被廣告阻擋器擋掉）時，事件進佇列，
- *      載入後補送；佇列有上限，不會無限膨脹。
- *   3. purchase 事件以 orderKey 為 transaction_id，並用
- *      localStorage 做去重 —— 客人重整頁面、Firebase 補救訂單
- *      重送，都不會重複計算營收。
- *   4. 前端只負責「即時」，完整性交給後端 Measurement Protocol。
+ * 【為什麼用掛鉤（hook）而不是散進 script.js】
  *
- * 使用方式：在 script.js 之前載入
- *   <script src="analytics.js"></script>
+ *   script.js 還在持續演進（目前 v5）。如果把追蹤程式碼散進九個
+ *   插入點，每次改版都要重新對齊，而漏掉一處是「靜默失效」——
+ *   事件不會報錯，只會安靜地不見，你要到看報表時才發現。
+ *
+ *   改成從外面包裝既有的全域函式之後：
+ *     ・追蹤邏輯全部集中在這一個檔案
+ *     ・script.js 只需要改一處（GA 識別碼塞進送單 payload）
+ *     ・要停用就把 index.html 的那行 <script> 註解掉
+ *
+ * 【三條鐵則】
+ *   1. 絕不弄壞下單。所有掛鉤都是「先呼叫原函式、拿到結果、
+ *      再做追蹤」，追蹤那段包在 try/catch 裡。
+ *   2. 絕不進入關鍵路徑。不攔截 fetch、不在送單前後加任何等待。
+ *   3. purchase 以 orderKey 為 transaction_id，
+ *      localStorage + 記憶體雙層去重。
+ *
+ * 【載入位置】index.html 的 </body> 之前，script.js 的「上面」：
+ *   <script src="analytics.js?v=2.0"></script>
  *   <script src="script.js"></script>
- *
- * 全域 API：window.PBTrack
- * ===================================================================
- */
+ *************************************************************/
 
 (function (global) {
   'use strict';
 
-  /* ============================================================
-   *  設定區 —— 部署前只要改這裡
-   * ============================================================ */
+  /* ==========================================================
+   *  設定
+   * ========================================================== */
   var CONFIG = {
-    // GA4 資料串流的評估 ID，格式 G-XXXXXXXXXX
     MEASUREMENT_ID: 'G-99EP460CDY',
-
     CURRENCY: 'TWD',
 
-    // true 時所有事件會印在 console，方便你自己驗證
-    // 正式上線請改回 false
+    // 改 true 會把每個事件印在 console。
+    // 也可以在 console 直接執行 PBTrack.debug(true)，不用改檔案。
     DEBUG: false,
 
-    // 去重用的 localStorage key 與保留筆數
     DEDUP_KEY: 'pb_ga4_sent_orders',
     DEDUP_MAX: 50,
-
-    // gtag 尚未就緒時的事件佇列上限
     QUEUE_MAX: 30
   };
 
-  /* ============================================================
+  /* ==========================================================
    *  內部狀態
-   * ============================================================ */
-  var _queue = [];           // gtag 未就緒時的暫存
-  var _flushed = false;      // 佇列是否已排空
-  var _clientId = null;      // GA4 client_id（給後端補送用）
-  var _sessionId = null;     // GA4 session_id（給後端補送用）
-  var _sentOrders = null;    // 已送出的 orderKey 集合（記憶體層）
-  var _attemptNo = 0;        // 本次送單嘗試次數
+   * ========================================================== */
+  var _queue = [];
+  var _clientId = null;
+  var _sessionId = null;
+  var _sentOrders = null;
+  var _attemptNo = 0;
+  var _submitInFlight = false;   // 送單進行中（判斷 alert 是不是送單失敗）
+  var _listSent = false;
+  var _checkoutSent = false;
+  var _pageReadySent = false;
+  var _wasReleased = null;
+  var _wasSoldOut = null;
+  var _pendingRecovered = false; // 這筆是不是 Firebase 收據救回來的
+  var _hooksInstalled = false;
 
-  /* ============================================================
+  /* ==========================================================
    *  基礎工具
-   * ============================================================ */
+   * ========================================================== */
 
   function log() {
     if (!CONFIG.DEBUG) return;
     try {
-      var args = Array.prototype.slice.call(arguments);
-      args.unshift('%c[PBTrack]', 'color:#7a8b6f;font-weight:bold');
-      console.log.apply(console, args);
+      var a = Array.prototype.slice.call(arguments);
+      a.unshift('%c[PBTrack]', 'color:#6F8A54;font-weight:bold');
+      console.log.apply(console, a);
     } catch (e) { /* 忽略 */ }
   }
 
@@ -72,13 +78,12 @@
     try { console.warn('[PBTrack] ' + msg, err || ''); } catch (e) { /* 忽略 */ }
   }
 
-  /** 把任何函式包成「絕對不會往外拋錯」的版本 */
   function safe(fn, label) {
     return function () {
       try {
         return fn.apply(null, arguments);
       } catch (err) {
-        warn('事件 ' + label + ' 執行失敗（已忽略，不影響下單）', err);
+        warn('事件 ' + label + ' 失敗（已忽略，不影響下單）', err);
         return null;
       }
     };
@@ -88,43 +93,38 @@
     return typeof global.gtag === 'function';
   }
 
-  /** 送出事件；gtag 未就緒則進佇列 */
   function send(name, params) {
     params = params || {};
-
-    // 全域附帶維度：讓你可以在報表裡切 LINE / 一般瀏覽器
     params.browser_env = detectEnv();
 
     if (!gtagReady()) {
       if (_queue.length < CONFIG.QUEUE_MAX) {
         _queue.push({ name: name, params: params });
         log('佇列暫存（gtag 未就緒）:', name);
-      } else {
-        warn('佇列已滿，丟棄事件 ' + name);
       }
       return;
     }
-
     global.gtag('event', name, params);
     log('送出:', name, params);
   }
 
   function flushQueue() {
-    if (_flushed || !gtagReady() || _queue.length === 0) return;
-    log('補送佇列中的 ' + _queue.length + ' 筆事件');
+    if (!gtagReady() || _queue.length === 0) return;
     var pending = _queue.slice();
     _queue = [];
-    _flushed = true;
+    log('補送佇列中的 ' + pending.length + ' 筆事件');
     pending.forEach(function (e) {
       try { global.gtag('event', e.name, e.params); } catch (err) { warn('補送失敗', err); }
     });
   }
 
-  /* ============================================================
-   *  環境偵測 —— LINE in-app 瀏覽器辨識
-   *  （LINE webview 會剝除 referrer，且 storage 行為不穩定，
-   *    報表上必須能把它切出來單獨看）
-   * ============================================================ */
+  /* ==========================================================
+   *  環境辨識
+   *
+   *  LINE 的 in-app 瀏覽器會剝除 referrer，storage 行為也不穩定
+   *  （client_id 可能每次都是新的 → 使用者數被高估）。
+   *  每個事件都帶這個維度，報表才切得出來。
+   * ========================================================== */
   function detectEnv() {
     try {
       var ua = (navigator.userAgent || '').toLowerCase();
@@ -132,33 +132,30 @@
       if (ua.indexOf('fban') !== -1 || ua.indexOf('fbav') !== -1) return 'facebook_inapp';
       if (ua.indexOf('instagram') !== -1) return 'instagram_inapp';
       return 'browser';
-    } catch (e) {
-      return 'unknown';
-    }
+    } catch (e) { return 'unknown'; }
   }
 
-  /* ============================================================
-   *  去重機制
-   *  記憶體 Set（同分頁）+ localStorage（跨分頁 / 跨重整）雙層
-   * ============================================================ */
+  /* ==========================================================
+   *  purchase 去重（記憶體 + localStorage 雙層）
+   *
+   *  單靠記憶體不夠：客人重整頁面、或 Firebase 收據把訂單救回來時
+   *  會再走一次成功頁，那正是最容易重複計算營收的路徑。
+   * ========================================================== */
 
-  function loadSentOrders() {
+  function loadSent() {
     if (_sentOrders) return _sentOrders;
     _sentOrders = {};
     try {
       var raw = global.localStorage.getItem(CONFIG.DEDUP_KEY);
-      if (raw) {
-        JSON.parse(raw).forEach(function (k) { _sentOrders[k] = true; });
-      }
+      if (raw) JSON.parse(raw).forEach(function (k) { _sentOrders[k] = true; });
     } catch (e) {
-      // 無痕模式 / storage 被封鎖 —— 降級成只有記憶體層，可接受
-      warn('localStorage 不可用，去重降級為單分頁層級');
+      warn('localStorage 不可用（無痕模式？），去重降級為單分頁層級');
     }
     return _sentOrders;
   }
 
-  function markOrderSent(orderKey) {
-    var store = loadSentOrders();
+  function markSent(orderKey) {
+    var store = loadSent();
     store[orderKey] = true;
     try {
       var keys = Object.keys(store);
@@ -166,70 +163,83 @@
         keys = keys.slice(keys.length - CONFIG.DEDUP_MAX);
         var trimmed = {};
         keys.forEach(function (k) { trimmed[k] = true; });
-        _sentOrders = store = trimmed;
+        _sentOrders = trimmed;
       }
       global.localStorage.setItem(CONFIG.DEDUP_KEY, JSON.stringify(keys));
-    } catch (e) { /* 降級：記憶體層仍有效 */ }
+    } catch (e) { /* 記憶體層仍有效 */ }
   }
 
   function alreadySent(orderKey) {
-    return !!loadSentOrders()[orderKey];
+    return !!loadSent()[orderKey];
   }
 
-  /* ============================================================
-   *  商品資料正規化
-   *  接受多種欄位命名，轉成 GA4 標準 items 陣列
-   * ============================================================ */
-  function pick(obj, names, fallback) {
-    for (var i = 0; i < names.length; i++) {
-      if (obj[names[i]] !== undefined && obj[names[i]] !== null && obj[names[i]] !== '') {
-        return obj[names[i]];
-      }
-    }
-    return fallback;
+  /* ==========================================================
+   *  資料轉換 —— 配合 script.js 的實際結構
+   *
+   *  cart 的形狀：
+   *    { '當季酪梨(隨機出貨)【優級】-3': {displayName, weight, qty, subtotal} }
+   *
+   *  單價刻意用 subtotal / qty 反推，不去查 價格表 ——
+   *  價格表要透過 stockKeyMap 反查，而那是 const、外部拿不到。
+   *  用 subtotal 反推結果一樣正確，而且少一層依賴。
+   * ========================================================== */
+
+  function cartToItems(cart) {
+    var items = [];
+    if (!cart) return items;
+    Object.keys(cart).forEach(function (key, i) {
+      var it = cart[key];
+      if (!it || !it.qty) return;
+      var qty = Number(it.qty) || 0;
+      var unit = qty > 0 ? (Number(it.subtotal) || 0) / qty : 0;
+      items.push({
+        item_id: String(key),
+        item_name: String(it.displayName || key),
+        item_variant: (it.weight != null ? it.weight + '斤' : ''),
+        price: Math.round(unit * 100) / 100,
+        quantity: qty,
+        index: i
+      });
+    });
+    return items;
   }
 
-  function normalizeItem(raw, index) {
-    if (!raw) return null;
-    if (typeof raw === 'string') {
-      return { item_id: raw, item_name: raw, index: index };
-    }
-    var name = pick(raw, ['item_name', 'name', 'productName', '品名', '品種'], '未命名商品');
-    var id = pick(raw, ['item_id', 'id', 'sku', 'code', '編號'], name);
-    var price = Number(pick(raw, ['price', 'unitPrice', 'unit_price', '單價'], 0)) || 0;
-    var qty = Number(pick(raw, ['quantity', 'qty', 'count', 'amount', '數量'], 1)) || 1;
-
-    var item = {
-      item_id: String(id),
-      item_name: String(name),
-      price: price,
-      quantity: qty,
-      index: index
-    };
-
-    var variety = pick(raw, ['variety', 'spec', 'size', '規格'], null);
-    if (variety) item.item_variant = String(variety);
-
-    return item;
+  /** 從 stockMap + 價格表 組出「當期供應」清單（非產季的不列入） */
+  function catalogItems() {
+    var out = [];
+    try {
+      var pm = global.價格表 || {};
+      var stock = (global.APP_CONFIG && global.APP_CONFIG.stockMap) || {};
+      Object.keys(stock).forEach(function (k, i) {
+        var m = String(k).match(/^(.+)-(\d+(?:\.\d+)?)$/);
+        if (!m) return;
+        var unit = Number(pm[m[1]]) || 0;
+        if (unit <= 0) return;
+        out.push({
+          item_id: k,
+          item_name: m[1],
+          item_variant: m[2] + '斤',
+          price: unit * Number(m[2]),
+          quantity: 1,
+          index: i
+        });
+      });
+    } catch (e) { /* 忽略 */ }
+    return out;
   }
 
-  function normalizeItems(list) {
-    if (!list) return [];
-    if (!Array.isArray(list)) list = [list];
-    return list.map(normalizeItem).filter(Boolean);
+  function totalStock() {
+    try {
+      var s = (global.APP_CONFIG && global.APP_CONFIG.stockMap) || {};
+      return Object.keys(s).reduce(function (a, k) { return a + (Number(s[k]) || 0); }, 0);
+    } catch (e) { return -1; }
   }
 
-  function sumValue(items) {
-    return items.reduce(function (s, it) {
-      return s + (Number(it.price) || 0) * (Number(it.quantity) || 0);
-    }, 0);
-  }
-
-  /* ============================================================
-   *  client_id / session_id 取得
-   *  這兩個值要隨訂單送到 GAS，後端補送 purchase 時才能
-   *  歸到同一位使用者、同一次工作階段
-   * ============================================================ */
+  /* ==========================================================
+   *  client_id / session_id
+   *  這兩個值要隨訂單送進 GAS，後端補送 purchase 時才能歸到
+   *  同一位使用者、同一次工作階段（否則會變成孤兒流量）。
+   * ========================================================== */
 
   function captureIds() {
     if (!gtagReady()) return;
@@ -240,54 +250,38 @@
       global.gtag('get', CONFIG.MEASUREMENT_ID, 'session_id', function (v) {
         if (v) { _sessionId = v; log('session_id =', v); }
       });
-    } catch (e) {
-      warn('取得 client_id 失敗', e);
-    }
+    } catch (e) { warn('取得 client_id 失敗', e); }
   }
 
-  /** cookie 備援解析（gtag get 失效時使用） */
+  /** cookie 備援（gtag get 在某些 in-app 瀏覽器會靜默失敗） */
   function parseIdsFromCookie() {
     try {
-      var cookies = document.cookie.split(';');
-      for (var i = 0; i < cookies.length; i++) {
-        var c = cookies[i].trim();
-        // _ga=GA1.1.<client_id_part1>.<part2>
+      document.cookie.split(';').forEach(function (raw) {
+        var c = raw.trim();
         if (!_clientId && c.indexOf('_ga=') === 0) {
           var p = c.substring(4).split('.');
           if (p.length >= 4) _clientId = p[2] + '.' + p[3];
         }
-        // _ga_XXXXXXX=GS1.1.<session_id>.<session_num>...
         if (!_sessionId && c.indexOf('_ga_') === 0) {
-          var v = c.split('=')[1] || '';
-          var q = v.split('.');
+          var q = (c.split('=')[1] || '').split('.');
           if (q.length >= 3) _sessionId = q[2];
         }
-      }
+      });
     } catch (e) { /* 忽略 */ }
   }
 
-  /* ============================================================
+  /* ==========================================================
    *  對外 API
-   * ============================================================ */
+   * ========================================================== */
 
   var PBTrack = {
 
-    /** 版本標記，方便你在 console 確認部署版本 */
-    version: '1.0',
+    version: '2.0',
 
-    /* ---------- 初始化 ---------- */
-
-    init: safe(function () {
-      flushQueue();
-      captureIds();
-      setTimeout(function () {
-        if (!_clientId || !_sessionId) parseIdsFromCookie();
-        flushQueue();
-      }, 1200);
-      log('模組啟動，環境 =', detectEnv());
-    }, 'init'),
-
-    /** 取得要塞進送單 payload 的識別碼（後端補送用） */
+    /**
+     * 送單 payload 要帶的識別碼。
+     * 這是唯一需要你在 script.js 手動加的東西（見部署說明第 3 步）。
+     */
     getIds: safe(function () {
       if (!_clientId || !_sessionId) parseIdsFromCookie();
       return {
@@ -299,152 +293,131 @@
 
     /* ---------- 標準電商事件 ---------- */
 
-    /** 商品列表曝光。items = 當期上架的所有品項 */
-    viewItemList: safe(function (items, listName) {
-      var norm = normalizeItems(items);
-      if (norm.length === 0) return;
-      send('view_item_list', {
-        item_list_name: listName || '當期供應',
-        items: norm
-      });
+    viewItemList: safe(function () {
+      var items = catalogItems();
+      if (items.length === 0) return;
+      send('view_item_list', { item_list_name: '當期供應', items: items });
     }, 'view_item_list'),
 
-    /** 點開單一商品 */
-    viewItem: safe(function (item) {
-      var norm = normalizeItems(item);
-      if (norm.length === 0) return;
-      send('view_item', {
-        currency: CONFIG.CURRENCY,
-        value: sumValue(norm),
-        items: norm
-      });
-    }, 'view_item'),
-
-    /** 加入購物車 */
-    addToCart: safe(function (item, quantity) {
-      var norm = normalizeItems(item);
-      if (norm.length === 0) return;
-      if (quantity) norm[0].quantity = Number(quantity) || norm[0].quantity;
+    addToCart: safe(function (item) {
+      if (!item) return;
       send('add_to_cart', {
         currency: CONFIG.CURRENCY,
-        value: sumValue(norm),
-        items: norm
+        value: (Number(item.price) || 0) * (Number(item.quantity) || 0),
+        items: [item]
       });
     }, 'add_to_cart'),
 
-    /** 移除購物車項目 */
     removeFromCart: safe(function (item) {
-      var norm = normalizeItems(item);
-      if (norm.length === 0) return;
+      if (!item) return;
       send('remove_from_cart', {
         currency: CONFIG.CURRENCY,
-        value: sumValue(norm),
-        items: norm
+        value: (Number(item.price) || 0) * (Number(item.quantity) || 0),
+        items: [item]
       });
     }, 'remove_from_cart'),
 
-    /** 開始填訂購表單 —— 漏斗最重要的起點 */
-    beginCheckout: safe(function (cartItems) {
-      var norm = normalizeItems(cartItems);
+    beginCheckout: safe(function () {
       send('begin_checkout', {
         currency: CONFIG.CURRENCY,
-        value: sumValue(norm),
-        items: norm
+        value: Number(global.finalSubtotal) || 0,
+        items: cartToItems(global.cart)
       });
     }, 'begin_checkout'),
 
-    /** 選定配送方式（宅配 / 7-11 等） */
-    addShippingInfo: safe(function (cartItems, shippingTier) {
-      var norm = normalizeItems(cartItems);
+    addShippingInfo: safe(function (method) {
+      var 名稱 = { post: '中華郵政', '711': '7-11超商', blackcat: '黑貓宅急便' };
       send('add_shipping_info', {
         currency: CONFIG.CURRENCY,
-        value: sumValue(norm),
-        shipping_tier: String(shippingTier || '未指定'),
-        items: norm
+        value: Number(global.finalSubtotal) || 0,
+        shipping_tier: 名稱[method] || String(method || '未指定'),
+        items: cartToItems(global.cart)
       });
     }, 'add_shipping_info'),
 
     /**
-     * 訂單成立 —— 全站最重要的事件
-     * order = {
-     *   orderKey  : 訂單編號（必填，作為 transaction_id 去重依據）
-     *   total     : 總金額（請用後端回傳的金額，不要用前端算的）
-     *   shipping  : 運費
-     *   items     : 商品陣列
-     *   source    : 'frontend' | 'recovery'（選填，標記來源）
-     * }
+     * 訂單成立。
+     * order = { orderKey, total, subtotal, shippingFee, cart, shippingMethod, source }
      */
     purchase: safe(function (order) {
       if (!order || !order.orderKey) {
         warn('purchase 缺少 orderKey，已略過');
         return false;
       }
-      var key = String(order.orderKey);
 
+      // 這筆是收據救回來的？（旗標由「套用收據並前往成功頁」掛鉤設定）
+      if (_pendingRecovered) {
+        order.source = 'recovery';
+        _pendingRecovered = false;
+      }
+
+      var key = String(order.orderKey);
       if (alreadySent(key)) {
         log('訂單 ' + key + ' 已送過 purchase，略過（去重生效）');
         return false;
       }
 
-      var norm = normalizeItems(order.items);
-      var value = Number(order.total);
-      if (!value || isNaN(value)) value = sumValue(norm);
+      var 名稱 = { post: '中華郵政', '711': '7-11超商', blackcat: '黑貓宅急便' };
 
       send('purchase', {
         transaction_id: key,
         currency: CONFIG.CURRENCY,
-        value: value,
-        shipping: Number(order.shipping) || 0,
-        items: norm,
+        value: Number(order.total) || 0,
+        shipping: Number(order.shippingFee) || 0,
+        items: cartToItems(order.cart),
+        shipping_tier: 名稱[order.shippingMethod] || '',
         order_source: order.source || 'frontend'
       });
 
-      markOrderSent(key);
+      markSent(key);
       return true;
     }, 'purchase'),
 
-    /* ---------- 秒殺營運事件（自訂） ---------- */
+    /* ---------- 秒殺營運事件 ---------- */
 
-    /** 頁面就緒、客人開始等待開賣 */
-    salePageReady: safe(function (meta) {
-      meta = meta || {};
+    salePageReady: safe(function () {
       _attemptNo = 0;
+
+      // 順手建立售罄基準。不在這裡建的話，要等第一次 applyControl
+      // 才有比較對象 —— 而那一次推播如果剛好就是「歸零」的那一次，
+      // sold_out 會被當成「初始狀態」而漏掉。
+      var t0 = totalStock();
+      if (t0 >= 0) _wasSoldOut = (t0 === 0);
+
       send('sale_page_ready', {
-        release_at: meta.releaseAt || '',
-        stock_total: Number(meta.stockTotal) || 0,
-        order_switch: meta.orderSwitch === undefined ? '' : String(meta.orderSwitch)
+        stock_total: totalStock(),
+        is_released: (typeof global.isReleasedNow === 'function')
+          ? String(global.isReleasedNow()) : 'unknown',
+        firebase_live: String(!!global.firebaseLive)
       });
     }, 'sale_page_ready'),
 
-    /** 倒數歸零、按鈕解鎖的那一刻 */
-    saleOpen: safe(function (meta) {
-      meta = meta || {};
-      send('sale_open', {
-        stock_total: Number(meta.stockTotal) || 0
-      });
+    saleOpen: safe(function () {
+      send('sale_open', { stock_total: totalStock() });
     }, 'sale_open'),
 
-    /** 按下送出（每按一次都送，attempt_no 會自動遞增） */
-    submitAttempt: safe(function (meta) {
-      meta = meta || {};
+    submitAttempt: safe(function () {
       _attemptNo += 1;
       send('order_submit_attempt', {
         attempt_no: _attemptNo,
-        cart_value: Number(meta.total) || 0,
-        item_count: Number(meta.itemCount) || 0
+        cart_value: Number(global.finalTotal) || 0,
+        item_count: global.cart ? Object.keys(global.cart).length : 0
       });
       return _attemptNo;
     }, 'order_submit_attempt'),
 
     /**
-     * 送單失敗
-     * reason 建議固定用這幾個值，方便報表分組：
-     *   'lock_timeout'  鎖等待逾時
-     *   'network'       網路 / GAS 逾時
-     *   'rejected'      後端拒單（庫存不足、重複訂單等）
-     *   'sold_out'      售罄
-     *   'validation'    表單驗證未過
-     *   'unknown'       其他
+     * 送單失敗。reason 用固定字串方便報表分組：
+     *   lock_timeout        鎖等待逾時（「系統目前非常忙碌」）
+     *   timeout_unconfirmed 送出後無法確認，Firebase 收據也還沒查到
+     *   stock_precheck      前端庫存預檢查擋下
+     *   sold_out            庫存不足
+     *   order_closed        已暫停接單
+     *   shipping_closed     該配送方式已關閉
+     *   not_released        尚未開賣
+     *   weight_limit        超過限重
+     *   config_broken       價格設定壞掉
+     *   unknown             其他
      */
     submitFail: safe(function (reason, detail) {
       send('order_submit_fail', {
@@ -454,44 +427,50 @@
       });
     }, 'order_submit_fail'),
 
-    /**
-     * 由 Firebase receipt 救回的訂單
-     * 呼叫這個之後請「同時」呼叫 purchase()，
-     * 去重機制會自動避免重複計算營收
-     */
-    orderRecovered: safe(function (meta) {
-      meta = meta || {};
+    orderRecovered: safe(function (orderKey, source) {
       send('order_recovered', {
-        transaction_id: String(meta.orderKey || ''),
+        transaction_id: String(orderKey || ''),
         attempt_no: _attemptNo,
-        recovery_wait_ms: Number(meta.waitMs) || 0
+        recovery_source: source || 'unknown'
       });
     }, 'order_recovered'),
 
-    /** 售罄 */
-    soldOut: safe(function (meta) {
-      meta = meta || {};
-      send('sold_out', {
-        variety: String(meta.variety || '全品項'),
-        seconds_since_open: Number(meta.secondsSinceOpen) || 0
-      });
+    soldOut: safe(function () {
+      send('sold_out', { attempt_no: _attemptNo });
     }, 'sold_out'),
 
-    /** 客人點了「等 3 秒再按一次」的重試提示 */
-    retryPrompted: safe(function (reason) {
-      send('retry_prompted', {
-        fail_reason: String(reason || 'unknown'),
-        attempt_no: _attemptNo
-      });
+    retryPrompted: safe(function () {
+      send('retry_prompted', { attempt_no: _attemptNo });
     }, 'retry_prompted'),
 
-    /* ---------- 除錯輔助 ---------- */
+    /**
+     * 頁面步驟。你的網站是純 SPA（goToStep 只切 display，網址完全不變），
+     * 一次造訪只會有一個 page_view —— 沒有這個事件的話，
+     * GA4 完全看不到客人走到哪一步就離開了。
+     */
+    funnelStep: safe(function (step) {
+      var 名稱 = { 1: '公告', 2: '品種介紹', 3: '價目表', 4: '訂購表單', 5: '完成頁' };
+      send('funnel_step', {
+        step_number: Number(step) || 0,
+        step_name: 名稱[step] || String(step)
+      });
+    }, 'funnel_step'),
 
-    /** 在 console 執行 PBTrack.debug(true) 可即時打開日誌 */
+    /* ---------- 除錯 ---------- */
+
     debug: safe(function (on) {
       CONFIG.DEBUG = (on !== false);
-      log('DEBUG =', CONFIG.DEBUG, '| clientId =', _clientId, '| sessionId =', _sessionId);
-      return { clientId: _clientId, sessionId: _sessionId, env: detectEnv(), queued: _queue.length };
+      var info = {
+        version: PBTrack.version,
+        clientId: _clientId,
+        sessionId: _sessionId,
+        env: detectEnv(),
+        queued: _queue.length,
+        hooksInstalled: _hooksInstalled,
+        sentOrders: Object.keys(loadSent())
+      };
+      console.log('[PBTrack] 狀態', info);
+      return info;
     }, 'debug'),
 
     /** 清掉去重紀錄（測試用，正式環境不要呼叫） */
@@ -504,11 +483,290 @@
 
   global.PBTrack = PBTrack;
 
-  // 自動初始化
+
+  /*************************************************************
+   *  掛鉤區
+   *
+   *  以下全部是「包裝 script.js 的既有全域函式」。
+   *  每一個都是：先呼叫原函式拿結果 → 再追蹤 → 回傳原結果。
+   *  追蹤那段包 try/catch，這裡任何錯誤都不會影響下單。
+   *************************************************************/
+
+  function wrap(name, before, after) {
+    var orig = global[name];
+    if (typeof orig !== 'function') {
+      warn('找不到函式 ' + name + '，該項追蹤不會運作');
+      return false;
+    }
+    global[name] = function () {
+      var ctx = {};
+      var args = arguments;
+      if (before) {
+        try { before(ctx, args); } catch (e) { warn(name + ' before hook', e); }
+      }
+
+      var result = orig.apply(this, args);
+
+      if (after) {
+        // 原函式若回傳 Promise（submitOrder 是 async），要等它結束再追蹤
+        if (result && typeof result.then === 'function') {
+          return result.then(function (v) {
+            try { after(ctx, args, v); } catch (e) { warn(name + ' after hook', e); }
+            return v;
+          }, function (err) {
+            try { after(ctx, args, undefined); } catch (e) { /* 忽略 */ }
+            throw err;
+          });
+        }
+        try { after(ctx, args, result); } catch (e) { warn(name + ' after hook', e); }
+      }
+      return result;
+    };
+    return true;
+  }
+
+  /* 失敗訊息比對表。
+   * 只在「送單進行中」才比對，所以不會誤抓平常挑商品的提示。
+   * 文案哪天改了，最壞情況是落到 unknown，不會壞掉。 */
+  var FAIL_PATTERNS = [
+    { re: /系統目前非常忙碌/,       reason: 'lock_timeout' },
+    { re: /還在確認您的訂單/,       reason: 'timeout_unconfirmed' },
+    { re: /部分品項庫存剛好有異動/, reason: 'stock_precheck' },
+    { re: /庫存不足|庫存只剩/,      reason: 'sold_out' },
+    { re: /暫停接單/,               reason: 'order_closed' },
+    { re: /暫停服務/,               reason: 'shipping_closed' },
+    { re: /尚未開賣/,               reason: 'not_released' },
+    { re: /限重/,                   reason: 'weight_limit' },
+    { re: /系統設定正在維護中/,     reason: 'config_broken' }
+  ];
+
+  function installHooks() {
+    if (_hooksInstalled) return;
+    _hooksInstalled = true;
+
+    /* ── 1. goToStep：漏斗步驟 + 成功頁的 purchase ───────────────
+     *
+     * purchase 統一在這裡送。兩條成功路徑（正常送單成功、
+     * Firebase 收據救回）最後都會走到 goToStep(5)，
+     * 所以放一個點就涵蓋全部，不會漏也不會重複。
+     */
+    wrap('goToStep', null, function (ctx, args) {
+      var step = Number(args[0]);
+      PBTrack.funnelStep(step);
+
+      if ((step === 3 || step === 4) && !_listSent) {
+        _listSent = true;
+        PBTrack.viewItemList();
+      }
+
+      if (step === 5) {
+        var o = global.currentOrderSummary;
+        if (o && o.orderKey) {
+          PBTrack.purchase({
+            orderKey: o.orderKey,
+            total: o.total,
+            subtotal: o.subtotal,
+            shippingFee: o.shippingFee,
+            cart: o.cart,
+            shippingMethod: o.shippingMethod
+          });
+        } else {
+          warn('走到成功頁但找不到 currentOrderSummary.orderKey，purchase 未送出');
+        }
+      }
+    });
+
+    /* ── 2. updateCart：加入 / 移除購物車 ─────────────────────── */
+    wrap('updateCart',
+      function (ctx, args) {
+        var key = args[0];
+        var c = global.cart || {};
+        ctx.key = key;
+        ctx.before = c[key]
+          ? { qty: c[key].qty, subtotal: c[key].subtotal,
+              displayName: c[key].displayName, weight: c[key].weight }
+          : null;
+      },
+      function (ctx, args) {
+        var c = global.cart || {};
+        var beforeQty = ctx.before ? ctx.before.qty : 0;
+        var nowItem = c[ctx.key];
+        var afterQty = nowItem ? nowItem.qty : 0;
+        var delta = afterQty - beforeQty;
+
+        // 被限重或庫存擋掉時數量沒真的變，不算一次加入購物車
+        if (delta === 0) return;
+
+        var src = nowItem || ctx.before;
+        var unit = (src && src.qty) ? (Number(src.subtotal) || 0) / src.qty : 0;
+        var item = {
+          item_id: String(ctx.key),
+          item_name: String((src && src.displayName) || args[3] || ctx.key),
+          item_variant: (args[2] != null ? args[2] + '斤' : ''),
+          price: Math.round(unit * 100) / 100,
+          quantity: Math.abs(delta)
+        };
+
+        if (delta > 0) PBTrack.addToCart(item);
+        else PBTrack.removeFromCart(item);
+      });
+
+    /* ── 3. handleShippingChange：選擇配送方式 ─────────────────── */
+    wrap('handleShippingChange', null, function () {
+      var el = document.getElementById('shipping-method');
+      if (el && el.value) PBTrack.addShippingInfo(el.value);
+    });
+
+    /* ── 4. submitOrder：送出嘗試 + 標記送單進行中 ───────────────
+     *
+     * _submitInFlight 是失敗判定的關鍵：只有送單期間跳出的提示
+     * 才算 order_submit_fail，平常挑商品的提示不會被誤判。
+     */
+    wrap('submitOrder',
+      function () {
+        _submitInFlight = true;
+        PBTrack.submitAttempt();
+      },
+      function () {
+        _submitInFlight = false;
+      });
+
+    /* ── 5. customAlert：把失敗提示轉成 order_submit_fail ─────── */
+    wrap('customAlert', function (ctx, args) {
+      if (!_submitInFlight) return;
+      var msg = String(args[0] || '');
+      if (!msg) return;
+
+      for (var i = 0; i < FAIL_PATTERNS.length; i++) {
+        if (FAIL_PATTERNS[i].re.test(msg)) {
+          PBTrack.submitFail(FAIL_PATTERNS[i].reason, msg.slice(0, 60));
+          if (FAIL_PATTERNS[i].reason === 'timeout_unconfirmed') PBTrack.retryPrompted();
+          return;
+        }
+      }
+      PBTrack.submitFail('unknown', msg.slice(0, 60));
+    });
+
+    /* ── 6. 套用收據並前往成功頁：Firebase 救回的訂單 ─────────────
+     *
+     * 這個事件價值最高 —— 它量化的是壓測時看到的「客戶端顯示失敗、
+     * 伺服器其實成功」那 25%，而且是在真實流量下量的。
+     */
+    wrap('套用收據並前往成功頁', function (ctx, args) {
+      var key = global.currentOrderKey ||
+                (global.currentOrderSummary && global.currentOrderSummary.orderKey) || '';
+      PBTrack.orderRecovered(key, _submitInFlight ? 'timeout_recovery' : 'retry_precheck');
+      _pendingRecovered = true;   // 讓接下來的 goToStep(5) 知道這筆是救回來的
+      log('收據救回訂單', key, args[0]);
+    });
+
+    /* ── 7. begin_checkout：客人開始填收件資料 ───────────────────
+     *
+     * 你的流程是「選配送 → 選規格 → 填資料 → 送出」，
+     * 真正的「開始結帳」是他把手放到姓名欄的那一刻，
+     * 而不是進入第 4 頁（進第 4 頁時他連配送方式都還沒選）。
+     */
+    ['cust-name', 'cust-phone'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('focus', function () {
+        if (_checkoutSent) return;
+        _checkoutSent = true;
+        PBTrack.beginCheckout();
+      });
+    });
+
+    /* ── 8. applyControl：售罄偵測 ─────────────────────────────── */
+    wrap('applyControl', null, function () {
+      var t = totalStock();
+      if (t < 0) return;
+      var soldOut = (t === 0);
+      if (_wasSoldOut === null) { _wasSoldOut = soldOut; return; }
+      if (soldOut && !_wasSoldOut) PBTrack.soldOut();
+      _wasSoldOut = soldOut;
+    });
+
+    log('掛鉤安裝完成');
+  }
+
+
+  /*************************************************************
+   *  啟動
+   *************************************************************/
+
+  // 開賣瞬間偵測。用自己的 ticker 而不是掛鉤 script.js 的 ——
+  // 那個 setInterval 是匿名的，掛不上去。
+  function startReleaseWatcher() {
+    if (typeof global.isReleasedNow !== 'function') return;
+    try {
+      _wasReleased = global.isReleasedNow();
+    } catch (e) { return; }
+
+    if (_wasReleased) return;   // 進站時就已開賣，沒有「開賣瞬間」可抓
+
+    var timer = setInterval(function () {
+      try {
+        if (global.isReleasedNow() && !_wasReleased) {
+          _wasReleased = true;
+          PBTrack.saleOpen();
+          clearInterval(timer);
+        }
+      } catch (e) {
+        clearInterval(timer);
+      }
+    }, 1000);
+  }
+
+  function boot() {
+    flushQueue();
+    captureIds();
+
+    setTimeout(function () {
+      if (!_clientId || !_sessionId) parseIdsFromCookie();
+      flushQueue();
+    }, 1500);
+
+    installHooks();
+
+    // 等 script.js 的 window.onload 跑完（configLoaded 變 true）再送
+    // sale_page_ready，這樣庫存與開賣狀態才是有意義的數字。
+    //
+    // 先立刻檢查一次：頁面若是從 bfcache 返回，configLoaded 可能
+    // 早就是 true 了，沒必要再空等半秒。
+    if (global.configLoaded) {
+      _pageReadySent = true;
+      PBTrack.salePageReady();
+      startReleaseWatcher();
+      return;
+    }
+
+    var tries = 0;
+    var readyTimer = setInterval(function () {
+      tries++;
+      if (global.configLoaded) {
+        clearInterval(readyTimer);
+        if (!_pageReadySent) { _pageReadySent = true; PBTrack.salePageReady(); }
+        startReleaseWatcher();
+      } else if (tries > 60) {   // 30 秒還沒好就放棄，不要一直空轉
+        clearInterval(readyTimer);
+        warn('等待 configLoaded 逾時，sale_page_ready 未送出');
+      }
+    }, 500);
+  }
+
+  /* ⚠️ 一定要用 DOMContentLoaded。
+   *
+   * 這個檔案在 script.js「之前」載入（因為 script.js 要呼叫
+   * PBTrack.getIds），所以此刻 script.js 的函式還不存在，掛不了鉤。
+   * DOMContentLoaded 時兩個檔案都已解析完成，全域函式都在了。
+   *
+   * 也刻意不用 window.onload = —— script.js 用的是賦值寫法，
+   * 誰後執行誰就會蓋掉對方。addEventListener 兩邊都能活。
+   */
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', PBTrack.init);
+    document.addEventListener('DOMContentLoaded', boot);
   } else {
-    PBTrack.init();
+    boot();
   }
 
 })(window);
