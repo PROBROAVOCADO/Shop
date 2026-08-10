@@ -1121,7 +1121,18 @@ document.addEventListener('DOMContentLoaded', () => {
       floatingCart.classList.toggle('show', isOpen);
       e.stopPropagation();
     });
+
     cartHandle.addEventListener('touchstart', (e) => e.stopPropagation());
+        // 🌫️ 點購物車外面就收起來（手機底部面板用）。
+    //    遮罩是 #floating-cart 的 ::before，點到它時 target 會是容器本身，
+    //    點到面板內容時 target 是子元素 —— 用這個差異判斷。
+    //    把手自己有 stopPropagation，不會誤觸發。
+    floatingCart.addEventListener('click', (e) => {
+      if (e.target !== floatingCart) return;
+      if (!window.matchMedia('(max-width: 767px)').matches) return;
+      isOpen = false;
+      floatingCart.classList.remove('show');
+    });
   }
 });
 
