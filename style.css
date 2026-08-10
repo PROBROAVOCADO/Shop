@@ -91,7 +91,7 @@ html, body {
       ・線寬也各不相同（1.7 / 1.0 / 1.4 / 1.2），避免看起來像同一支筆畫的
 
    固定在視窗上不隨捲動移動，所以捲頁時卡片像是在地景上滑過。
-   手機版卡片是滿版的，線條只會從卡片之間的縫隙透出來。 */
+   版卡片是滿版的，線條只會從卡片之間的縫隙透出來。 */
 body::before {
   content: "";
   position: fixed;
@@ -230,7 +230,7 @@ body::before {
 }
 
 /* 公告卡：讓分隔線到文字的距離 = 文字到卡片底緣的距離
-   數字要跟 .info-block 的 padding-bottom 一致（桌機 32px / 手機 24px） */
+   數字要跟 .info-block 的 padding-bottom 一致（桌機 32px /  24px） */
 #step1-announcement .product-divider { margin-bottom: 32px; }
 
 @media screen and (max-width: 767px) {
@@ -250,7 +250,7 @@ body::before {
 .info-block > .form-label:first-of-type { margin-top: 0; }
 /* 📐 訂購頁｜統一垂直節奏
    規則只有三個數字：
-     區塊標題上方   28px（手機 24px）
+     區塊標題上方   28px（ 24px）
      標題 → 提示小字  8px
      提示 → 控制項   12px
    ⚠️ 用 #step4-order-form 包住，不影響其他頁面的 .form-label */
@@ -1427,22 +1427,22 @@ select:focus, input:focus, textarea:focus {
 /* ============================================
    🛒 底部橫條購物車（手機版）
    ============================================ */
-#step4-order-form { padding-bottom: 96px; }   
+#step4-order-form { padding-bottom: 96px; }
+
 #floating-cart{
   position:fixed;left:0;right:0;bottom:0;top:auto;
   width:100%;max-width:none;height:auto;
   display:flex;flex-direction:column-reverse;align-items:stretch;
-  background:var(--clay-deep);
-  /* ⚠️ 以下五行是「取消基礎規則」，少一行就會看到側邊抽屜的殘留樣式：
-     border/border-radius → 咖啡色框線與圓角
-     box-shadow → 方向錯誤的陰影
-     transform/transition → 跟展開動畫打架 */
+  /* ⚠️ 容器一定要透明。給它底色的話，米色面板的圓角缺口會透出深棕三角形。
+     深棕與安全區 padding 都搬到 #floating-cart-handle 身上。 */
+  background:transparent;
+  /* ⚠️ 以下五行是「取消基礎規則」，少一行就會看到側邊抽屜的殘留樣式 */
   border:none;
   border-radius:0;
   box-shadow:none;
   transform:none;
   transition:none;
-  padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-bottom:0;
   z-index:9999;
 }
 
@@ -1453,9 +1453,26 @@ select:focus, input:focus, textarea:focus {
   width:100%;
   max-width:none;
 }
-   
+
+/* 🌫️ 半透明遮罩（A）
+   用 ::before 而不是新的 DOM 元素 —— 點到它時事件的 target 會是
+   #floating-cart 本身，剛好可以拿來判斷「點在購物車外面」。 */
+#floating-cart::before{
+  content:"";
+  position:fixed;inset:0;
+  background:rgba(62,76,51,.42);
+  backdrop-filter:blur(2px);
+  opacity:0;pointer-events:none;
+  transition:opacity .3s ease;
+  z-index:-1;
+}
+#floating-cart.show::before{opacity:1;pointer-events:auto}
+
+/* 把手＝底部橫條。深棕底色與 iPhone 安全區都由它負責 */
 #floating-cart-handle{
-  width:100%;min-height:56px;padding:0 18px;
+  width:100%;
+  min-height:calc(56px + env(safe-area-inset-bottom,0px));
+  padding:0 18px env(safe-area-inset-bottom,0px);
   background:var(--clay-deep);color:var(--creamy);
   display:flex;align-items:center;gap:10px;
   font-weight:600;font-size:.92rem;letter-spacing:1.5px;
@@ -1475,7 +1492,7 @@ select:focus, input:focus, textarea:focus {
   font-size:1rem;letter-spacing:1px;font-variant-numeric:tabular-nums;
 }
 .cart-bar-summary.is-empty{opacity:.7;font-size:.85rem;font-family:inherit}
- 
+
 #floating-cart-content{
   display:flex;flex-direction:column;width:100%;
   max-height:0;opacity:0;overflow:hidden;padding:0 14px;
@@ -1483,10 +1500,19 @@ select:focus, input:focus, textarea:focus {
   border:1px solid var(--rule);border-bottom:none;
   border-radius:18px 18px 0 0;
   box-shadow:0 -4px 20px rgba(122,100,73,.14);
-  transition:max-height .35s cubic-bezier(.4,0,.2,1),opacity .25s ease,padding .35s;
+  transition:max-height .35s cubic-bezier(.4,0,.2,1),
+             opacity .2s ease,
+             padding .35s cubic-bezier(.4,0,.2,1);
 }
-#floating-cart.show #floating-cart-content{max-height:55vh;opacity:1;padding:14px 14px 0}
- 
+/* 🎬 內容淡入延遲（C）：面板先滑出，內容晚 0.12 秒才浮現。
+   收合時不延遲 —— 關的時候要俐落，拖泥帶水會覺得卡。 */
+#floating-cart.show #floating-cart-content{
+  max-height:55vh;opacity:1;padding:14px 14px 0;
+  transition:max-height .35s cubic-bezier(.4,0,.2,1),
+             opacity .25s ease .12s,
+             padding .35s cubic-bezier(.4,0,.2,1);
+}
+
 #cart-note{
   flex:0 0 auto;padding:6px 10px;
   background:rgba(237,228,211,.7);border:1px dashed var(--avo-accent);
@@ -1518,7 +1544,6 @@ select:focus, input:focus, textarea:focus {
 #floating-total,#floating-total .label,#floating-total .amount{
   font-family:var(--heading-font);font-size:1.08rem;color:var(--avo-accent);
 }
-
 }
 
 /* 🚫 停止接單 - 按鈕灰化 */
