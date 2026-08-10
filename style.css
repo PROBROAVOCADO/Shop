@@ -583,6 +583,33 @@ select {
   width: 100%;
 }
 
+/* 📋 一鍵複製匯款帳號的小膠囊按鈕 */
+.btn-copy {
+  margin-left: 10px;
+  padding: 3px 12px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  letter-spacing: 1px;
+  color: var(--clay-deep);
+  background: var(--creamy);
+  border: 1px solid var(--avo-accent);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  vertical-align: middle;
+  white-space: nowrap;
+  transition: var(--transition-smooth);
+}
+.btn-copy:hover { background: var(--clay-pale); }
+.btn-copy:active { transform: scale(0.94); }
+.btn-copy:focus-visible { outline: 2px solid var(--clay-deep); outline-offset: 2px; }
+
+/* 複製成功後短暫變綠，兩秒後自己還原 */
+.btn-copy.is-done {
+  background: var(--herb-green);
+  border-color: var(--herb-green);
+  color: var(--creamy);
+}
+
 .payment-detail-card p {
   text-align: center !important;
   margin: 8px 0 !important;
