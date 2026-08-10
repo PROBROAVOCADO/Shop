@@ -2292,6 +2292,59 @@ function fireConfetti() {
   }());
 }
 
+// 📋 一鍵複製匯款帳號
+//
+// 資料直接讀 window.APP_CONFIG.bankAcc（來自試算表「4-匯款資訊」的匯款帳號），
+// 所以你改後台就會跟著變，這裡不需要維護第二份。
+//
+// ⚠️ navigator.clipboard 需要 HTTPS（你的站是），但 LINE 內建瀏覽器
+//    偶爾會拒絕授權，所以保留舊的 execCommand 作為後備。
+//    兩條路都失敗時一定要講出來 —— 靜默失敗的話客人會以為複製好了，
+//    貼到銀行 App 才發現是空白，那時候他已經離開這個頁面了。
+async function 複製匯款帳號() {
+  const btn = document.getElementById('copy-account-btn');
+  const 帳號 = String((window.APP_CONFIG && window.APP_CONFIG.bankAcc) || '').trim();
+
+  if (!帳號) {
+    customAlert('⚠️ 目前讀不到匯款帳號，請重新整理頁面，\n或直接透過 LINE 與我們聯繫。');
+    return;
+  }
+
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(帳號);
+    ok = true;
+  } catch (err) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = 帳號;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, 帳號.length);   // iOS 需要這一行才選得到
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (e2) { ok = false; }
+  }
+
+  if (!ok) {
+    customAlert('⚠️ 這個瀏覽器不支援自動複製，請長按帳號手動選取：\n\n' + 帳號);
+    return;
+  }
+
+  if (btn) {
+    btn.textContent = '✓ 已複製';
+    btn.classList.add('is-done');
+    clearTimeout(btn._resetTimer);
+    btn._resetTimer = setTimeout(() => {
+      btn.textContent = '複製';
+      btn.classList.remove('is-done');
+    }, 2000);
+  }
+}
+
 function handleLineJump() {
   const targetUrl = String(cfgGet(window.paymentConfig, '跳轉按鈕連結') || '').trim();
   if (targetUrl.startsWith('http')) window.open(targetUrl, '_blank');
