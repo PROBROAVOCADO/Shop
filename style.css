@@ -1309,8 +1309,16 @@ select:focus, input:focus, textarea:focus {
   font-size: 0.9rem;
 }
 #floating-cart-handle:hover { background: var(--avo-accent); }
+/* 桌機把手是直排（writing-mode: vertical-rl），所以「上下間距」
+   要用 margin-top 而不是 margin-left —— 直排時主軸是垂直的。
+   ⚠️ index.html 裡那三個 &nbsp; 請一併刪掉，兩者會疊加。 */
+.cart-hint {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  margin-top: 18px;
+  letter-spacing: 2px;   /* 比主標題的 3.5px 收斂，做出層級 */
+}
 
-.cart-hint { font-size: 0.75rem; opacity: 0.8; }
 /* 手機底部橫條專用，桌機不顯示 */
 .cart-bar-summary { display: none; }
 
