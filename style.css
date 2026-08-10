@@ -1319,8 +1319,8 @@ select:focus, input:focus, textarea:focus {
   height: auto;
   padding: 10px 12px;
   box-sizing: border-box;
-  background: var(--clay-deep);
-  color: var(--creamy);
+  background: #A98A63;   /* 牛皮紙褐。⚠️ 要跟手機版那處保持一致 */
+  color: #2A2118;        /* 深咖啡字，對比 4.9:1 —— 底色淺，字必須夠深 */
   font-weight: 600;
   writing-mode: vertical-rl;
   text-align: center;
@@ -1335,7 +1335,7 @@ select:focus, input:focus, textarea:focus {
   letter-spacing: 3.5px;
   font-size: 0.9rem;
 }
-#floating-cart-handle:hover { background: var(--avo-accent); }
+#floating-cart-handle:hover { background: #BD9E77; }   /* hover 往亮走 */
 /* 桌機把手是直排（writing-mode: vertical-rl），所以「上下間距」
    要用 margin-top 而不是 margin-left —— 直排時主軸是垂直的。
    ⚠️ index.html 裡那三個 &nbsp; 請一併刪掉，兩者會疊加。 */
@@ -1508,7 +1508,8 @@ select:focus, input:focus, textarea:focus {
   width:100%;
   min-height:calc(56px + env(safe-area-inset-bottom,0px));
   padding:0 18px env(safe-area-inset-bottom,0px);
-  background:var(--clay-deep);color:var(--creamy);
+  background: #A98A63;   /* 牛皮紙褐。⚠️ 要跟手機版那處保持一致 */
+  color: #2A2118;        /* 深咖啡字，對比 4.9:1 —— 底色淺，字必須夠深 */
   display:flex;align-items:center;gap:10px;
   font-weight:600;font-size:.92rem;letter-spacing:1.5px;
   cursor:pointer;user-select:none;
