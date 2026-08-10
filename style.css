@@ -1430,12 +1430,30 @@ select:focus, input:focus, textarea:focus {
 #step4-order-form { padding-bottom: 96px; }   
 #floating-cart{
   position:fixed;left:0;right:0;bottom:0;top:auto;
-  width:100%;height:auto;
+  width:100%;max-width:none;height:auto;
   display:flex;flex-direction:column-reverse;align-items:stretch;
   background:var(--clay-deep);
+  /* ⚠️ 以下五行是「取消基礎規則」，少一行就會看到側邊抽屜的殘留樣式：
+     border/border-radius → 咖啡色框線與圓角
+     box-shadow → 方向錯誤的陰影
+     transform/transition → 跟展開動畫打架 */
+  border:none;
+  border-radius:0;
+  box-shadow:none;
+  transform:none;
+  transition:none;
   padding-bottom:env(safe-area-inset-bottom,0px);
   z-index:9999;
 }
+
+/* 🔑 這條絕對不能少：基礎規則的 .show 會把寬度改成 420px/80vw
+   並套用 translateY(-50%)，購物車就會縮成一小塊飄到左上角 */
+#floating-cart.show{
+  transform:none;
+  width:100%;
+  max-width:none;
+}
+   
 #floating-cart-handle{
   width:100%;min-height:56px;padding:0 18px;
   background:var(--clay-deep);color:var(--creamy);
@@ -1500,7 +1518,7 @@ select:focus, input:focus, textarea:focus {
 #floating-total,#floating-total .label,#floating-total .amount{
   font-family:var(--heading-font);font-size:1.08rem;color:var(--avo-accent);
 }
-.note{font-size:.8rem;color:var(--avo-accent);text-align:center;margin:8px 0 0}  
+
 }
 
 /* 🚫 停止接單 - 按鈕灰化 */
