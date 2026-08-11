@@ -113,6 +113,12 @@ var lastControlUpdatedAt = 0;
 // 否則送單前的庫存預檢查會拿到舊資料，白白多打一次 GAS。
 var uiNeedsRefresh = false;
 
+// 📦 裝箱狀態
+var splitShipping = false;   // 客人是否勾選「分開寄出」
+var 合併方案 = null;         // 最省的裝箱結果
+var 分開方案 = null;         // 每件一箱的結果
+var finalBoxCount = 0;
+
 // 🏝️ 台灣離島判定（只用於運費計算）
 //
 // ⚠️ v5 說明：7-11 的離島門市關鍵字阻擋已經整組移除。
@@ -131,6 +137,182 @@ var serverClockOffset = 0; // 伺服器時間 - 本機時間
 var orderSwitch = '開';
 var shippingSwitch = { post: '', '711': '', blackcat: '' };
 
+/*************************************************************
+ * 📦 裝箱模組（code.gs 與 script.js 共用，必須完全相同）
+ *
+ * 為什麼目標函式是「總運費」而不是「箱數」：
+ *   運費是級距制不是連續的，塞越滿不一定越便宜。
+ *   例：4 個 3 斤走宅配（上限 10）
+ *     9斤 + 3斤 → 2 箱，大級距 + 小級距
+ *     6斤 + 6斤 → 2 箱，小級距 + 小級距  ← 一樣箱數，但便宜
+ *   標準的 FFD 演算法會給出上面那個。所以直接以錢為目標，
+ *   不用箱數當代理指標，之後你調運費也不會突然算錯。
+ *
+ * 決定性：weights 由重到輕排序、枚舉順序固定、只在「嚴格更好」時
+ *   才替換最佳解 → 同一個購物車永遠得到同一個答案。
+ *************************************************************/
+
+const 裝箱單位數上限 = 20;      // 超過就不做最佳化（保險）
+const 裝箱狀態數上限 = 50000;   // 這個才是真正跟運算量成正比的指標
+
+// units: [{ w: 3, label: '當季【優】 3斤' }, ...]
+// feeOf: function(箱重) -> 運費
+// 回傳 null = 有單一品項就超過單箱上限（這個配送方式寄不了）
+function 計算裝箱(units, limit, feeOf) {
+  const list = (units || []).filter(x => x && Number(x.w) > 0).slice();
+  if (list.length === 0) return { boxes: [], fee: 0, degraded: false };
+
+  // 固定排序 → 品項貼回箱子時結果可重現
+  list.sort((a, b) => (b.w - a.w) ||
+    (a.label < b.label ? -1 : (a.label > b.label ? 1 : 0)));
+
+  const weights = [];
+  const countOf = {};
+  list.forEach(x => {
+    const w = Number(x.w);
+    if (countOf[w] === undefined) { countOf[w] = 0; weights.push(w); }
+    countOf[w]++;
+  });
+  weights.sort((a, b) => b - a);
+  const counts = weights.map(w => countOf[w]);
+
+  if (weights[0] > limit) return null;
+
+  const 單位數 = list.length;
+  const 狀態數 = counts.reduce((a, c) => a * (c + 1), 1);
+  const degraded = (單位數 > 裝箱單位數上限) || (狀態數 > 裝箱狀態數上限);
+
+  const plan = degraded
+    ? 貪婪裝箱_(weights, counts, limit)
+    : 最佳裝箱_(weights, counts, limit, feeOf).plan;
+
+  // 把實際品項貼回箱子（重量相同的品項互換不影響運費）
+  const pool = {};
+  weights.forEach(w => { pool[w] = []; });
+  list.forEach(x => pool[Number(x.w)].push(x));
+
+  const boxes = plan.map(comp => {
+    const box = { weight: 0, items: [] };
+    weights.forEach((w, i) => {
+      for (let k = 0; k < comp[i]; k++) {
+        const it = pool[w].shift();
+        if (it) { box.items.push(it); box.weight += w; }
+      }
+    });
+    return box;
+  });
+
+  let fee = 0;
+  boxes.forEach(b => { fee += feeOf(b.weight); });
+  return { boxes: boxes, fee: fee, degraded: degraded };
+}
+
+// 每個單位各自成箱（客人選「分開寄出」時用）
+function 每件一箱(units, feeOf) {
+  const list = (units || []).slice().sort((a, b) => (b.w - a.w) ||
+    (a.label < b.label ? -1 : (a.label > b.label ? 1 : 0)));
+  const boxes = list.map(u => ({ weight: u.w, items: [u] }));
+  let fee = 0;
+  boxes.forEach(b => { fee += feeOf(b.weight); });
+  return { boxes: boxes, fee: fee, degraded: false };
+}
+
+// DP + 記憶化。狀態是「各重量還剩幾件」的計數向量，不是排列。
+function 最佳裝箱_(weights, counts, limit, feeOf) {
+  const memo = {};
+
+  const solve = (state) => {
+    const key = state.join(',');
+    if (memo[key]) return memo[key];
+
+    let hi = -1;
+    for (let i = 0; i < state.length; i++) { if (state[i] > 0) { hi = i; break; } }
+    if (hi === -1) return (memo[key] = { fee: 0, n: 0, plan: [] });
+
+    // 🔑 剩下最重的那一件一定放進「這一箱」。這是正規化：
+    //    不做的話同一組裝法會用不同順序被重複計算好幾遍。
+    let best = null;
+    const comp = new Array(state.length).fill(0);
+    comp[hi] = 1;
+
+    const 枚舉 = (idx, used) => {
+      if (idx >= state.length) {
+        const next = state.slice();
+        for (let i = 0; i < comp.length; i++) next[i] -= comp[i];
+        const sub = solve(next);
+        const fee = feeOf(used) + sub.fee;
+        const n = 1 + sub.n;
+        if (!best || fee < best.fee || (fee === best.fee && n < best.n)) {
+          best = { fee: fee, n: n, plan: [comp.slice()].concat(sub.plan) };
+        }
+        return;
+      }
+      const 已固定 = (idx === hi) ? 1 : 0;
+      const 可放 = state[idx] - 已固定;
+      for (let k = 0; k <= 可放; k++) {
+        const w = used + k * weights[idx];
+        if (w > limit) break;   // 同一 idx 內 k 遞增，超過就不必再試
+        comp[idx] = 已固定 + k;
+        枚舉(idx + 1, w);
+      }
+      comp[idx] = 已固定;
+    };
+
+    枚舉(0, weights[hi]);
+    return (memo[key] = best);
+  };
+
+  return solve(counts.slice());
+}
+
+// 降級用：由重到輕 first-fit
+function 貪婪裝箱_(weights, counts, limit) {
+  const 待裝 = [];
+  weights.forEach((w, i) => { for (let k = 0; k < counts[i]; k++) 待裝.push(i); });
+
+  const boxes = [];
+  待裝.forEach(i => {
+    const w = weights[i];
+    let box = null;
+    for (let b = 0; b < boxes.length; b++) {
+      if (boxes[b].weight + w <= limit) { box = boxes[b]; break; }
+    }
+    if (!box) {
+      box = { comp: new Array(weights.length).fill(0), weight: 0 };
+      boxes.push(box);
+    }
+    box.comp[i]++;
+    box.weight += w;
+  });
+  return boxes.map(b => b.comp);
+}
+
+function 建立運費函式(method, isIsland) {
+  if (method === '711')  return function () { return 運費表['711運費']; };
+  if (method === 'post') return function (w) {
+    return isIsland ? (w < 7 ? 運費表.郵寄離島小 : 運費表.郵寄離島大)
+                    : (w < 7 ? 運費表.郵寄小 : 運費表.郵寄大);
+  };
+  if (method === 'blackcat') return function (w) {
+    return isIsland ? (w < 7 ? 運費表.黑貓離島小 : 運費表.黑貓離島大)
+                    : (w < 7 ? 運費表.黑貓小 : 運費表.黑貓大);
+  };
+  return null;
+}
+
+// 依 商品分類 的固定順序展開成單位清單 → 裝箱結果可重現
+function 購物車單位清單() {
+  const units = [];
+  商品分類.forEach(cat => {
+    cat.weights.forEach(w => {
+      const key = stockKeyOf(cat.name, w);
+      const qty = (cart[key] && cart[key].qty) || 0;
+      const label = (cat.縮寫 || cat.name) + ' ' + w + '斤';
+      for (let i = 0; i < qty; i++) units.push({ w: w, label: label });
+    });
+  });
+  return units;
+}
 
 // ========================================
 // 🔧 共用小工具
@@ -203,10 +385,10 @@ const displayNameMap = {
 };
 
 const 商品分類 = [
-  { name: '當季酪梨(隨機出貨)【優級】', weights: [3, 5, 7, 10], priceKey: '當季酪梨( 隨機出貨 )【優級】單價' },
-  { name: '當季酪梨(隨機出貨)【次級】', weights: [3, 5, 7, 10], priceKey: '當季酪梨( 隨機出貨 )【次級】單價' },
-  { name: '平克頓/哈斯【優級】',        weights: [1, 2, 3],     priceKey: '平克頓/哈斯【優級】單價' },
-  { name: '平克頓/哈斯【次級】',        weights: [1, 2, 3],     priceKey: '平克頓/哈斯【次級】單價' }
+  { name: '當季酪梨(隨機出貨)【優級】', 縮寫: '當季【優】', weights: [3, 5, 7, 10], priceKey: '當季酪梨( 隨機出貨 )【優級】單價' },
+  { name: '當季酪梨(隨機出貨)【次級】', 縮寫: '當季【次】', weights: [3, 5, 7, 10], priceKey: '當季酪梨( 隨機出貨 )【次級】單價' },
+  { name: '平克頓/哈斯【優級】',        縮寫: '平克【優】', weights: [1, 2, 3],     priceKey: '平克頓/哈斯【優級】單價' },
+  { name: '平克頓/哈斯【次級】',        縮寫: '平克【次】', weights: [1, 2, 3],     priceKey: '平克頓/哈斯【次級】單價' }
 ];
 
 const 配送方式定義 = {
@@ -1147,7 +1329,9 @@ function renderProductList() {
   const cfg = (window.APP_CONFIG && window.APP_CONFIG.orderConfig) || {};
   const stockMap = (window.APP_CONFIG && window.APP_CONFIG.stockMap) || {};
   const released = isReleasedNow();
-
+  const methodEl = document.getElementById('shipping-method');
+  const 單箱上限 = (methodEl && 限重表[methodEl.value]) || Infinity;
+  
   let html = '';
   商品分類.forEach(cat => {
     const 單價 = cfgNum(cfg, cat.priceKey);
@@ -1172,6 +1356,16 @@ function renderProductList() {
         return;
       }
 
+      // 📦 單一規格就超過單箱上限 → 這個配送方式寄不了
+      if (w > 單箱上限) {
+        html += `
+          <div class="price-row">
+            <div class="price-col weight">${w} 斤裝 <span>($${displayPrice})</span></div>
+            <div class="price-col stock unreleased-badge">此配送方式無法寄送</div>
+          </div>`;
+        return;
+      }
+      
       if (!released) {
         html += `
           <div class="price-row">
@@ -1312,16 +1506,10 @@ function updateCart(key, deltaQty, weight, displayName) {
   if (newQty === 0) delete cart[key];
   else cart[key] = { displayName, weight, qty: newQty, subtotal: unitPrice * weight * newQty };
 
+  // 📦 總重不再有限制：超過單箱上限會自動拆成多箱，每箱各算一次運費。
+  //    單一規格超過上限的情況由 renderProductList 停用按鈕擋掉。
   recalcTotalWeight();
-
-  const limit = 限重表[method];
-  if (limit && totalWeight > limit) {
-    customAlert(`❌ ${配送名稱[method]}配送總重不能超過${limit}斤喔！`);
-    if (prevQty === 0) delete cart[key];
-    else cart[key] = { displayName, weight, qty: prevQty, subtotal: unitPrice * weight * prevQty };
-    recalcTotalWeight();
-  }
-
+  splitShipping = false;   // 購物車一有變動就重置回合併（靜默）
   refreshCartUI();
 }
 
@@ -1395,15 +1583,29 @@ function trimCartToStock() {
 
 function handleShippingChange() {
   const method = document.getElementById('shipping-method').value;
-  recalcTotalWeight();
 
-  if (Object.keys(cart).length > 0) {
-    const limit = 限重表[method];
-    if (limit && totalWeight > limit) {
-      customAlert(`⚠️ ${配送名稱[method]} 限重 ${limit} 斤，目前已超過！請減少品項。`);
+  // 配送方式一變就重置分箱選擇（靜默，不跳提示 —— 勾選框就在畫面上，看得到它彈回去）
+  splitShipping = false;
+
+  // 🔑 新配送方式的單箱上限可能比較小，購物車裡塞不下的規格要拿掉。
+  //    例：先選宅配買了 10 斤裝，再改成 7-11。
+  const limit = 限重表[method];
+  if (limit) {
+    const 移除 = [];
+    Object.keys(cart).forEach(key => {
+      if (cart[key].weight > limit) {
+        移除.push(`${cart[key].displayName} ${cart[key].weight}斤`);
+        delete cart[key];
+      }
+    });
+    if (移除.length > 0) {
+      customAlert(`⚠️ 「${配送名稱[method]}」單箱限重 ${limit} 斤，\n` +
+                  `以下規格無法寄送，已從購物車移除：\n\n${移除.join('\n')}`);
     }
   }
 
+  recalcTotalWeight();
+  renderProductList();
   calculateCartTotal();
   updateAddressSection();
 }
@@ -1423,23 +1625,38 @@ function calculateCartTotal() {
   const islandHint = document.getElementById('island-shipping-hint');
   if (islandHint) islandHint.style.display = isIsland ? 'block' : 'none';
 
+  // 📦 裝箱：算出「最省」與「每件一箱」兩套方案，客人選哪套就用哪套
+  合併方案 = null;
+  分開方案 = null;
   let shippingFee = 0;
-  if (method === 'post') {
-    shippingFee = isIsland
-      ? (totalWeight < 7 ? 運費表.郵寄離島小 : 運費表.郵寄離島大)
-      : (totalWeight < 7 ? 運費表.郵寄小 : 運費表.郵寄大);
-  } else if (method === '711') {
-    shippingFee = 運費表['711運費'];
-  } else if (method === 'blackcat') {
-    shippingFee = isIsland
-      ? (totalWeight < 7 ? 運費表.黑貓離島小 : 運費表.黑貓離島大)
-      : (totalWeight < 7 ? 運費表.黑貓小 : 運費表.黑貓大);
+  let boxCount = 0;
+
+  const limit = 限重表[method];
+  const feeOf = 建立運費函式(method, isIsland);
+
+  if (limit && feeOf && Object.keys(cart).length > 0) {
+    const units = 購物車單位清單();
+    合併方案 = 計算裝箱(units, limit, feeOf);
+    分開方案 = 每件一箱(units, feeOf);
+
+    if (合併方案) {
+      const 採用 = splitShipping ? 分開方案 : 合併方案;
+      shippingFee = 採用.fee;
+      boxCount = 採用.boxes.length;
+    }
   }
 
   finalSubtotal = subtotal;
   finalShippingFee = shippingFee;
   finalTotal = subtotal + shippingFee;
+  finalBoxCount = boxCount;
   updateFloatingCart();
+}
+
+// ☐ 分開寄出。只由客人主動勾選改變，其餘任何變動都會重置回合併。
+function toggleSplitShipping(on) {
+  splitShipping = !!on;
+  calculateCartTotal();
 }
 
 function recalcTotalWeight() {
@@ -1466,12 +1683,19 @@ function updateFloatingCart() {
     container.innerHTML = '<div style="text-align:center; color:var(--avo-accent); opacity:0.8; padding:10px 0;">購物車空空如也</div>';
   }
 
-  document.getElementById('floating-subtotal').innerHTML = `<span class="label">小計：</span><span class="amount">$${finalSubtotal}</span>`;
-  document.getElementById('floating-shipping').innerHTML = `<span class="label">運費：</span><span class="amount">$${finalShippingFee}</span>`;
-  document.getElementById('floating-total').innerHTML = `<span class="label">總計：</span><span class="amount">$${finalTotal}</span>`;
-  
-  // 🛒 手機底部橫條的摘要。桌機看不到這個元素，寫了也無妨。
-  //    金額放在收合狀態就看得到 —— 秒殺時客人最想確認的就是這個數字。
+ document.getElementById('floating-subtotal').innerHTML =
+    `<span class="label">小計：</span><span class="amount">$${finalSubtotal}</span>`;
+
+  // 📦 運費後面帶箱數。沒有它的話，「合併 / 不合併」這句話對客人沒有意義。
+  const 箱數字 = finalBoxCount > 0 ? `（${finalBoxCount} 箱）` : '';
+  document.getElementById('floating-shipping').innerHTML =
+    `<span class="label">運費：</span><span class="amount">$${finalShippingFee}<span class="box-count">${箱數字}</span></span>`;
+
+  document.getElementById('floating-total').innerHTML =
+    `<span class="label">總計：</span><span class="amount">$${finalTotal}</span>`;
+
+  renderSplitOption();
+
   const barSummary = document.getElementById('cart-bar-summary');
   if (barSummary) {
     const 件數 = visibleItems.reduce((n, i) => n + i.qty, 0);
@@ -1480,6 +1704,45 @@ function updateFloatingCart() {
   }
 }
 
+/*************************************************************
+ * ☐ 分開寄出選項
+ *
+ * 只在「合併確實比較便宜」而且「箱數差 ≤ 2」時才出現。
+ * 差距太大（例如 5 個 1 斤裝，合併 1 箱 vs 分開 5 箱）就隱藏 ——
+ * 那已經不是選擇而是陷阱，沒有人會選，擺著只會讓人困惑。
+ *
+ * 用否定式文案：預設不勾就是最省，客人什麼都不用做就是最好的結果。
+ *************************************************************/
+function renderSplitOption() {
+  const box = document.getElementById('cart-merge-option');
+  if (!box) return;
+
+  if (!合併方案 || !分開方案 || 合併方案.boxes.length === 0) {
+    box.style.display = 'none'; box.innerHTML = ''; return;
+  }
+
+  if (合併方案.degraded) {
+    box.style.display = 'block';
+    box.innerHTML = '<div class="cart-split-note">品項較多，運費以標準方式計算。' +
+                    '若需要指定分箱方式，請在備註說明。</div>';
+    return;
+  }
+
+  const 省下 = 分開方案.fee - 合併方案.fee;
+  const 箱差 = 分開方案.boxes.length - 合併方案.boxes.length;
+
+  if (省下 <= 0 || 箱差 <= 0 || 箱差 > 2) {
+    box.style.display = 'none'; box.innerHTML = ''; return;
+  }
+
+  box.style.display = 'block';
+  box.innerHTML =
+    `<label class="cart-split-label">
+       <input type="checkbox" id="cart-split-check" ${splitShipping ? 'checked' : ''}
+              onchange="toggleSplitShipping(this.checked)">
+       <span>分開寄出，共 ${分開方案.boxes.length} 箱（運費 $${分開方案.fee}）</span>
+     </label>`;
+}
 
 // ========================================
 // 🥑 品種頁
@@ -1944,9 +2207,13 @@ async function submitOrder(e) {
   if (fullAddress.length > 120) { customAlert('☝️ 地址長度超過限制，請簡化填寫內容'); return; }
 
   recalcTotalWeight();
-  const weightLimit = 限重表[shippingMethod];
-  if (weightLimit && totalWeight > weightLimit) {
-    customAlert(`❌ 目前購物車總重 ${totalWeight} 斤，已超過「${配送名稱[shippingMethod]}」限重 ${weightLimit} 斤，請調整購買數量或改選其他配送方式！`);
+
+  // 📦 總重限制已移除。這裡只做最後一道保險：單一規格不得超過單箱上限。
+  const 單箱上限 = 限重表[shippingMethod];
+  const 超重 = Object.values(cart).filter(i => i.weight > 單箱上限);
+  if (超重.length > 0) {
+    customAlert(`❌ 「${配送名稱[shippingMethod]}」單箱限重 ${單箱上限} 斤，\n` +
+                `購物車內有無法寄送的規格，請調整後再送出。`);
     return;
   }
 
@@ -2029,6 +2296,7 @@ async function submitOrder(e) {
     weight: Object.values(cart).map(i => `${i.displayName} ${i.weight} 斤 x${i.qty}`).join('，'),
     county: countyEl ? countyEl.value : '',
     district: districtEl ? districtEl.value : ''
+    splitShipping: splitShipping    // 📦 後端據此重算裝箱；金額仍以後端為準
   };
 
   // 📊 GA4 識別碼（供後端補送 purchase 事件用）。
