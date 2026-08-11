@@ -2295,8 +2295,8 @@ async function submitOrder(e) {
     note: orderNoteEl ? orderNoteEl.value : '',
     weight: Object.values(cart).map(i => `${i.displayName} ${i.weight} 斤 x${i.qty}`).join('，'),
     county: countyEl ? countyEl.value : '',
-    district: districtEl ? districtEl.value : ''
-    splitShipping: splitShipping    // 📦 後端據此重算裝箱；金額仍以後端為準
+    district: districtEl ? districtEl.value : '',
+    splitShipping: splitShipping
   };
 
   // 📊 GA4 識別碼（供後端補送 purchase 事件用）。
