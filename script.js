@@ -137,6 +137,11 @@ var serverClockOffset = 0; // 伺服器時間 - 本機時間
 var orderSwitch = '開';
 var shippingSwitch = { post: '', '711': '', blackcat: '' };
 
+// 🩺 健康判斷用（v6 修正誤報）
+const 控制節點寬限MS = 20000;   // 進站後這段時間內不做健康判斷
+var 站台啟動時間 = Date.now();
+var 控制節點補撈中 = false;
+var 控制節點讀取失敗 = false;
 /*************************************************************
  * 📦 裝箱模組（code.gs 與 script.js 共用，必須完全相同）
  *
@@ -962,15 +967,41 @@ function applySnapshotStamp(json) {
   // Firebase 連線中 → 庫存與開關本來就是即時的，不需要嚇客人
   if (firebaseLive) { el.style.display = 'none'; return; }
 
-  // 有拿到控制節點的時間就用它；完全沒拿到才退回看快照
-  const 基準 = lastControlUpdatedAt || Number((json && json.updatedAtMs) || 0);
-  if (!基準) { el.style.display = 'none'; return; }
+  // 🩺 唯一有效的健康指標是控制節點的 updatedAt。
+  //
+  // 舊版在拿不到它時會退回去看快照時間，那是錯的：
+  // 快照「內容沒變就不發布」，所以休耕期或你單純沒改試算表的日子，
+  // 快照本來就會很舊 —— 客人進站第一眼就看到「庫存可能不是最新的」，
+  // 而系統其實完全健康。那句話在秒殺當下會直接勸退人。
+  if (!lastControlUpdatedAt) {
+    if (控制節點讀取失敗) {
+      el.style.display = 'block';
+      el.textContent = '⚠️ 庫存資訊可能不是最新的，下單前建議與我們確認';
+      return;
+    }
+    // 剛進站，Firebase 可能還在握手（手機上常要 300~800ms）→ 寬限期內不判斷
+    if (Date.now() - 站台啟動時間 < 控制節點寬限MS) {
+      el.style.display = 'none';
+      return;
+    }
+    // 寬限期過了還是沒收到推播 → 主動用 REST 撈一次。
+    // 撈到就有基準可判斷；撈不到才是真的有問題。
+    if (!控制節點補撈中) {
+      控制節點補撈中 = true;
+      fetchControlViaRest()
+        .then(c => { applyControl(c); })
+        .catch(() => { 控制節點讀取失敗 = true; })
+        .then(() => { 控制節點補撈中 = false; });
+    }
+    el.style.display = 'none';
+    return;
+  }
 
-  const ageMin = (serverNow() - 基準) / 60000;
+  const ageMin = (serverNow() - lastControlUpdatedAt) / 60000;
   if (ageMin > SNAPSHOT_STALE_MIN) {
     el.style.display = 'block';
     el.textContent = '⚠️ 庫存資訊可能不是最新的，下單前建議與我們確認';
-    console.warn('系統已超過 ' + Math.round(ageMin) + ' 分鐘沒有更新跡象');
+    console.warn('控制節點已超過 ' + Math.round(ageMin) + ' 分鐘沒有更新');
   } else {
     el.style.display = 'none';
   }
@@ -1986,7 +2017,8 @@ function applyControl(control) {
   // 🩺 記下後端最後一次推播的時間，用來判斷系統是否還活著
   const updatedAt = Number(control.updatedAt || 0);
   if (updatedAt > lastControlUpdatedAt) lastControlUpdatedAt = updatedAt;
-
+  控制節點讀取失敗 = false;   // 🩺 撈到了就清掉失敗旗標
+  
   // ---------- 資料層：無論如何都立刻更新 ----------
   const 舊開賣狀態 = isReleasedNow();
 
