@@ -218,6 +218,7 @@
         <div id="floating-subtotal">小計: $0</div>
         <div id="floating-shipping">運費: $0</div>
         <div id="floating-total">總計: $0</div>
+        <div id="cart-merge-option" style="display:none;"></div>
       </div>
     </div>
   </div>
@@ -272,7 +273,8 @@
     </div>
 
     <p class="form-label">✨ 小小許願區 (備註)</p>
-    <textarea id="order-note" maxlength="300" placeholder="如欲購買同地址、兩箱(含)以上&#10;請與我們聯繫~"></textarea>
+    <textarea id="order-note" maxlength="300"
+      placeholder="有特殊出貨需求可以告訴我們&#10;（例如指定分箱方式、到貨時間）"></textarea>
   </div>
 
   <div class="button-group">
@@ -404,7 +406,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
     <!-- 📊 GA4 追蹤模組。必須在 script.js「之前」 -->
-    <script src="analytics.js?v=2.1"></script>
+    <script src="script.js?v=6"></script>
     <script src="script.js"></script>
   </body>
 </html>
