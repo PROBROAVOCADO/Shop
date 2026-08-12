@@ -2122,11 +2122,13 @@ function 套用收據並前往成功頁(receipt, 收尾) {
       currentOrderSummary.subtotal    = finalSubtotal;
       currentOrderSummary.shippingFee = finalShippingFee;
       currentOrderSummary.total       = finalTotal;
+      // 📦 舊訂單的收據沒有這個欄位，讀不到就給 0 → 成功頁自動隱藏那一列
+      currentOrderSummary.boxCount    = Number(receipt.boxCount) || 0;
     }
   }
   cart = {};
   totalWeight = 0;
-  currentOrderKey = null;   // 這筆已完成，下一筆要用新的識別碼
+  currentOrderKey = null;
   收尾();
   goToStep(5);
 }
@@ -2369,6 +2371,7 @@ async function submitOrder(e) {
       currentOrderSummary.subtotal    = finalSubtotal;
       currentOrderSummary.shippingFee = finalShippingFee;
       currentOrderSummary.total       = finalTotal;
+      currentOrderSummary.boxCount    = Number(json.totals.boxCount) || 0;   // 📦
     }
 
     // 本地先扣一次，避免回價目表看到舊數字（Firebase 推播通常 1 秒內就會蓋掉它）
@@ -2491,9 +2494,18 @@ function renderSuccessPage() {
   // 訂單成交的金額是一個「快照」，不該再跟著購物車變動。
   set('final-amount-display', '$' + (Number(o.total) || 0) + ' 元');
 
+  // 📦 箱數。拿不到就整列不顯示 ——
+  //    逾時救回的舊收據、或改版前的訂單都可能沒有這個欄位，
+  //    寧可少一列，也不要印出「共 0 箱」讓客人以為出貨有問題。
+  const 箱數 = Number(o.boxCount) || 0;
+  const 箱數列 = 箱數 > 0
+    ? `<div class="order-summary-row"><span class="label">📦 出貨箱數</span><span class="value">${箱數} 箱</span></div>`
+    : '';
+
   document.getElementById('order-summary-content').innerHTML = `
     <div class="order-summary-list">
       <div class="order-summary-row"><span class="label">📦 規格細項</span><span class="value js-summary-weight"></span></div>
+      ${箱數列}
       <div class="order-summary-row"><span class="label">🚚 配送方式</span><span class="value js-summary-shipping"></span></div>
       <div class="order-summary-row"><span class="label">🏠 收件地址(門市)</span><span class="value js-summary-address"></span></div>
       <div class="order-summary-row"><span class="label">💰 商品小計</span><span class="value">$${Number(o.subtotal) || 0}</span></div>
