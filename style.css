@@ -1282,12 +1282,38 @@ select:focus, input:focus, textarea:focus {
   letter-spacing: 0.8px;
   opacity: 0.75;
 }
-
 .social-item:hover .social-icon {
   background: var(--avo-accent);
   color: var(--creamy);
 }
 .social-item:hover .social-label { opacity: 1; }
+
+/* 🔗 footer 政策連結 */
+.footer-policy-links {
+  margin-bottom: 8px;
+  font-size: 0.68rem;
+  letter-spacing: 0.8px;
+}
+.footer-policy-links a {
+  color: var(--clay-deep);
+  text-decoration: none;
+  opacity: 0.8;
+  border-bottom: 1px solid transparent;
+  transition: var(--transition-smooth);
+}
+.footer-policy-links a:hover {
+  opacity: 1;
+  border-bottom-color: var(--avo-accent);
+}
+.footer-policy-links a:focus-visible {
+  outline: 2px solid var(--clay-deep);
+  outline-offset: 3px;
+}
+.footer-policy-links span {
+  color: var(--avo-accent);
+  opacity: 0.5;
+  margin: 0 6px;
+}
 
 /* ------------------------ */
 /* 浮動購物車 */
