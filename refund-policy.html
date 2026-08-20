@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>退換貨政策｜波波酪梨 Pro-Bro Avocado</title>
+<meta name="description" content="波波酪梨的退換貨、補寄與退款處理原則。生鮮農產品請於收貨當日開箱檢查。">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="style.css">
+
+<style>
+  /* 政策頁專用樣式，與 privacy.html 共用同一套規則。
+     只在 .policy-page 下生效，不影響訂購流程的任何頁面。 */
+  .policy-page .info-block { text-align: left; }
+
+  .policy-page .policy-section { margin-bottom: 34px; }
+  .policy-page .policy-section:last-child { margin-bottom: 0; }
+
+  .policy-page .policy-heading {
+    font-family: var(--heading-font);
+    font-size: 1.08rem;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--avo-dark);
+    margin: 0 0 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .policy-page .policy-num {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--avo-accent);
+    font-variant-numeric: tabular-nums;
+    flex: 0 0 auto;
+  }
+
+  .policy-page .policy-section p {
+    font-size: 0.95rem;
+    line-height: 1.9;
+    margin: 0 0 10px;
+    white-space: normal;
+    color: var(--text-main);
+  }
+  .policy-page .policy-section p:last-child { margin-bottom: 0; }
+
+  .policy-page .policy-list {
+    list-style: none;
+    margin: 4px 0 10px;
+    padding: 0;
+  }
+  .policy-page .policy-list li {
+    position: relative;
+    padding-left: 20px;
+    font-size: 0.95rem;
+    line-height: 1.85;
+    margin-bottom: 6px;
+    color: var(--text-main);
+  }
+  .policy-page .policy-list li::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 0.75em;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--sage);
+  }
+
+  /* 不受理清單：改用暖褐色圓點，視覺上與可受理項目區隔 */
+  .policy-page .policy-list.is-excluded li::before { background: var(--avo-accent); }
+
+  .policy-page .policy-updated {
+    text-align: center;
+    font-size: 0.76rem;
+    letter-spacing: 1.5px;
+    color: var(--avo-accent);
+    opacity: 0.85;
+    margin: 0 0 4px;
+  }
+
+  /* 收貨當日開箱是全頁最重要的一句話，給它獨立的框 */
+  .policy-page .policy-callout {
+    background: rgba(228, 234, 215, 0.55);
+    border: 1px solid var(--rule-soft);
+    border-left: 3px solid var(--herb-green);
+    border-radius: var(--r-field);
+    padding: 16px 20px;
+    margin: 0 0 14px;
+  }
+  .policy-page .policy-callout p {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.85;
+    color: var(--avo-dark);
+    font-weight: 500;
+  }
+
+  .policy-page .step-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .policy-page .step-row:last-child { margin-bottom: 0; }
+  .policy-page .step-mark {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--avo-accent);
+    color: var(--clay-deep);
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+    transform: translateY(3px);
+  }
+  .policy-page .step-row p { margin: 0; }
+
+  .policy-page .contact-card {
+    background: rgba(237, 228, 211, 0.5);
+    border: 1px dashed var(--avo-accent);
+    border-radius: var(--r-field);
+    padding: 18px 20px;
+    margin-top: 6px;
+  }
+  .policy-page .contact-card p {
+    margin: 0 0 6px;
+    font-size: 0.93rem;
+    line-height: 1.8;
+  }
+  .policy-page .contact-card p:last-child { margin-bottom: 0; }
+  .policy-page .contact-card a {
+    color: var(--herb-green);
+    text-decoration: none;
+    border-bottom: 1px solid var(--rule);
+  }
+  .policy-page .contact-card a:hover { border-bottom-color: var(--herb-green); }
+
+  .policy-page .back-link-wrap { margin-top: 26px; }
+  .policy-page .back-link-wrap .btn-secondary { width: 100%; }
+
+  @media screen and (max-width: 767px) {
+    .policy-page .policy-section { margin-bottom: 28px; }
+    .policy-page .policy-heading { font-size: 1rem; letter-spacing: 1.5px; }
+    .policy-page .policy-section p,
+    .policy-page .policy-list li { font-size: 0.9rem; }
+    .policy-page .policy-callout { padding: 14px 16px; }
+  }
+</style>
+</head>
+
+<body class="policy-page">
+<div class="main-wrapper">
+  <div class="app-container">
+
+    <h1 class="main-title">退換貨政策</h1>
+    <p class="sub-title">RETURNS &amp; REFUNDS</p>
+    <div class="title-divider"></div>
+    <p class="policy-updated">最後更新：2026 年 8 月</p>
+
+    <div class="info-block">
+      <div class="policy-section">
+        <p>酪梨是後熟型水果，離樹之後仍持續變化。我們出貨時挑選的是尚未軟熟、適合運送的果實，讓它在您家中完成最後的熟成。也因為這個特性，生鮮農產品的退換貨處理方式與一般商品不同，請您在下單前花一分鐘看完這頁。</p>
+      </div>
+
+      <div class="policy-section">
+        <h2 class="policy-heading"><span class="policy-num">01</span>收到貨請立即開箱</h2>
+        <div class="policy-callout">
+          <p>請於收到包裹的當日拆箱檢查。若發現果實有運送碰撞、擠壓、腐壞等問題，請立即拍照，並透過 LINE 官方帳號與我們聯繫。</p>
+        </div>
+        <p>酪梨每天都在變化，越晚反應越難判斷問題發生在運送途中還是保存期間。當日開箱不只是流程規定，是讓我們能真正幫上忙的前提。</p>
+      </div>
+
+      <div class="policy-section">
+        <h2 class="policy-heading"><span class="policy-num">02</span>怎麼跟我們反應</h2>
+        <div class="step-row">
+          <span class="step-mark">1</span>
+          <p>開箱後先拍照。整箱的全景一張，有問題的果實近拍一到兩張。</p>
+        </div>
+        <div class="step-row">
+          <span class="step-mark">2</span>
+          <p>加入我們的 LINE 官方帳號，傳送照片並附上您的姓名與訂購電話。</p>
+        </div>
+        <div class="step-row">
+          <span class="step-mark">3</span>
+          <p>我們收到後會與您討論處理方式，通常當日或隔日回覆。</p>
+        </div>
+      </div>
+
+      <div class="policy-section">
+        <h2 class="policy-heading"><span class="policy-num">03</span>我們會怎麼處理</h2>
+        <p>經確認屬於出貨或運送過程造成的問題，我們提供<strong>補寄</strong>或<strong>退款</strong>兩種處理方式。</p>
+        <p>實際採哪一種，會依照問題果實的數量、當時的庫存與採收狀況，與您討論後決定。若當季已無現貨可補寄，我們會直接辦理退款。</p>
+        <p>退款將依您原本的付款方式退回。透過線上刷卡或行動支付付款者，退款作業需經金流服務商與發卡銀行處理，實際入帳時間依各銀行作業而定。</p>
+      </div>
+
+      <div class="policy-section">
+        <h2 class="policy-heading"><span class="policy-num">04</span>以下情形無法受理</h2>
+        <ul class="policy-list is-excluded">
+          <li>果實已經食用或切開</li>
+          <li>後熟過度，已軟爛或變質</li>
+          <li>收貨後放置過久才反應</li>
+          <li>未提供照片，或照片無法辨識問題狀況</li>
+          <li>因個人口感喜好、熟度偏好而要求退換</li>
+        </ul>
+        <p>酪梨在室溫下通常三到七天完成後熟，之後若未冷藏會快速軟化。這屬於水果的自然變化，不在補償範圍內。</p>
+      </div>
+
+      <div class="policy-section">
+        <h2 class="policy-heading"><span class="policy-num">05</span>關於七天鑑賞期</h2>
+        <p>依《消費者保護法》及行政院公告之「通訊交易解除權合理例外情事適用準則」，易於腐敗或保存期限較短之商品，不適用七日內無條件解除契約之規定。</p>
+        <p>本園販售之新鮮酪梨屬於前述例外商品，恕無法提供七天鑑賞期退貨。但若商品本身有瑕疵或運送損壞，仍依本頁第 01 至 03 條處理，您的權益不受影響。</p>
+      </div>
+
+      <div class="policy-section">
+        <h2 class="policy-heading"><span class="policy-num">06</span>取消訂單</h2>
+        <p>訂單成立後、尚未出貨前，可透過 LINE 官方帳號提出取消，我們會辦理全額退款。</p>
+        <p>包裹一旦交寄物流，即無法取消。若您指定超商取貨而逾期未領，包裹將退回本園，因商品已無法再次販售，恕無法退款，敬請留意取件通知。</p>
+      </div>
+
+      <div class="policy-section">
+        <h2 class="policy-heading"><span class="policy-num">07</span>聯絡我們</h2>
+        <div class="contact-card">
+          <p><strong>波波酪梨 Pro-Bro Avocado</strong></p>
+          <p>負責人：莊玉華</p>
+          <p>電話：<a href="tel:0972311983">0972-311-983</a></p>
+          <p>電子信箱：<a href="mailto:h82430@gmail.com">h82430@gmail.com</a></p>
+          <p>地址：南投縣名間鄉田仔巷 5 號</p>
+          <p>LINE 官方帳號：<a href="https://lin.ee/PBsoOcU" target="_blank" rel="noopener">@probroavocado</a></p>
+        </div>
+      </div>
+
+      <div class="back-link-wrap">
+        <a href="index.html" class="btn-secondary">返回首頁</a>
+      </div>
+    </div>
+
+    <footer class="site-footer">
+      <div class="social-links">
+        <a class="social-item" href="https://lin.ee/PBsoOcU" target="_blank" rel="noopener">
+          <span class="social-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+            </svg>
+          </span>
+          <span class="social-label">LINE</span>
+        </a>
+        <a class="social-item" href="index.html">
+          <span class="social-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/>
+              <path d="M9 21v-7h6v7"/>
+            </svg>
+          </span>
+          <span class="social-label">首頁</span>
+        </a>
+      </div>
+      <div>© 2026 波波酪梨 Pro-Bro Avocado</div>
+    </footer>
+
+  </div>
+</div>
+</body>
+</html>
