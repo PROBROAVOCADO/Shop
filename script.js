@@ -435,6 +435,15 @@ function stockKeyOf(catName, weight) {
   return normKey(catName + '-' + weight);
 }
 
+// 🔑 v6 (#9)：統一的查價入口。
+//    顯示名 → 試算表標籤 → normKey → 價格表。
+//    以前這段邏輯在 updateCart 與 refreshCartUI 各寫一次，
+//    改 key 規則時很容易只改到一邊。
+function 查單價(displayName) {
+  const 標籤 = stockKeyMap[displayName] || displayName;
+  return Number(價格表[normKey(標籤)]) || 0;
+}
+
 // 從「訂購與運費」設定讀出三個配送開關
 function 讀取配送開關(訂購設定) {
   const out = {};
@@ -740,8 +749,11 @@ function applyStaticTables(data) {
   window.APP_CONFIG.orderConfig = data || {};
 
   // 由「單一真相來源」衍生，不再重複列舉欄位名稱
+  // 🔑 v6 (#9)：key 一律 normKey，跟後端 v8 對齊。
+  //    目前商品名稱剛好都沒有空格所以兩邊對得上，
+  //    但哪天標籤裡多打一個空格，兩邊會安靜地算出不同答案。
   價格表 = {};
-  商品分類.forEach(cat => { 價格表[cat.name] = cfgNum(data, cat.priceKey); });
+  商品分類.forEach(cat => { 價格表[normKey(cat.name)] = cfgNum(data, cat.priceKey); });
 
   運費表 = {};
   Object.keys(運費欄位定義).forEach(k => { 運費表[k] = cfgNum(data, 運費欄位定義[k]); });
@@ -1532,7 +1544,7 @@ function updateCart(key, deltaQty, weight, displayName) {
   }
 
   const prevQty = currentQty;
-  const unitPrice = 價格表[stockKeyMap[displayName] || displayName] || 0;
+  const unitPrice = 查單價(displayName);
 
   if (newQty === 0) delete cart[key];
   else cart[key] = { displayName, weight, qty: newQty, subtotal: unitPrice * weight * newQty };
@@ -1547,7 +1559,7 @@ function updateCart(key, deltaQty, weight, displayName) {
 function refreshCartUI() {
   Object.keys(cart).forEach(key => {
     const item = cart[key];
-    const unitPrice = 價格表[stockKeyMap[item.displayName] || item.displayName] || 0;
+    const unitPrice = 查單價(item.displayName);
     item.subtotal = unitPrice * item.weight * item.qty;
   });
   updateStockDisplay();
