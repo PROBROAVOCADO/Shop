@@ -1,417 +1,882 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
+/**
+ * 波波酪梨 · PAYUNi 加解密閘道
+ * probro-payuni-crypto
+ *
+ * 存在理由：GAS 的 Utilities 只有雜湊，沒有任何對稱加密，
+ * 而 PAYUNi 要求 AES-256-GCM 雙向加密。這一層專責加解密與驗簽，
+ * 不碰任何商業邏輯、不儲存任何資料。
+ *
+ * 端點：
+ *   GET  /health    健康檢查
+ *   GET  /selftest  用 PAYUNi 官方範例值自我驗證（不需金鑰，寫死測試值）
+ *   POST /encrypt   加密建單參數（需 X-Worker-Secret）
+ *   POST /decrypt   解密除錯用（需 X-Worker-Secret）
+ *   POST /notify    接收 PAYUNi 背景回調，驗簽解密後寫入 Firebase
+ *   GET  /pay?k=    付款頁（客人從訂單完成頁點進來）
+ *
+ * Secrets（用 npx wrangler secret put 設定）：
+ *   PAYUNI_MER_ID              商店代號
+ *   PAYUNI_HASH_KEY            Hash Key（32 碼）
+ *   PAYUNI_IV_KEY              IV Key（16 碼）
+ *   WORKER_SHARED_SECRET       自訂密碼，擋住 /encrypt 與 /decrypt
+ *   FIREBASE_SERVICE_ACCOUNT   service account JSON 全文（單行）
+ *   FIREBASE_DB_URL            例：https://probro-stock-default-rtdb.firebaseio.com
+ *   GAS_NOTIFY_URL             （選填）額外轉發目標，通常留空
+ */
 
-    <!-- 📊 Google Analytics (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-99EP460CDY"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-99EP460CDY');
-    </script>
+const enc = new TextEncoder();
+const dec = new TextDecoder();
 
-    <!-- ⚡ 拿掉 maximum-scale / user-scalable=no：
-         原本會擋掉雙指縮放，長輩客人看不清楚時沒辦法放大
-         （而且 iOS Safari 其實會直接忽略它，等於只懲罰了 Android 使用者） -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+/* ══════════════ 編碼工具 ══════════════ */
 
-    <!-- 🥑 分頁小圖示 -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🥑</text></svg>">
+function bytesToHex(u8) {
+  let s = '';
+  for (let i = 0; i < u8.length; i++) s += u8[i].toString(16).padStart(2, '0');
+  return s;
+}
 
-    <!-- 🖋️ v7 字體改版
-         標題：Noto Serif TC（思源宋體）－ 對應「配送時間」海報的標題字
-         內文：Noto Sans TC － 訂購流程要好讀，維持黑體
-         ⚠️ Huninn（粉圓）已移除，改宋體是這次品牌一致性改版的核心 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;600;700&display=swap" rel="stylesheet">
+function hexToBytes(hex) {
+  const clean = hex.trim();
+  if (clean.length % 2 !== 0) throw new Error('HEX_ODD_LENGTH');
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    const byte = parseInt(clean.substr(i * 2, 2), 16);
+    if (Number.isNaN(byte)) throw new Error('HEX_INVALID_CHAR');
+    out[i] = byte;
+  }
+  return out;
+}
 
-    <link rel="preconnect" href="https://lh3.googleusercontent.com">
-    <link rel="preconnect" href="https://script.google.com">
-    <link rel="preconnect" href="https://cdn.jsdelivr.net">
-    <link rel="preconnect" href="https://www.gstatic.com">
-    <link rel="preconnect" href="https://probro-stock-default-rtdb.asia-southeast1.firebasedatabase.app">
+function bytesToB64(u8) {
+  let bin = '';
+  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+  return btoa(bin);
+}
 
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js" defer></script>
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 
-    <!-- 🥑 Open Graph 社群分享預覽圖 -->
-    <meta property="og:title" content="🥑 波波酪梨｜南投小農 用心種植" />
-    <meta property="og:description" content="Pro-Bro Avo. | Earth to Table" />
-    <meta property="og:image" content="https://drive.google.com/uc?id=1_zOYoU-RQvGc-JOSDkDNa4tRMv5-R_rj" />
-    <meta property="og:url" content="https://probroavocado.com/" />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
+/**
+ * 等價於 Node 的 querystring.stringify()
+ * PAYUNi 的明文格式就是這個，順序依物件屬性順序。
+ * null / undefined / 空字串一律略過，避免送出無意義的空參數。
+ */
+function buildQueryString(obj) {
+  return Object.entries(obj)
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join('&');
+}
 
-    <title>波波酪梨｜線上訂購</title>
-    <link rel="stylesheet" href="style.css">
-  </head>
+function parseQueryString(qs) {
+  const out = {};
+  for (const pair of qs.split('&')) {
+    if (!pair) continue;
+    const idx = pair.indexOf('=');
+    const k = idx === -1 ? pair : pair.slice(0, idx);
+    const v = idx === -1 ? '' : pair.slice(idx + 1);
+    out[decodeURIComponent(k)] = decodeURIComponent(v);
+  }
+  return out;
+}
 
-  <body>
+/* ══════════════ PAYUNi 加解密核心 ══════════════ */
 
-    <div class="main-wrapper">
+async function importAesKey(keyStr, usages) {
+  const raw = enc.encode(keyStr);
+  if (raw.length !== 32) {
+    throw new Error(`KEY_LENGTH_INVALID: 需要 32 bytes，實際 ${raw.length}`);
+  }
+  return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, usages);
+}
 
-      <!-- 頂部橫幅（由 JS 動態填入）
-           ⚡ v7：圓角與陰影原本寫死在 inline，改由 style.css 的 .banner-container 控制 -->
-      <div class="banner-container" id="banner-container" style="display:none;">
-        <img id="banner-img" src=""
-             referrerpolicy="no-referrer"
-             onerror="this.parentElement.style.display='none';">
-      </div>
+/**
+ * ⚠️ 這裡是整份檔案最容易出錯的地方
+ *
+ * PAYUNi 官方範例用 Node 的 crypto：密文與 authTag 是分開取得的。
+ * WebCrypto 不一樣 —— 它把 16 bytes 的 tag 直接接在密文尾端。
+ * 所以必須手動切開，再照 PAYUNi 的格式組回去：
+ *
+ *   hex( base64(密文) + ":::" + base64(tag) )
+ *
+ * 沒切開的話 PAYUNi 一定解不開，而且錯誤訊息不會告訴你原因。
+ */
+async function payuniEncrypt(plaintext, hashKey, ivKey) {
+  const key = await importAesKey(hashKey, ['encrypt']);
+  const buf = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: enc.encode(ivKey), tagLength: 128 },
+    key,
+    enc.encode(plaintext)
+  );
+  const all = new Uint8Array(buf);
+  const cipherText = all.slice(0, all.length - 16);
+  const tag = all.slice(all.length - 16);
+  const joined = `${bytesToB64(cipherText)}:::${bytesToB64(tag)}`;
+  return bytesToHex(enc.encode(joined));
+}
 
-      <!-- 🕐 開賣倒數橫幅：尚未開賣時顯示，時間一到自動消失並解鎖商品 -->
-      <div id="release-banner" class="release-banner" style="display:none;"></div>
+async function payuniDecrypt(encryptStr, hashKey, ivKey) {
+  const joined = dec.decode(hexToBytes(encryptStr));
+  const sep = joined.indexOf(':::');
+  if (sep === -1) throw new Error('DECRYPT_SEPARATOR_MISSING');
 
-      <!-- ⚠️ 快照過期柔性提示：GITHUB_TOKEN 過期或觸發器停擺時會出現 -->
-      <div id="stale-warning" class="stale-warning" style="display:none;"></div>
+  const cipherText = b64ToBytes(joined.slice(0, sep));
+  const tag = b64ToBytes(joined.slice(sep + 3));
 
-      <!-- ⚡ v7：移除 inline border-radius:30px，改由 style.css 統一控制 -->
-      <div class="app-container">
+  const merged = new Uint8Array(cipherText.length + tag.length);
+  merged.set(cipherText);
+  merged.set(tag, cipherText.length);
 
-<!-- ------ 第1頁 : 公告頁面 ------ -->
-<div id="step1-announcement" class="page-content">
-  <h2 class="main-title" id="main-title">波波酪梨</h2>
-  <div class="sub-title">Pro-Bro Avo. | Earth to Table</div>
-  <div class="origin-slogan">| 來自南投名間 小農自產自銷．現採現送 |</div>
-  <div class="title-divider"></div>
+  const key = await importAesKey(hashKey, ['decrypt']);
+  const buf = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: enc.encode(ivKey), tagLength: 128 },
+    key,
+    merged
+  );
+  return dec.decode(buf);
+}
 
-  <div class="info-block">
-    <h3 class="section-title" id="announcement-title">最新公告</h3>
-    <div class="product-divider"></div>
-    <p class="text-story" id="announcement-content"></p>
-  </div>
+/** HashInfo = SHA256(HashKey + EncryptInfo + IVKey)，大寫十六進位 */
+async function payuniHash(encryptStr, hashKey, ivKey) {
+  const buf = await crypto.subtle.digest(
+    'SHA-256',
+    enc.encode(`${hashKey}${encryptStr}${ivKey}`)
+  );
+  return bytesToHex(new Uint8Array(buf)).toUpperCase();
+}
 
-  <div class="button-group">
-    <button id="order-enter-btn" class="btn-primary" onclick="handleOrderEnter()">
-      ✨ 我已同意，前往選購 👉
-    </button>
-  </div>
-</div>
+/** 定值時間比對，避免用比對耗時反推簽章 */
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
 
-<!-- ------ 第2頁 : 品種介紹頁面 ------ -->
-<div id="step2-varieties" class="page-content" style="display:none;">
-  <h2 class="main-title" id="variety-title">我們的當季酪梨</h2>
-  <div class="sub-title">Pro-Bro's Seasonal Picks!</div>
-  <div class="title-divider"></div>
-  <div id="varieties-container">
-    <p class="loading-note">正在準備當季品種資訊...🥑</p>
-  </div>
-  <div class="button-group">
-    <button class="btn-secondary" onclick="goToStep(1)">⬅️ 返回公告</button>
-    <button class="btn-primary" onclick="goToStep(3)">💰 價格表</button>
-  </div>
-</div>
+/* ══════════════ 回應工具 ══════════════ */
 
-<!-- ------ 第3頁 : 價格表頁面 ------ -->
-<div id="step3-price-list" class="page-content" style="display:none;">
-  <h2 class="main-title">🥑 酪梨價目表</h2>
-  <div class="sub-title">Seasonal Price Menu</div>
-  <div class="title-divider"></div>
+const json = (obj, status = 200) =>
+  new Response(JSON.stringify(obj, null, 2), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  });
 
-  <div class="price-note-warm">
-    ＊ 價格以「斤」為單位，實際金額將依訂購量自動計算
-  </div>
+const text = (body, status = 200) =>
+  new Response(body, {
+    status,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  });
 
-  <div id="price-menu-container"></div>
+/** 檢查呼叫端是否持有共享密鑰 */
+function checkAuth(request, env) {
+  const given = request.headers.get('X-Worker-Secret');
+  if (!env.WORKER_SHARED_SECRET) return 'SECRET_NOT_CONFIGURED';
+  if (!given) return 'SECRET_HEADER_MISSING';
+  if (!safeEqual(given, env.WORKER_SHARED_SECRET)) return 'SECRET_MISMATCH';
+  return null;
+}
 
-  <div class="info-block">
-    <!-- ⚡ v7：原本是沒有 class 的裸 h3，吃不到標題樣式，補上 .section-title -->
-    <h3 class="section-title">🚚 配送方式與運費</h3>
-    <div class="product-divider"></div>
-    <div class="shipping-content">
-      <div class="shipping-method-block">
-        <p class="shipping-title">📫 <strong>中華郵政宅配</strong></p>
-        <div class="shipping-row">
-          <span class="shipping-weight">3/5斤</span>
-          <span class="shipping-price">$<span id="ship-post-small"></span></span>
-          <span class="shipping-island">
-            <span class="shipping-island-label">🏝️ 離島 3/5斤</span>
-            <span class="shipping-island-price">$<span id="ship-post-island-small"></span></span>
-          </span>
-        </div>
-        <div class="shipping-row">
-          <span class="shipping-weight">7/10斤</span>
-          <span class="shipping-price">$<span id="ship-post-large"></span></span>
-          <span class="shipping-island">
-            <span class="shipping-island-label">🏝️ 離島 7/10斤</span>
-            <span class="shipping-island-price">$<span id="ship-post-island-large"></span></span>
-          </span>
-        </div>
-      </div>
+/* ══════════════ 端點：/selftest ══════════════ */
 
-      <div class="shipping-method-block">
-        <p class="shipping-title">🏪 <strong>7-11 超商取件</strong></p>
-        <div class="shipping-row">
-          <span class="shipping-weight">單筆固定</span>
-          <span class="shipping-price">$<span id="ship-711"></span></span>
-        </div>
-      </div>
+/**
+ * 用 PAYUNi 文件的官方範例值驗證加解密實作。
+ * 金鑰與明文都是寫死的測試值，與你的正式金鑰無關，可以安全公開存取。
+ *
+ * 這個端點的價值：任何時候懷疑加密層有問題，先打這裡。
+ * 全 PASS 代表演算法沒壞，問題在別的地方。
+ */
+async function handleSelfTest() {
+  const KEY = '12345678901234567890123456789012';
+  const IV = '1234567890123456';
+  const EXPECT_ENC =
+    '47396636346f66735853533167396942344f587a3775696b34732b596e70452b675270564f73536b7753446c6a4d77526d4e374256514173672b6c78616d4533504d475152642b362f4530626f446e4f6356533969756c743a3a3a4b5961342f4635456965743069385a784b6277704a413d3d';
+  const EXPECT_SHA =
+    'E97180D78C8378D64A188D292938B9D2717034F292B626019B01DF160AEFC0B7';
+  const EXPECT_PLAIN = 'MerID=AAA&MerTradeNO=BBB&Prod=%E5%95%86%E5%93%81%E8%AA%AA%E6%98%8E';
 
-      <div class="shipping-method-block">
-        <p class="shipping-title">🐈‍⬛ <strong>黑貓宅急便</strong></p>
-        <div class="shipping-row">
-          <span class="shipping-weight">3/5斤</span>
-          <span class="shipping-price">$<span id="ship-blackcat-small"></span></span>
-          <span class="shipping-island">
-            <span class="shipping-island-label">🏝️ 離島 3/5斤</span>
-            <span class="shipping-island-price">$<span id="ship-blackcat-island-small"></span></span>
-          </span>
-        </div>
-        <div class="shipping-row">
-          <span class="shipping-weight">7/10斤</span>
-          <span class="shipping-price">$<span id="ship-blackcat-large"></span></span>
-          <span class="shipping-island">
-            <span class="shipping-island-label">🏝️ 離島 7/10斤</span>
-            <span class="shipping-island-price">$<span id="ship-blackcat-island-large"></span></span>
-          </span>
-        </div>
-      </div>
-    </div>
-  </div>
+  try {
+    const plaintext = buildQueryString({ MerID: 'AAA', MerTradeNO: 'BBB', Prod: '商品說明' });
+    const gotEnc = await payuniEncrypt(plaintext, KEY, IV);
+    const gotSha = await payuniHash(gotEnc, KEY, IV);
+    const gotDec = await payuniDecrypt(gotEnc, KEY, IV);
 
-  <div class="button-group">
-    <button class="btn-secondary" onclick="goToStep(2)">⬅️ 返回品種介紹</button>
-    <button class="btn-primary" onclick="goToStep(4)">🛒 前往訂購</button>
-  </div>
-</div>
+    const results = {
+      querystring: plaintext === EXPECT_PLAIN,
+      encrypt: gotEnc === EXPECT_ENC,
+      hashInfo: gotSha === EXPECT_SHA,
+      decrypt: gotDec === EXPECT_PLAIN,
+    };
+    const allPass = Object.values(results).every(Boolean);
 
-<!-- ------ 第4頁 : 訂購頁面 ------ -->
-<div id="step4-order-form" class="page-content" style="display:none;">
-  <h2 class="main-title" id="order-title">訂購資訊</h2>
-  <div class="sub-title">Harvested for You by Pro-Bro Avo.</div>
-  <div class="title-divider"></div>
+    return json(
+      {
+        ok: allPass,
+        verdict: allPass ? 'ALL_PASS' : 'FAILED',
+        results,
+        ...(allPass ? {} : { got: { plaintext, gotEnc, gotSha, gotDec } }),
+      },
+      allPass ? 200 : 500
+    );
+  } catch (err) {
+    return json({ ok: false, verdict: 'EXCEPTION', error: String(err) }, 500);
+  }
+}
 
-  <div class="info-block">
-    <!-- ⚡ v7：表單標題原本用 <p style="margin-top:..."><strong>，改為 .form-label -->
-    <p class="form-label">🚚 1. 配送方式選擇</p>
-    <div class="hint-warm-text" id="shipping-note"></div>
+/* ══════════════ 端點：/encrypt ══════════════ */
 
-    <!-- ⚡ 拿掉 onchange：原本 HTML 的 onchange 跟 script.js 的 addEventListener
-         同時存在，每次切換配送方式整個流程會跑兩遍。改成只由 JS 綁定一次。 -->
-    <select id="shipping-method">
-      <option value="" selected disabled>--- 請選擇配送方式 ---</option>
-      <option value="post" id="opt-post">📫 中華郵政 (限重10斤內)</option>
-      <option value="711" id="opt-711">🏪 7-11 超商取件 (限重7斤內)</option>
-      <option value="blackcat" id="opt-blackcat">🐈‍⬛ 黑貓宅配 (限重10斤內)</option>
-    </select>
+/**
+ * 收 { params: {...} }，回傳可直接塞進 form 的四個欄位。
+ *
+ * 呼叫端（GAS）只需要組出業務參數，不必知道加密細節。
+ * MerID 會由 Worker 自動補上，呼叫端不用傳。
+ */
+async function handleEncrypt(request, env) {
+  const authErr = checkAuth(request, env);
+  if (authErr) return json({ ok: false, error: authErr }, 401);
 
-    <p class="form-label">📦 2. 規格選擇</p>
-    <!-- 🆕 規格選擇備註：文字由試算表「3-訂購與運費」的「規格選擇備註」控制，
-         沒填就自動隱藏，用法跟上面的 #shipping-note 一樣 -->
-    <div class="hint-warm-text" id="spec-note" style="display:none;"></div>
-    <div id="product-list-container"></div>
-  </div>
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ ok: false, error: 'INVALID_JSON' }, 400);
+  }
 
-  <!-- 懸浮購物車 -->
-  <div id="floating-cart">
-    <div id="floating-cart-handle">
-      <span class="cart-handle-label">🛒 購物車</span>
-      <span class="cart-hint">點我開闔</span>
-      <span class="cart-bar-summary" id="cart-bar-summary"></span>
-    </div>
-    <div id="floating-cart-content">
-      <div id="cart-note">⚠️ 本購物車為一箱出貨!</div>
-      <div id="floating-cart-items"></div>
-      <div id="floating-cart-totals">
-        <div class="totals-divider"></div>
-        <div id="floating-subtotal">小計: $0</div>
-        <div id="floating-shipping">運費: $0</div>
-        <div id="floating-total">總計: $0</div>
-        <div id="cart-merge-option" style="display:none;"></div>
-      </div>
-    </div>
-  </div>
+  const params = body?.params;
+  if (!params || typeof params !== 'object') {
+    return json({ ok: false, error: 'MISSING_PARAMS' }, 400);
+  }
 
-  <!-- 訂購頁面圖片
-       ⚡ v7：移除 padding !important 與圖片寫死的 height，改由 style.css 控制 -->
-  <div id="order-middle-card" class="info-block" style="display: none;">
-    <div class="order-img-stack">
-      <div id="container-img1" class="variety-img-container">
-        <img id="order-card-img1" src="" class="variety-img" loading="lazy" onclick="showLightbox(this.src)">
-      </div>
-      <div id="container-img2" class="variety-img-container">
-        <img id="order-card-img2" src="" class="variety-img" loading="lazy" onclick="showLightbox(this.src)">
-      </div>
-    </div>
-    <div id="order-card-text" class="variety-grading-note" style="display: none;"></div>
-  </div>
+  // 呼叫端傳 orderKey（Sheet M 欄的 UUID），Worker 負責轉成 22 字元的
+  // MerTradeNo。GAS 不需要知道編碼細節，回調還原也在 Worker 這一側完成。
+  let merTradeNo = params.MerTradeNo;
+  if (body.orderKey) {
+    try {
+      merTradeNo = shortenUuid(body.orderKey);
+    } catch {
+      return json({ ok: false, error: 'INVALID_ORDER_KEY', hint: '需要標準 UUID 格式' }, 400);
+    }
+  }
 
-  <!-- 訂購資料填寫 -->
-  <div class="info-block">
-    <p class="form-label">👤 收件人姓名</p>
-    <input type="text" id="cust-name" placeholder="請輸入姓名" maxlength="40">
+  if (!merTradeNo) {
+    return json({ ok: false, error: 'MISSING_ORDER_KEY_OR_MER_TRADE_NO' }, 400);
+  }
+  if (!/^[A-Za-z0-9_-]{1,25}$/.test(String(merTradeNo))) {
+    return json(
+      { ok: false, error: 'INVALID_MER_TRADE_NO', hint: '限 25 字元內的 [A-Za-z0-9_-]' },
+      400
+    );
+  }
 
-    <p class="form-label">📞 連絡電話</p>
-    <input type="tel" id="cust-phone" placeholder="請輸入手機號碼" inputmode="numeric" maxlength="20">
+  try {
+    const merID = env.PAYUNI_MER_ID;
+    const full = {
+      MerID: merID,
+      Timestamp: params.Timestamp || Math.floor(Date.now() / 1000),
+      ...params,
+    };
+    full.MerID = merID;           // 防止呼叫端覆蓋
+    full.MerTradeNo = merTradeNo; // 一律使用轉換後的值
 
-    <div id="store-address-section" style="display:none;">
-      <p class="form-label">🏪 7-11 取件門市</p>
-      <input type="text" id="store-name" placeholder="請填寫 7-11 門市名稱或門市編號" maxlength="60">
-    </div>
+    const plaintext = buildQueryString(full);
+    const encryptInfo = await payuniEncrypt(plaintext, env.PAYUNI_HASH_KEY, env.PAYUNI_IV_KEY);
+    const hashInfo = await payuniHash(encryptInfo, env.PAYUNI_HASH_KEY, env.PAYUNI_IV_KEY);
 
-    <div id="post-address-section" style="display:none;">
-      <p class="form-label">🏠 收件地址</p>
-      <div class="address-grid">
-        <div class="grid-item">
-          <select id="county"><option value="">選擇縣市</option></select>
-        </div>
-        <div class="grid-item">
-          <select id="district" disabled><option value="">選擇區域</option></select>
-        </div>
-        <div class="grid-item zip-box">
-          <input type="text" id="zipcode" readonly class="readonly-input" placeholder="區號">
-        </div>
-      </div>
-      <div id="address-error-hint" class="address-error-hint" style="display:none;">
-        請先選擇縣市與行政區
-      </div>
-      <div id="island-shipping-hint" class="hint-warm-text" style="display:none;">
-        🏝️ 您選擇的地區屬於離島，運費將依離島價格計算
-      </div>
-      <input type="text" id="delivery-address" placeholder="請輸入詳細道路、巷弄、號樓" maxlength="100">
-    </div>
+    return json({
+      ok: true,
+      merTradeNo,
+      form: { MerID: merID, Version: '2.0', EncryptInfo: encryptInfo, HashInfo: hashInfo },
+    });
+  } catch (err) {
+    // 這裡絕不能吞掉錯誤：呼叫端必須知道加密失敗，而不是拿到一個空字串
+    return json({ ok: false, error: 'ENCRYPT_FAILED', detail: String(err) }, 500);
+  }
+}
 
-    <p class="form-label">✨ 小小許願區 (備註)</p>
-    <textarea id="order-note" maxlength="300"
-      placeholder="有特殊出貨需求可以告訴我們&#10;（例如指定分箱方式、想對我們說的話blabla...）"></textarea>
-  </div>
+/* ══════════════ 端點：/decrypt ══════════════ */
 
-  <div class="button-group">
-    <button class="btn-secondary" onclick="goToStep(3)">🥑 返回價格表</button>
-    <button class="btn-primary" id="submit-btn" onclick="submitOrder()">✅ 確認訂購</button>
-  </div>
-</div>
+async function handleDecrypt(request, env) {
+  const authErr = checkAuth(request, env);
+  if (authErr) return json({ ok: false, error: authErr }, 401);
 
-<!-- ------ 第5頁：匯款成功頁面 ------ -->
-<div id="step5-payment-info" class="page-content" style="display: none;">
-  <h2 class="main-title">✨ 已收到資料 謝謝您 ✨</h2>
-  <div class="sub-title">Your Trust, Our Harvest. Thank You.</div>
-  <div class="title-divider"></div>
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ ok: false, error: 'INVALID_JSON' }, 400);
+  }
+  if (!body?.encryptInfo) return json({ ok: false, error: 'MISSING_ENCRYPT_INFO' }, 400);
 
-  <div id="order-summary-card" class="info-block">
-    <!-- ⚡ v7：補上 .section-title -->
-    <h3 class="section-title">🧾 本次訂購內容</h3>
-    <div id="order-summary-content"></div>
-    <div class="order-total-inside">
-      總金額：
-      <span id="final-amount-display">$0</span>
-    </div>
-  </div>
+  try {
+    const plaintext = await payuniDecrypt(body.encryptInfo, env.PAYUNI_HASH_KEY, env.PAYUNI_IV_KEY);
+    return json({ ok: true, plaintext, parsed: parseQueryString(plaintext) });
+  } catch (err) {
+    return json({ ok: false, error: 'DECRYPT_FAILED', detail: String(err) }, 500);
+  }
+}
 
-  <div class="info-block">
-    <div class="payment-switch-container">
-      <div id="switch-bg" class="switch-active-bg"></div>
-      <div class="switch-option active" id="opt-bank" onclick="switchPayment('bank')">銀行轉帳</div>
-      <div class="switch-option" id="opt-linepay" onclick="switchPayment('linepay')">LINE Pay</div>
-    </div>
+/* ══════════════ 端點：/notify ══════════════ */
 
-    <div id="content-bank" class="payment-content active">
-      <div class="payment-detail-card">
-        <h3 class="payment-card-title">💰 匯款資料</h3>
-        <div class="payment-fields">
-          <p><strong>銀行：</strong><span id="bank-val"></span></p>
-          <p><strong>帳號：</strong><span id="account-val"></span><button type="button" class="btn-copy" id="copy-account-btn" onclick="複製匯款帳號()">複製</button></p>
-          <p><strong>戶名：</strong><span id="name-val"></span></p>
-        </div>
-      </div>
-    </div>
+/**
+ * 接收 PAYUNi 的背景通知。
+ *
+ * 設計原則：先回 200 再說。
+ * 只要驗簽通過、資料解得開，就回成功 —— 即使下游轉發失敗。
+ * 讓 PAYUNi 重送不會解決下游的問題，只會製造重複通知。
+ * 下游失敗的紀錄留在 Cloudflare 的 log 裡，由人來處理。
+ *
+ * 反過來說，驗簽失敗一定要回非 200，那代表有人在偽造回調。
+ */
+async function handleNotify(request, env, ctx) {
+  let fields = {};
+  try {
+    const ct = request.headers.get('Content-Type') || '';
+    if (ct.includes('application/json')) {
+      fields = await request.json();
+    } else {
+      const form = await request.formData();
+      for (const [k, v] of form.entries()) fields[k] = v;
+    }
+  } catch (err) {
+    console.error('[notify] 無法解析請求內容', String(err));
+    return text('BAD_REQUEST', 400);
+  }
 
-    <div id="content-linepay" class="payment-content">
-      <div class="payment-detail-card">
-        <!-- ⚡ v7：原本寫死 LINE 官方綠 #00b900，與品牌色衝突，改用統一標題樣式 -->
-        <h3 class="payment-card-title">🟢 LINE Pay 付款</h3>
-        <p id="lp-announcement"></p>
-        <div class="variety-img-container qr-frame">
-          <img id="lp-qrcode" src="" loading="lazy" onclick="showLightbox(this.src)">
-        </div>
-        <p class="caption-note">( 點擊圖片可放大掃描 )</p>
-      </div>
-    </div>
+  const { EncryptInfo, HashInfo } = fields;
+  if (!EncryptInfo || !HashInfo) {
+    console.error('[notify] 缺少 EncryptInfo 或 HashInfo', JSON.stringify(fields));
+    return text('MISSING_FIELDS', 400);
+  }
 
-    <hr class="soft-divider">
-    <p id="success-reminder-msg" class="success-warm-text"></p>
+  // ① 驗簽 —— 確認這通回調真的來自 PAYUNi
+  let expected;
+  try {
+    expected = await payuniHash(EncryptInfo, env.PAYUNI_HASH_KEY, env.PAYUNI_IV_KEY);
+  } catch (err) {
+    console.error('[notify] 計算 HashInfo 失敗', String(err));
+    return text('HASH_ERROR', 500);
+  }
+  if (!safeEqual(expected.toUpperCase(), String(HashInfo).toUpperCase())) {
+    console.error('[notify] 簽章不符，可能是偽造的回調', JSON.stringify(fields));
+    return text('HASH_MISMATCH', 400);
+  }
 
-    <div class="button-group">
-      <a id="final-line-btn" href="javascript:void(0)" onclick="handleLineJump()" class="btn-primary btn-wide">
-        確認匯款回報
-      </a>
-      <button type="button" onclick="goToStep(1)" class="btn-secondary">回首頁</button>
-    </div>
-  </div>
-</div>
+  // ② 解密
+  let payload;
+  try {
+    const plaintext = await payuniDecrypt(EncryptInfo, env.PAYUNI_HASH_KEY, env.PAYUNI_IV_KEY);
+    payload = plaintext.trim().startsWith('{')
+      ? JSON.parse(plaintext)
+      : parseQueryString(plaintext);
+  } catch (err) {
+    console.error('[notify] 解密失敗', String(err));
+    return text('DECRYPT_ERROR', 500);
+  }
 
-<!-- ------ 燈箱效果 ------
-     ⚡ v7：整組 inline style 改為 .lightbox-* class -->
-<div id="lightbox-overlay" class="lightbox-overlay" onclick="this.style.display='none'" style="display: none;">
-  <div class="lightbox-inner">
-    <img id="lightbox-img" class="lightbox-img" src="" loading="lazy">
-    <div class="lightbox-hint">✕ 點擊畫面任意處關閉</div>
-  </div>
-</div>
+  // 去重鍵：TradeNo 單獨使用是錯的。
+  // 實測顯示 ATM 的取號通知與付款完成通知帶著「相同的 TradeNo」，
+  // 只用 TradeNo 去重會把付款完成通知當成重複而丟棄，
+  // 導致客人已付款但系統永遠顯示未付款 —— 典型的無聲失敗。
+  // 必須把 TradeStatus 納入，同一狀態的重複通知才算重複。
+  const r = payload?.Result || payload || {};
+  const dedupeKey = `${r.TradeNo || 'NO_TRADE_NO'}::${r.TradeStatus ?? 'NO_STATUS'}`;
 
-<!-- ------ 彈跳視窗 ------
-     ⚡ v7：原本 inline 帶 !important，會直接蓋掉 style.css，全部移除 -->
-<div id="custom-alert-overlay" style="display:none;">
-  <div class="info-block alert-dialog">
-    <p id="alert-message" class="alert-message"></p>
-    <button class="btn-primary" onclick="closeAlert()">確定</button>
-  </div>
-</div>
+  console.log('[notify] 驗證通過', JSON.stringify({
+    dedupeKey,
+    apiStatus: fields.Status,
+    message: fields.Message || null,
+    payload,
+  }));
 
-<!-- 🌱 波波酪梨 版權聲明 -->
-<footer class="site-footer">
-  <div class="social-links" id="social-links">
-    <a href="#" id="social-line" class="social-item" target="_blank" rel="noopener" aria-label="LINE" style="display:none;">
-      <span class="social-icon">
-        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 4C7.03 4 3 7.28 3 11.32c0 3.6 3.2 6.62 7.52 7.19.29.06.69.19.79.44.09.23.06.58.03.81l-.13.79c-.04.23-.18.9.79.49.97-.41 5.23-3.08 7.14-5.27C20.4 14.2 21 12.83 21 11.32 21 7.28 16.97 4 12 4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-          <path d="M8.3 9.6v3.6M12 9.6v3.6M10.1 9.6v3.6M13.9 9.6h1.9c.6 0 1 .5 1 1v.4c0 .5-.4 1-1 1h-1.9m0-2.4v3.6m0-1.6h1.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </span>
-      <span class="social-label">LINE</span>
-    </a>
-    <a href="#" id="social-ig" class="social-item" target="_blank" rel="noopener" aria-label="Instagram" style="display:none;">
-      <span class="social-icon">
-        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="4" y="4" width="16" height="16" rx="5" stroke="currentColor" stroke-width="1.6"/>
-          <circle cx="12" cy="12" r="3.6" stroke="currentColor" stroke-width="1.6"/>
-          <circle cx="16.3" cy="7.7" r="0.9" fill="currentColor"/>
-        </svg>
-      </span>
-      <span class="social-label">Instagram</span>
-    </a>
-    <a href="#" id="social-fb" class="social-item" target="_blank" rel="noopener" aria-label="Facebook" style="display:none;">
-      <span class="social-icon">
-        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M14.5 21v-7.2h2.4l.4-2.8h-2.8V9.2c0-.8.2-1.3 1.4-1.3h1.5V5.4c-.3 0-1.1-.1-2.1-.1-2.1 0-3.5 1.3-3.5 3.6v2.1H9.4v2.8h2.4V21h2.7z" fill="currentColor"/>
-        </svg>
-      </span>
-      <span class="social-label">Facebook</span>
-    </a>
-  </div>
-  <div class="footer-policy-links">
-    <a href="privacy.html">隱私權政策</a>
-    <span aria-hidden="true">·</span>
-    <a href="refund-policy.html">退換貨政策</a>
-  </div>  
-  © <span id="year"></span> 波波酪梨 Pro-Bro Avocado. All Rights Reserved.
-</footer>
+  // ③ 還原訂單識別碼
+  //    送出去的是 22 字元的 base64url，收回來要還原成 Sheet 上的 UUID。
+  const shortNo = r.MerTradeNo;
+  let orderKey = null;
+  try {
+    orderKey = restoreUuid(shortNo);
+  } catch {
+    // 還原失敗代表這個 MerTradeNo 不是我們產生的（測試單、或被竄改）。
+    // 不能靜默丟掉 —— 錢可能真的收到了。寫進未匹配區等人處理。
+    console.error('[notify] MerTradeNo 無法還原成 UUID', shortNo);
+    try {
+      await fbRequest(env, `payments_unmatched/${Date.now()}`, 'PUT', {
+        reason: 'MER_TRADE_NO_NOT_UUID',
+        merTradeNo: shortNo || null,
+        receivedAt: new Date().toISOString(),
+        raw: payload,
+      });
+    } catch (e) {
+      console.error('[notify] 連未匹配區都寫不進去', String(e));
+    }
+    return text('SUCCESS', 200); // 對 PAYUNi 而言已收妥，不需重送
+  }
 
-<script>
-  document.getElementById('year').textContent = new Date().getFullYear();
-</script>
+  // ④ 寫入 Firebase
+  try {
+    const result = await savePayment(env, orderKey, dedupeKey, r);
+    console.log('[notify] Firebase', result.action, orderKey, result.status || '');
+  } catch (err) {
+    // 寫入失敗必須明確留下紀錄。這裡回 500 讓 PAYUNi 重送，
+    // 因為資料還沒落地，重送是有意義的（跟下游轉發失敗不同）。
+    console.error('[notify] Firebase 寫入失敗', orderKey, String(err));
+    return text('FIREBASE_WRITE_FAILED', 500);
+  }
 
-      </div><!-- end app-container -->
-    </div><!-- end main-wrapper -->
+  // ⑤ 額外轉發（選用，一般留空）
+  if (env.GAS_NOTIFY_URL) {
+    ctx.waitUntil(
+      fetch(env.GAS_NOTIFY_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Worker-Secret': env.WORKER_SHARED_SECRET || '',
+        },
+        body: JSON.stringify({
+          source: 'payuni-notify',
+          receivedAt: new Date().toISOString(),
+          orderKey,
+          dedupeKey,
+          payload: r,
+        }),
+      })
+        .then((res) => console.log('[notify] 已轉發下游，HTTP', res.status))
+        .catch((e) => console.error('[notify] 轉發下游失敗', String(e)))
+    );
+  }
 
-    <!-- 🔥 Firebase 即時庫存 SDK（compat 版本，提供全域 firebase 物件）
-         必須放在 script.js 之前載入 -->
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  return text('SUCCESS', 200);
+}
 
-    <!-- 📊 GA4 追蹤模組。必須在 script.js「之前」 -->
-    <script src="analytics.js?v=2.2"></script>
-    <script src="script.js?v=8"></script>
-  </body>
-</html>
+/* ══════════════ 訂單識別碼轉換 ══════════════ */
+
+/**
+ * PAYUNi 的 MerTradeNo 限制 25 字元 [A-Za-z0-9_-]，
+ * 但你的訂單識別碼是 36 字元的 UUID，塞不進去。
+ *
+ * UUID 本體是 16 bytes，那 36 字元只是十六進位的寫法。
+ * 改用 base64url 表示同樣的 16 bytes → 22 字元，字元集剛好合規。
+ * 完全可逆，不需要對照表，也沒有碰撞風險。
+ */
+function shortenUuid(uuid) {
+  const hex = String(uuid).replace(/-/g, '');
+  if (!/^[0-9a-fA-F]{32}$/.test(hex)) throw new Error('INVALID_UUID');
+  const bytes = hexToBytes(hex);
+  return bytesToB64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function restoreUuid(short) {
+  const b64 = String(short).replace(/-/g, '+').replace(/_/g, '/');
+  const bytes = b64ToBytes(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+  if (bytes.length !== 16) throw new Error('INVALID_SHORT_UUID');
+  const h = bytesToHex(bytes);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+/* ══════════════ Google OAuth（service account） ══════════════ */
+
+// Worker isolate 存活期間共用同一顆 token，避免每通回調都重簽 JWT。
+// isolate 被回收就重新取得，沒有正確性問題。
+let _tokenCache = { value: null, expiresAt: 0 };
+
+function b64url(u8) {
+  return bytesToB64(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function pemToDer(pem) {
+  const body = pem.replace(/-----[A-Z ]+-----/g, '').replace(/\s/g, '');
+  return b64ToBytes(body);
+}
+
+async function getAccessToken(env) {
+  const now = Math.floor(Date.now() / 1000);
+  if (_tokenCache.value && _tokenCache.expiresAt > now + 60) return _tokenCache.value;
+
+  let sa;
+  try {
+    sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  } catch {
+    throw new Error('SERVICE_ACCOUNT_JSON_INVALID');
+  }
+  if (!sa.client_email || !sa.private_key) throw new Error('SERVICE_ACCOUNT_FIELDS_MISSING');
+
+  const header = b64url(enc.encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })));
+  const claim = b64url(
+    enc.encode(
+      JSON.stringify({
+        iss: sa.client_email,
+        scope: [
+          'https://www.googleapis.com/auth/firebase.database',
+          'https://www.googleapis.com/auth/userinfo.email',
+        ].join(' '),
+        aud: 'https://oauth2.googleapis.com/token',
+        iat: now,
+        exp: now + 3600,
+      })
+    )
+  );
+
+  const key = await crypto.subtle.importKey(
+    'pkcs8',
+    pemToDer(sa.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(`${header}.${claim}`));
+  const jwt = `${header}.${claim}.${b64url(new Uint8Array(sig))}`;
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${jwt}`,
+  });
+  if (!res.ok) {
+    throw new Error(`TOKEN_EXCHANGE_FAILED_${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+  const data = await res.json();
+  if (!data.access_token) throw new Error('TOKEN_MISSING_IN_RESPONSE');
+
+  _tokenCache = { value: data.access_token, expiresAt: now + (data.expires_in || 3600) };
+  return _tokenCache.value;
+}
+
+/* ══════════════ Firebase 讀寫 ══════════════ */
+
+async function fbRequest(env, path, method, body) {
+  const token = await getAccessToken(env);
+  const base = String(env.FIREBASE_DB_URL || '').replace(/\/+$/, '');
+  if (!base) throw new Error('FIREBASE_DB_URL_NOT_SET');
+
+  const res = await fetch(`${base}/${path}.json`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  if (!res.ok) {
+    throw new Error(`FIREBASE_${method}_FAILED_${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+  const txt = await res.text();
+  return txt === 'null' || txt === '' ? null : JSON.parse(txt);
+}
+
+/* ══════════════ 付款狀態正規化 ══════════════ */
+
+const PAYMENT_TYPE_MAP = { '1': 'CREDIT', '2': 'ATM', '3': 'CVS', '9': 'LINEPAY' };
+const TRADE_STATUS_MAP = { '0': '待付款', '1': '已付款', '2': '付款失敗', '3': '已退款', '4': '已取消' };
+
+/**
+ * 把 PAYUNi 的原始回調整理成 Sheet 用得上的形狀。
+ * 遇到沒見過的代碼一律標示為 UNKNOWN_xx，絕不靜默對應成某個既有值 ——
+ * 寧可在 Sheet 上看到怪東西，也不要把失敗的訂單標成成功。
+ */
+function normalizePayment(p) {
+  const pt = String(p.PaymentType ?? '');
+  const ts = String(p.TradeStatus ?? '');
+  return {
+    tradeNo: p.TradeNo || null,
+    tradeAmt: p.TradeAmt != null ? Number(p.TradeAmt) : null,
+    tradeStatus: ts,
+    paymentType: pt,
+    paymentMethod: PAYMENT_TYPE_MAP[pt] || `UNKNOWN_${pt || 'EMPTY'}`,
+    status: TRADE_STATUS_MAP[ts] || `UNKNOWN_${ts || 'EMPTY'}`,
+    message: p.Message || null,
+    payNo: p.PayNo || null,          // ATM 虛擬帳號 / 超商代碼
+    bankType: p.BankType || null,    // 虛擬帳號所屬銀行
+    payBank: p.PayBank || null,      // 客人的付款銀行
+    account5No: p.Account5No || null, // 帳號末五碼 —— 取代人工回報
+    payTime: p.PayTime ? String(p.PayTime).replace(/\+/g, ' ') : null,
+    expireDate: p.ExpireDate ? String(p.ExpireDate).replace(/\+/g, ' ') : null,
+    card4No: p.Card4No || null,
+    cardBank: p.CardBank || null,
+    authBankName: p.AuthBankName || null,
+    authCode: p.AuthCode || null,
+  };
+}
+
+/* ══════════════ 寫入 payments 節點 ══════════════ */
+
+/**
+ * 回傳 { action: 'written' | 'duplicate' | 'stale' }
+ *
+ * 去重鍵是 TradeNo::TradeStatus，不是單獨的 TradeNo。
+ * 實測確認 ATM 的取號與付款完成通知帶著相同的 TradeNo，
+ * 只用 TradeNo 去重會把付款完成通知丟掉，造成「已付款卻顯示未付款」。
+ */
+async function savePayment(env, orderKey, dedupeKey, payload) {
+  const existing = await fbRequest(env, `payments/${orderKey}`, 'GET');
+
+  if (existing?.events?.[dedupeKey]) return { action: 'duplicate' };
+
+  const incoming = normalizePayment(payload);
+
+  // 通知可能亂序抵達。已經是「已付款」時，不讓後到的取號通知把狀態退回去。
+  // 事件仍然記錄下來，只是不覆蓋主狀態。
+  const isStale = existing?.tradeStatus === '1' && incoming.tradeStatus === '0';
+
+  const patch = {
+    [`events/${dedupeKey}`]: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    syncedAt: null, // 清掉同步標記，讓 processPendingTasks 重新撈到
+  };
+
+  if (!isStale) {
+    for (const [k, v] of Object.entries(incoming)) {
+      if (v !== null || existing?.[k] === undefined) patch[k] = v;
+    }
+    patch.raw = payload;
+  }
+
+  await fbRequest(env, `payments/${orderKey}`, 'PATCH', patch);
+  return { action: isStale ? 'stale' : 'written', status: incoming.status };
+}
+
+/* ══════════════ 付款頁 ══════════════ */
+
+const UPP_SANDBOX = 'https://sandbox-api.payuni.com.tw/api/upp';
+const UPP_LIVE = 'https://api.payuni.com.tw/api/upp';
+
+/** 沙箱／正式切換。上線時把 SANDBOX 設為 false 並重新部署。 */
+const SANDBOX = true;
+
+const PAGE_CSS = `
+:root{--creamy:#FAF7EF;--avo-green:#EDE8DA;--avo-dark:#3E4C33;--text-main:#4B5540;
+--herb-green:#6F8A54;--avo-accent:#9A7E5D;--sage:#A9BE94;--clay-deep:#7A6449;
+--clay-pale:#EDE4D3;--rule:rgba(122,100,73,.22);--rule-soft:rgba(122,100,73,.14)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;padding:32px 20px;background:var(--avo-green);color:var(--text-main);
+font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+font-size:.9375rem;line-height:1.8;letter-spacing:.5px;
+background-image:repeating-linear-gradient(to bottom,rgba(122,100,73,.028) 0,
+rgba(122,100,73,.028) 1px,transparent 1px,transparent 7px)}
+.card{max-width:520px;margin:0 auto;background:var(--creamy);
+border:1px solid var(--rule);border-radius:20px;padding:32px 26px;text-align:center}
+h1{font-family:"Noto Serif TC",serif;font-size:1.2rem;font-weight:600;letter-spacing:2px;
+color:var(--avo-dark);margin:0 0 6px}
+.sub{font-size:.72rem;letter-spacing:3px;color:var(--avo-accent);text-transform:uppercase;
+margin:0 0 22px}
+.rule{width:180px;height:1px;background:var(--rule);margin:20px auto;position:relative}
+.rule::before,.rule::after{content:"";position:absolute;top:50%;width:6px;height:6px;
+border-radius:50%;background:var(--avo-accent);transform:translateY(-50%)}
+.rule::before{left:-3px}.rule::after{right:-3px}
+.field{background:rgba(237,228,211,.5);border:1px dashed var(--avo-accent);
+border-radius:14px;padding:18px;margin:18px 0}
+.label{font-size:.78rem;color:var(--clay-deep);letter-spacing:1.5px;margin:0 0 4px}
+.value{font-family:"Noto Serif TC",serif;font-size:1.4rem;font-weight:600;
+color:var(--avo-dark);letter-spacing:1px;font-variant-numeric:tabular-nums;margin:0;
+word-break:break-all}
+.btn{display:inline-flex;align-items:center;justify-content:center;width:100%;
+padding:15px 10px;border:1px solid var(--herb-green);border-radius:999px;
+background:var(--herb-green);color:var(--creamy);font-size:.95rem;font-weight:600;
+letter-spacing:2px;cursor:pointer;font-family:inherit;text-decoration:none;margin-top:8px}
+.btn-ghost{background:var(--creamy);color:var(--clay-deep);border-color:var(--avo-accent)}
+.note{font-size:.82rem;color:var(--avo-accent);line-height:1.7;margin-top:18px}
+.copy{margin-left:8px;padding:4px 14px;font-size:.75rem;font-family:inherit;
+letter-spacing:1px;color:var(--clay-deep);background:var(--creamy);
+border:1px solid var(--avo-accent);border-radius:999px;cursor:pointer;white-space:nowrap}
+.copy.done{background:var(--herb-green);border-color:var(--herb-green);color:var(--creamy)}
+`;
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function page(title, sub, bodyHtml) {
+  return new Response(
+    `<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(title)}｜波波酪梨</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@600&display=swap" rel="stylesheet">
+<style>${PAGE_CSS}</style></head>
+<body><div class="card"><h1>${esc(title)}</h1><p class="sub">${esc(sub)}</p>
+<div class="rule"></div>${bodyHtml}</div></body></html>`,
+    { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+  );
+}
+
+const LINE_BTN =
+  '<a class="btn btn-ghost" href="https://lin.ee/PBsoOcU" target="_blank" rel="noopener">聯繫我們</a>';
+
+/**
+ * 付款頁。GET /pay?k={UUID}
+ *
+ * 🔑 這裡最重要的性質是「冪等」。
+ *
+ * PAYUNi 規定 MerTradeNo 十分鐘內不可重複，超過十分鐘再送同一筆訂單
+ * 會建立「新的交易、新的虛擬帳號」。客人手上如果留著舊帳號，就變成
+ * 兩組帳號對同一筆訂單 —— 他匯到舊的那組，你收得到錢卻對不上帳；
+ * 或者更糟，他兩組都匯。
+ *
+ * 所以進來先看 payments/{uuid} 的現況，只有「完全沒有付款紀錄」時
+ * 才產生新交易。有帳號就把現有的顯示出來，已付款就顯示完成。
+ * 同一個連結因此自動變成「查詢我的繳費帳號」頁面。
+ */
+async function handlePay(request, env) {
+  const url = new URL(request.url);
+  const key = (url.searchParams.get('k') || '').trim();
+
+  if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(key)) {
+    return page('連結不正確', 'INVALID LINK',
+      `<p>這個訂單連結看起來有問題，請回到訂購頁面重新操作。</p>${LINE_BTN}`);
+  }
+
+  // ① 先看付款現況
+  let paid = null;
+  try {
+    paid = await fbRequest(env, `payments/${key}`, 'GET');
+  } catch (err) {
+    console.error('[pay] 讀取付款狀態失敗', key, String(err));
+    return page('系統忙碌', 'PLEASE RETRY',
+      `<p>暫時無法讀取訂單狀態，請稍等幾秒後重新整理。</p>${LINE_BTN}`);
+  }
+
+  if (paid && paid.tradeStatus === '1') {
+    return page('付款完成', 'PAYMENT COMPLETED',
+      `<p>我們已收到您的付款，將盡快為您排入出貨序列 🥑</p>
+       ${paid.tradeAmt ? `<div class="field"><p class="label">付款金額</p><p class="value">NT$ ${esc(paid.tradeAmt)}</p></div>` : ''}
+       ${LINE_BTN}`);
+  }
+
+  // ② 已取號但未付款 —— 顯示現有帳號，絕不重新建交易
+  if (paid && paid.payNo && (paid.paymentMethod === 'ATM' || paid.paymentMethod === 'CVS')) {
+    const 已過期 = paid.expireDate ? (Date.parse(paid.expireDate.replace(/-/g, '/')) < Date.now()) : false;
+    if (!已過期) {
+      const isAtm = paid.paymentMethod === 'ATM';
+      return page(isAtm ? '請完成轉帳' : '請至超商繳費', 'AWAITING PAYMENT',
+        `<div class="field">
+           <p class="label">${isAtm ? '虛擬帳號' : '繳費代碼'}</p>
+           <p class="value" id="no">${esc(paid.payNo)}</p>
+           <button class="copy" onclick="navigator.clipboard.writeText('${esc(paid.payNo)}');this.textContent='已複製';this.classList.add('done')">複製</button>
+         </div>
+         <div class="field"><p class="label">應繳金額</p><p class="value">NT$ ${esc(paid.tradeAmt)}</p></div>
+         ${paid.expireDate ? `<p class="note">繳費期限　${esc(paid.expireDate)}</p>` : ''}
+         <p class="note">✨ 完成付款後，才會為您排入出貨序列</p>
+         ${LINE_BTN}`);
+    }
+  }
+
+  // ③ 沒有付款紀錄 → 讀訂單收據，產生付款表單
+  let receipt = null;
+  try {
+    receipt = await fbRequest(env, `orders/${key}`, 'GET');
+  } catch (err) {
+    console.error('[pay] 讀取訂單收據失敗', key, String(err));
+  }
+
+  if (!receipt || !(Number(receipt.total) > 0)) {
+    return page('找不到訂單', 'ORDER NOT FOUND',
+      `<p>查無此訂單，或訂單資料已逾保留期限。<br>若您剛完成下單，請稍等幾秒後重新整理。</p>${LINE_BTN}`);
+  }
+
+  try {
+    const merTradeNo = shortenUuid(key);
+    const expire = new Date(Date.now() + 86400000);
+    const params = {
+      MerID: env.PAYUNI_MER_ID,
+      MerTradeNo: merTradeNo,
+      TradeAmt: Math.round(Number(receipt.total)),
+      Timestamp: Math.floor(Date.now() / 1000),
+      ProdDesc: String(receipt.items || '波波酪梨').replace(/;/g, '；').slice(0, 500),
+      ReturnURL: `${env.SITE_URL || 'https://probroavocado.com'}/?order=${key}`,
+      NotifyURL: `${new URL(request.url).origin}/notify`,
+      ExpireDate: expire.toISOString().slice(0, 10),
+      TradeLExpireSec: 600,
+    };
+
+    const plaintext = buildQueryString(params);
+    const encryptInfo = await payuniEncrypt(plaintext, env.PAYUNI_HASH_KEY, env.PAYUNI_IV_KEY);
+    const hashInfo = await payuniHash(encryptInfo, env.PAYUNI_HASH_KEY, env.PAYUNI_IV_KEY);
+
+    const fields = { MerID: env.PAYUNI_MER_ID, Version: '2.0', EncryptInfo: encryptInfo, HashInfo: hashInfo };
+    const inputs = Object.entries(fields)
+      .map(([k, v]) => `<input type="hidden" name="${k}" value="${v}">`).join('');
+
+    return new Response(
+      `<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>前往付款｜波波酪梨</title><style>${PAGE_CSS}</style></head>
+<body><div class="card">
+<h1>正在前往付款</h1><p class="sub">REDIRECTING</p><div class="rule"></div>
+<p class="note">若畫面沒有自動跳轉，請按下方按鈕</p>
+<form id="pf" method="POST" action="${SANDBOX ? UPP_SANDBOX : UPP_LIVE}">
+${inputs}<button type="submit" class="btn">前往付款</button></form>
+<script>setTimeout(function(){document.getElementById("pf").submit()},400)<\/script>
+</div></body></html>`,
+      { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+    );
+  } catch (err) {
+    // 加密失敗不能靜默 —— 客人要看得到明確訊息，你要在 log 看得到原因
+    console.error('[pay] 產生付款表單失敗', key, String(err));
+    return page('付款頁面產生失敗', 'PLEASE RETRY',
+      `<p>系統暫時無法連上金流服務，請稍等幾秒後重新點一次連結。<br>
+       您的訂單仍然有效，不會消失。</p>${LINE_BTN}`);
+  }
+}
+
+/* ══════════════ 路由 ══════════════ */
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+    const method = request.method.toUpperCase();
+
+    try {
+      if (method === 'GET' && (path === '/' || path === '/health')) {
+        return json({
+          ok: true,
+          service: 'probro-payuni-crypto',
+          time: new Date().toISOString(),
+          configured: {
+            merId: Boolean(env.PAYUNI_MER_ID),
+            hashKey: Boolean(env.PAYUNI_HASH_KEY),
+            ivKey: Boolean(env.PAYUNI_IV_KEY),
+            sharedSecret: Boolean(env.WORKER_SHARED_SECRET),
+            serviceAccount: Boolean(env.FIREBASE_SERVICE_ACCOUNT),
+            firebaseDbUrl: Boolean(env.FIREBASE_DB_URL),
+            gasNotifyUrl: Boolean(env.GAS_NOTIFY_URL),
+          },
+        });
+      }
+
+      // Firebase 連線檢查：實際換一次 token 並讀一次節點
+      if (method === 'GET' && path === '/fbtest') {
+        const authErr = checkAuth(request, env);
+        if (authErr) return json({ ok: false, error: authErr }, 401);
+        try {
+          const token = await getAccessToken(env);
+          const probe = await fbRequest(env, 'payments', 'GET');
+          return json({
+            ok: true,
+            tokenAcquired: Boolean(token),
+            paymentsNodeExists: probe !== null,
+            existingKeys: probe ? Object.keys(probe).length : 0,
+          });
+        } catch (err) {
+          return json({ ok: false, error: 'FIREBASE_TEST_FAILED', detail: String(err) }, 500);
+        }
+      }
+
+      if (method === 'GET' && path === '/selftest') return handleSelfTest();
+      if (method === 'POST' && path === '/encrypt') return handleEncrypt(request, env);
+      if (method === 'POST' && path === '/decrypt') return handleDecrypt(request, env);
+      if (method === 'POST' && path === '/notify') return handleNotify(request, env, ctx);
+
+      if (method === 'GET' && path === '/pay') return handlePay(request, env);
+
+      return json({ ok: false, error: 'NOT_FOUND', path, method }, 404);
+    } catch (err) {
+      console.error('[fatal]', String(err));
+      return json({ ok: false, error: 'UNHANDLED', detail: String(err) }, 500);
+    }
+  },
+};
