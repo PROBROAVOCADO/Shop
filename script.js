@@ -65,6 +65,8 @@
 // ========================================
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwbkKqipfPrimFs7-d6ZorySDv0g5yhq_vbGGp2xmWZm2diNsblTfMjwP8kz-Hx9iRDTQ/exec';
 const CONFIG_JSON_URL  = 'https://probroavocado.com/data/config.json';
+const PAY_WORKER_URL = 'https://probro-payuni-crypto.probroavocado.workers.dev';
+const FIREBASE_PAYMENTS_PATH = 'payments';
 const ADDRESS_JSON_URL = 'https://probroavocado.com/data/address.json';
 
 // 🔥 Firebase 即時控制節點（唯讀，這個網址本來就是公開資訊）
@@ -136,6 +138,15 @@ var serverClockOffset = 0; // 伺服器時間 - 本機時間
 // 🚦 開關狀態（即時層）
 var orderSwitch = '開';
 var shippingSwitch = { post: '', '711': '', blackcat: '' };
+
+// 💳 付款模式。'payuni' = 線上金流；'bank' = 退回舊的匯款資訊。
+//    讀不到時預設 payuni（正常營運是新流程，這是安全的那一邊）。
+//    冷啟動由快照提供，Firebase 一連上就以推播為準 —— 跟 orderSwitch 同一個機制。
+var paymentMode = 'payuni';
+ 
+// 目前成功頁正在顯示哪一筆訂單，以及它的付款狀態監聽
+var currentPayOrderKey = null;
+var payStatusRef = null;
 
 // 🩺 健康判斷用（v6 修正誤報）
 const 控制節點寬限MS = 20000;   // 進站後這段時間內不做健康判斷
@@ -637,6 +648,7 @@ window.onload = async function () {
     if (!已有即時資料) {
       applyReleaseStatus(cfg['上架狀態']);
       applySwitches(cfgGet(cfg['首頁'], '訂單開關') || '開', 讀取配送開關(cfg['訂購']));
+      paymentMode = String(cfgGet(cfg['首頁'], '付款模式') || 'payuni').trim();
     }
 
     // 🔑 D1：初始化時設定一次基準，之後 lastKnown 只由 ticker 更新。
@@ -675,6 +687,12 @@ window.onload = async function () {
     // 載入期間收到的推播，這時候才有畫面可以套
     flushPendingControl();
 
+    // 🔗 從網址進來的（付款完成返回、或客人開了保存的訂單連結）
+    const 已進成功頁 = await 從網址載入訂單();
+
+    // 🔔 沒有的話，檢查有沒有未完成付款的訂單要提醒
+    if (!已進成功頁) 檢查未付款訂單();
+    
     // 🖼️ 趁剩下的載入時間把後面幾頁的圖片先抓回來（不阻塞）。
     // 客人翻到品種頁、訂購頁、成功頁時就不會再等圖。
     preloadLaterImages(cfg);
@@ -2040,6 +2058,7 @@ function applyControl(control) {
   });
 
   orderSwitch = String(control.orderSwitch || '開').trim();
+  paymentMode = String(control.paymentMode || 'payuni').trim();
   shippingSwitch = {
     post:     String((control.shipping && control.shipping.post) || '').trim(),
     '711':    String((control.shipping && control.shipping['711']) || '').trim(),
@@ -2479,66 +2498,129 @@ async function verifyStockBeforeSubmit() {
 
 
 // ========================================
-// ✅ 成功頁
+// ✅ 成功頁（取代舊版 renderSuccessPage）
 // ========================================
+ 
+/**
+ * ⚠️ 請用這一版取代 script.js 裡原本的 renderSuccessPage。
+ *
+ * 相對舊版的改動：
+ *   ・拿掉匯款資訊與 LINE Pay QR 的填值（改由 渲染付款區塊 依模式決定）
+ *   ・新增付款狀態讀取與訂閱
+ *   ・金額仍然一律讀 currentOrderSummary，不讀 finalTotal（原因見下方註解）
+ */
 function renderSuccessPage() {
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val || ''; };
-  set('bank-val', window.APP_CONFIG.bankName);
-  set('account-val', window.APP_CONFIG.bankAcc);
-  set('name-val', window.APP_CONFIG.bankUser);
-  set('lp-announcement', window.APP_CONFIG.linePayMsg);
-
-  if (window.APP_CONFIG.linePayImgId) {
-    const qr = document.getElementById('lp-qrcode');
-    if (qr) qr.src = resolveImageUrl(window.APP_CONFIG.linePayImgId, 500);
-  }
-
   if (!currentOrderSummary) return;
   const o = currentOrderSummary;
-
+ 
   // 🔑 金額一律讀 currentOrderSummary，不要讀 finalTotal。
   //
   // finalTotal 是「目前購物車」的即時總額，會被 calculateCartTotal() 重算。
-  // 而下單成功後購物車已經清空，只要那之後有任何一次重算
-  // （送單期間收到的 Firebase 推播會在 收尾() 時補套用，就會觸發），
-  // finalTotal 就會變成只剩運費 —— 成功頁顯示 $80 而不是 $330。
-  //
+  // 下單成功後購物車已經清空，只要那之後有任何一次重算
+  // （送單期間收到的 Firebase 推播會在 收尾() 時補套用就會觸發），
+  // finalTotal 會變成只剩運費 —— 成功頁顯示 $80 而不是 $330。
   // 訂單成交的金額是一個「快照」，不該再跟著購物車變動。
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val || ''; };
   set('final-amount-display', '$' + (Number(o.total) || 0) + ' 元');
-
-  // 📦 箱數。拿不到就整列不顯示 ——
-  //    逾時救回的舊收據、或改版前的訂單都可能沒有這個欄位，
+ 
+  // 📦 箱數。拿不到就整列不顯示 —— 逾時救回的舊收據可能沒有這個欄位，
   //    寧可少一列，也不要印出「共 0 箱」讓客人以為出貨有問題。
   const 箱數 = Number(o.boxCount) || 0;
   const 箱數列 = 箱數 > 0
     ? `<div class="order-summary-row"><span class="label">📦 出貨箱數</span><span class="value">${箱數} 箱</span></div>`
     : '';
-
-  document.getElementById('order-summary-content').innerHTML = `
-    <div class="order-summary-list">
-      <div class="order-summary-row"><span class="label">📦 規格細項</span><span class="value js-summary-weight"></span></div>
-      ${箱數列}
-      <div class="order-summary-row"><span class="label">🚚 配送方式</span><span class="value js-summary-shipping"></span></div>
-      <div class="order-summary-row"><span class="label">🏠 收件地址(門市)</span><span class="value js-summary-address"></span></div>
-      <div class="order-summary-row"><span class="label">💰 商品小計</span><span class="value">$${Number(o.subtotal) || 0}</span></div>
-      <div class="order-summary-row"><span class="label">🚛 運費</span><span class="value">$${Number(o.shippingFee) || 0}</span></div>
-    </div>`;
-
+ 
+  const summaryEl = document.getElementById('order-summary-content');
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div class="order-summary-list">
+        <div class="order-summary-row"><span class="label">📦 規格細項</span><span class="value js-summary-weight"></span></div>
+        ${箱數列}
+        <div class="order-summary-row"><span class="label">🚚 配送方式</span><span class="value js-summary-shipping"></span></div>
+        <div class="order-summary-row"><span class="label">🏠 收件地址(門市)</span><span class="value js-summary-address"></span></div>
+        <div class="order-summary-row"><span class="label">💰 商品小計</span><span class="value">$${Number(o.subtotal) || 0}</span></div>
+        <div class="order-summary-row"><span class="label">🚛 運費</span><span class="value">$${Number(o.shippingFee) || 0}</span></div>
+      </div>`;
+  }
+ 
   const weightContainer = document.querySelector('.js-summary-weight');
   if (weightContainer) {
-    weightContainer.innerHTML = String(o.weight || '').split('，').map(i => `<div>${i}</div>`).join('');
+    weightContainer.innerHTML = String(o.weight || '').split('，').map(i => `<div>${esc(i)}</div>`).join('');
   }
-
+ 
   const shippingEl = document.querySelector('.js-summary-shipping');
-  if (shippingEl) shippingEl.textContent = 配送顯示名[o.shippingMethod] || '';
-
+  if (shippingEl) shippingEl.textContent = 配送顯示名[o.shippingMethod] || o.shipping || '';
+ 
   const addressEl = document.querySelector('.js-summary-address');
-  if (addressEl) addressEl.textContent = o.shipping || o.address || '';
-
-  const rawMsg = window.APP_CONFIG.successMsg || '謝謝您支持，下單成功！';
-  document.getElementById('success-reminder-msg').innerHTML = `<div class="success-warm-text">${rawMsg}</div>`;
+  if (addressEl) addressEl.textContent = o.address || o.shipping || '';
+ 
+  const msgEl = document.getElementById('success-reminder-msg');
+  if (msgEl) {
+    const rawMsg = (window.APP_CONFIG && window.APP_CONFIG.successMsg) || '謝謝您的支持！';
+    msgEl.innerHTML = `<div class="success-warm-text">${esc(rawMsg)}</div>`;
+  }
+ 
+  // 💳 付款區：先用現有資料畫一次，再去 Firebase 撈實際狀態並持續訂閱。
+  //    先畫是為了不讓畫面空白 —— 網路慢的時候那一秒很明顯。
+  currentPayOrderKey = o.orderKey || null;
+  渲染付款區塊(null);
+ 
+  if (currentPayOrderKey && paymentMode === 'payuni') {
+    查詢付款狀態(currentPayOrderKey).then(pay => {
+      if (currentPayOrderKey === o.orderKey) 渲染付款區塊(pay);
+    });
+    訂閱付款狀態(currentPayOrderKey);
+  }
 }
 
+
+// ========================================
+// 🔗 從網址進入成功頁
+// ========================================
+ 
+/**
+ * 處理 ?order={UUID}。兩種情況會走到這裡：
+ *   ・客人從 PAYUNi 付款完成後被導回來
+ *   ・客人自己開了保存起來的訂單連結
+ *
+ * 資料從 Firebase 收據撈，所以就算是換裝置、隔天再開也讀得到
+ * （收據保留 72 小時）。
+ */
+async function 從網址載入訂單() {
+  let key = '';
+  try {
+    key = new URLSearchParams(location.search).get('order') || '';
+  } catch (e) { return false; }
+ 
+  if (!/^[0-9a-fA-F-]{36}$/.test(key)) return false;
+ 
+  const receipt = await fetchOrderReceipt(key);
+  if (!receipt) {
+    customAlert('⚠️ 查不到這筆訂單，可能已超過保留期限。\n\n若有疑問請透過 LINE 與我們聯繫。');
+    return false;
+  }
+ 
+  currentOrderSummary = {
+    orderKey: key,
+    subtotal: Number(receipt.subtotal) || 0,
+    shippingFee: Number(receipt.shippingFee) || 0,
+    total: Number(receipt.total) || 0,
+    boxCount: Number(receipt.boxCount) || 0,
+    weight: String(receipt.items || '').replace(/、/g, '，'),
+    shipping: receipt.shipping || '',
+    address: '',   // 收據不含地址（個資），這一列會顯示空白
+    shippingMethod: ''
+  };
+ 
+  goToStep(5);
+ 
+  // 網址清乾淨，客人重新整理不會又跑一次
+  try {
+    history.replaceState(null, '', location.pathname);
+  } catch (e) { /* 忽略 */ }
+ 
+  return true;
+}
 
 // ========================================
 // 🔧 通用工具
@@ -2673,4 +2755,348 @@ function handleLineJump() {
   const targetUrl = String(cfgGet(window.paymentConfig, '跳轉按鈕連結') || '').trim();
   if (targetUrl.startsWith('http')) window.open(targetUrl, '_blank');
   else customAlert('✨ 感謝您的訂購！\n請手動回報匯款唷～ ✨');
+}
+
+// ========================================
+// 💾 未完成訂單的本地記錄
+// ========================================
+ 
+const PENDING_ORDER_KEY = 'probro_pending_order';
+ 
+/**
+ * 記住這筆訂單，客人下次進站時提醒他還沒付款。
+ *
+ * ⚠️ 這是「加分」不是「保證」。localStorage 在換裝置、清快取、
+ *    無痕模式、以及 LINE 內建瀏覽器與系統瀏覽器之間都不共用。
+ *    失效的後果只是不跳提示 —— 不會出錯、不影響下單與付款，
+ *    客人還是可以從訂單連結或聯繫我們處理。
+ *    所以絕對不要在畫面上承諾「我們會幫你記住」。
+ */
+function 記住未付款訂單(orderKey, total) {
+  if (!orderKey) return;
+  try {
+    localStorage.setItem(PENDING_ORDER_KEY, JSON.stringify({
+      key: orderKey,
+      total: Number(total) || 0,
+      at: Date.now()
+    }));
+  } catch (e) { /* 無痕模式或空間不足，忽略 */ }
+}
+ 
+function 清除未付款訂單(orderKey) {
+  try {
+    const raw = localStorage.getItem(PENDING_ORDER_KEY);
+    if (!raw) return;
+    if (orderKey) {
+      const rec = JSON.parse(raw);
+      if (rec && rec.key !== orderKey) return;   // 不是同一筆就別動
+    }
+    localStorage.removeItem(PENDING_ORDER_KEY);
+  } catch (e) { /* 忽略 */ }
+}
+ 
+function 讀取未付款訂單() {
+  try {
+    const raw = localStorage.getItem(PENDING_ORDER_KEY);
+    if (!raw) return null;
+    const rec = JSON.parse(raw);
+    if (!rec || !rec.key) return null;
+    // 超過三天就不再提醒 —— 那時候訂單早就被取消了，
+    // 還跳出來只會讓客人以為訂單還在。
+    if (Date.now() - Number(rec.at || 0) > 3 * 86400000) {
+      清除未付款訂單();
+      return null;
+    }
+    return rec;
+  } catch (e) { return null; }
+}
+ 
+/**
+ * 進站時檢查有沒有未完成付款的訂單。
+ * 會先去 Firebase 確認狀態 —— 已付款或已取消就不該再提醒。
+ */
+async function 檢查未付款訂單() {
+  if (paymentMode !== 'payuni') return;
+ 
+  const rec = 讀取未付款訂單();
+  if (!rec) return;
+ 
+  const pay = await 查詢付款狀態(rec.key);
+  if (pay && (pay.tradeStatus === '1' || pay.status === '已付款')) {
+    清除未付款訂單(rec.key);
+    return;
+  }
+ 
+  const banner = document.getElementById('pending-order-banner');
+  if (!banner) return;
+ 
+  banner.innerHTML =
+    '<div class="pending-banner-text">🥑 您有一筆訂單尚未完成付款' +
+    (rec.total > 0 ? '　<strong>NT$ ' + rec.total + '</strong>' : '') +
+    '</div>' +
+    '<a class="pending-banner-btn" href="' + 付款連結(rec.key) + '">前往付款</a>' +
+    '<button class="pending-banner-close" onclick="關閉未付款提示()" aria-label="關閉">✕</button>';
+  banner.style.display = 'flex';
+}
+ 
+// 客人主動關掉就這一次不再打擾他。刻意不清除 localStorage ——
+// 他下次進站還是會看到，因為那筆訂單確實還沒付款。
+function 關閉未付款提示() {
+  const banner = document.getElementById('pending-order-banner');
+  if (banner) banner.style.display = 'none';
+}
+ 
+ 
+// ========================================
+// 💳 付款狀態
+// ========================================
+ 
+function 付款連結(orderKey) {
+  return PAY_WORKER_URL.replace(/\/+$/, '') + '/pay?k=' + encodeURIComponent(orderKey);
+}
+ 
+/** 讀一次付款狀態。查不到回 null（代表還沒進到金流）。 */
+async function 查詢付款狀態(orderKey) {
+  if (!orderKey) return null;
+  try {
+    const res = await fetch(
+      FIREBASE_DB_URL + '/' + FIREBASE_PAYMENTS_PATH + '/' +
+      encodeURIComponent(orderKey) + '.json',
+      { cache: 'no-store' }
+    );
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) { return null; }
+}
+ 
+/**
+ * 訂閱這筆訂單的付款狀態。
+ *
+ * 🔑 這是整個成功頁最有價值的一段：客人在別的分頁完成 ATM 轉帳、
+ *    或用 LINE Pay 付完款回來時，這一頁會「自己」變成已付款，
+ *    不需要他重新整理。少了這個，客人會盯著「待付款」懷疑自己是不是白付了。
+ */
+function 訂閱付款狀態(orderKey) {
+  停止訂閱付款狀態();
+  if (!orderKey || typeof firebase === 'undefined') return;
+ 
+  try {
+    payStatusRef = firebase.database().ref(FIREBASE_PAYMENTS_PATH + '/' + orderKey);
+    payStatusRef.on('value', snap => {
+      // 只在還停在成功頁、而且是同一筆訂單時才重繪
+      if (currentPayOrderKey !== orderKey) return;
+      渲染付款區塊(snap.val());
+    }, () => { /* 訂閱失敗就靠進頁時那次讀取，不影響功能 */ });
+  } catch (e) { /* SDK 沒載入就跳過 */ }
+}
+ 
+function 停止訂閱付款狀態() {
+  if (payStatusRef) {
+    try { payStatusRef.off(); } catch (e) { /* 忽略 */ }
+    payStatusRef = null;
+  }
+}
+ 
+ 
+// ========================================
+// 🎨 付款區塊渲染
+// ========================================
+ 
+function 設定狀態列(current) {
+  const steps = document.querySelectorAll('#pay-steps .pay-step');
+  if (!steps.length) return;
+  steps.forEach((el, i) => {
+    el.classList.toggle('is-done', i < current);
+    el.classList.toggle('is-current', i === current);
+  });
+}
+ 
+function 設定付款標題(title, sub) {
+  const t = document.getElementById('pay-title');
+  const s = document.getElementById('pay-subtitle');
+  if (t) t.textContent = title;
+  if (s) s.textContent = sub;
+}
+ 
+/**
+ * 依付款狀態渲染中間那張卡片。共四種樣貌：
+ *   bank      → 舊的匯款資訊（逃生開關切到 bank 時）
+ *   已付款    → 完成
+ *   已取號    → 顯示虛擬帳號 / 繳費代碼
+ *   未付款    → 前往付款按鈕
+ */
+function 渲染付款區塊(pay) {
+  const box = document.getElementById('pay-action-content');
+  if (!box) return;
+ 
+  const orderKey = currentPayOrderKey;
+ 
+  // 🛟 逃生開關：切到 bank 就完全走舊流程，一行程式碼都不用改。
+  if (paymentMode !== 'payuni') {
+    渲染匯款資訊(box);
+    設定付款標題('已收到您的訂單', 'ORDER RECEIVED');
+    設定狀態列(1);
+    return;
+  }
+ 
+  if (!orderKey) {
+    box.innerHTML = '<p class="pay-lead">訂單已建立，如需付款請透過 LINE 與我們聯繫。</p>';
+    return;
+  }
+ 
+  const 已付款 = pay && (pay.tradeStatus === '1' || pay.status === '已付款');
+  const 已取消 = pay && (pay.status === '已取消' || pay.status === '已退款');
+ 
+  // ---------- 已付款 ----------
+  if (已付款) {
+    清除未付款訂單(orderKey);
+    設定付款標題('付款完成', 'PAYMENT COMPLETED');
+    設定狀態列(2);
+    box.innerHTML =
+      '<span class="pay-done-icon">🥑</span>' +
+      '<p class="pay-lead">我們已收到您的付款，將盡快為您安排出貨。<br>感謝您的支持！</p>';
+    return;
+  }
+ 
+  // ---------- 已取消 ----------
+  if (已取消) {
+    設定付款標題('訂單已取消', 'ORDER CANCELLED');
+    設定狀態列(0);
+    box.innerHTML =
+      '<p class="pay-lead">這筆訂單已經取消。<br>如需重新訂購，請回到訂購頁面。</p>';
+    return;
+  }
+ 
+  // ---------- 已取號（ATM / 超商代碼），尚未繳費 ----------
+  const 是延遲付款 = pay && pay.payNo &&
+    (pay.paymentMethod === 'ATM' || pay.paymentMethod === 'CVS');
+ 
+  if (是延遲付款) {
+    const isAtm = pay.paymentMethod === 'ATM';
+    設定付款標題(isAtm ? '請完成轉帳' : '請至超商繳費', 'AWAITING PAYMENT');
+    設定狀態列(1);
+ 
+    box.innerHTML =
+      '<div class="pay-field">' +
+        '<p class="pay-field-label">' + (isAtm ? '虛擬帳號' : '繳費代碼') + '</p>' +
+        '<p class="pay-field-value">' + esc(pay.payNo) + '</p>' +
+        '<button type="button" class="btn-copy" onclick="複製付款帳號(\'' + esc(pay.payNo) + '\', this)">複製</button>' +
+      '</div>' +
+      (pay.expireDate
+        ? '<div class="pay-field"><p class="pay-field-label">繳費期限</p>' +
+          '<p class="pay-field-value" style="font-size:1.05rem">' + esc(pay.expireDate) + '</p></div>'
+        : '') +
+      '<p class="pay-lead" style="margin:18px 0 0">✨ 完成付款後，才會為您排入出貨序列</p>' +
+      保存連結區塊(orderKey) +
+      '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡查看，訂單不會消失。</p>';
+    return;
+  }
+ 
+  // ---------- 尚未付款 ----------
+  設定付款標題('訂單已建立', 'ORDER CREATED');
+  設定狀態列(1);
+  記住未付款訂單(orderKey, (currentOrderSummary && currentOrderSummary.total) || 0);
+ 
+  box.innerHTML =
+    '<p class="pay-lead">✨ 完成付款後，才會為您排入出貨序列</p>' +
+    '<a class="btn-primary" href="' + 付款連結(orderKey) + '">前往付款</a>' +
+    保存連結區塊(orderKey) +
+    '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡重新付款，訂單不會消失。</p>';
+}
+ 
+function 保存連結區塊(orderKey) {
+  return '<div class="pay-save">' +
+    '<button type="button" class="btn-secondary" onclick="複製訂單連結(\'' + orderKey + '\', this)">保存訂單連結</button>' +
+    '<p class="pay-save-note">建議複製起來傳給自己，隨時可以查看訂單與完成付款</p>' +
+    '</div>';
+}
+ 
+/** 逃生開關切到 bank 時，渲染舊的匯款資訊 */
+function 渲染匯款資訊(box) {
+  const c = window.APP_CONFIG || {};
+  const acc = String(c.bankAcc || '');
+  box.innerHTML =
+    '<div class="pay-field">' +
+      '<p class="pay-field-label">匯款銀行</p>' +
+      '<p class="pay-field-value" style="font-size:1.05rem">' + esc(c.bankName || '') + '</p>' +
+    '</div>' +
+    '<div class="pay-field">' +
+      '<p class="pay-field-label">匯款帳號</p>' +
+      '<p class="pay-field-value">' + esc(acc) + '</p>' +
+      '<button type="button" class="btn-copy" onclick="複製付款帳號(\'' + esc(acc) + '\', this)">複製</button>' +
+    '</div>' +
+    '<div class="pay-field">' +
+      '<p class="pay-field-label">戶名</p>' +
+      '<p class="pay-field-value" style="font-size:1.05rem">' + esc(c.bankUser || '') + '</p>' +
+    '</div>' +
+    '<p class="pay-lead" style="margin:18px 0 0">✨ 完成匯款後，才會為您排入出貨序列</p>';
+}
+ 
+// 這些字串會進 innerHTML，一律跳脫。
+// 內容雖然來自後端不是客人，但成本只有幾行，沒有理由不做。
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+ 
+ 
+// ========================================
+// 📋 複製工具
+// ========================================
+ 
+async function 複製文字_(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (err) {
+    // LINE 內建瀏覽器偶爾會拒絕 clipboard 授權，保留 execCommand 後備
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);   // iOS 需要這一行
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e2) { return false; }
+  }
+}
+ 
+function 複製回饋_(btn, label) {
+  if (!btn) return;
+  const 原文 = btn.textContent;
+  btn.textContent = '✓ 已複製';
+  btn.classList.add('is-done');
+  clearTimeout(btn._resetTimer);
+  btn._resetTimer = setTimeout(() => {
+    btn.textContent = label || 原文;
+    btn.classList.remove('is-done');
+  }, 2000);
+}
+ 
+async function 複製付款帳號(帳號, btn) {
+  if (!帳號) { customAlert('⚠️ 目前讀不到帳號，請重新整理頁面。'); return; }
+  const ok = await 複製文字_(帳號);
+  if (!ok) {
+    // 靜默失敗最糟：客人以為複製好了，貼到銀行 App 才發現是空的，
+    // 而那時候他已經離開這個頁面了。
+    customAlert('⚠️ 這個瀏覽器不支援自動複製，請長按號碼手動選取：\n\n' + 帳號);
+    return;
+  }
+  複製回饋_(btn, '複製');
+}
+ 
+async function 複製訂單連結(orderKey, btn) {
+  const url = 付款連結(orderKey);
+  const ok = await 複製文字_(url);
+  if (!ok) {
+    customAlert('⚠️ 這個瀏覽器不支援自動複製，請長按下方網址手動選取：\n\n' + url);
+    return;
+  }
+  複製回饋_(btn, '保存訂單連結');
 }
