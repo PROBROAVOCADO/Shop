@@ -2917,7 +2917,110 @@ function 設定付款標題(title, sub) {
   if (t) t.textContent = title;
   if (s) s.textContent = sub;
 }
+
+/**
+ * 依付款狀態渲染中間那張卡片。共五種樣貌：
+ *   bank      → 舊的匯款資訊（逃生開關切到 bank 時）
+ *   已付款    → 完成
+ *   已取消    → 訂單已取消
+ *   已取號    → 顯示虛擬帳號 / 繳費代碼
+ *   未付款    → 前往付款按鈕
+ */
+function 渲染付款區塊(pay) {
+  const box = document.getElementById('pay-action-content');
+  if (!box) return;
  
+  const orderKey = currentPayOrderKey;
+ 
+  // 🛟 逃生開關：切到 bank 就完全走舊流程，一行程式碼都不用改。
+  if (paymentMode !== 'payuni') {
+    渲染匯款資訊(box);
+    設定付款標題('已收到您的訂單', 'ORDER RECEIVED');
+    設定狀態列(1);
+    return;
+  }
+ 
+  if (!orderKey) {
+    box.innerHTML = '<p class="pay-lead">訂單已建立，如需付款請透過 LINE 與我們聯繫。</p>';
+    return;
+  }
+ 
+  const 已付款 = pay && (pay.tradeStatus === '1' || pay.status === '已付款');
+  const 已取消 = pay && (pay.status === '已取消' || pay.status === '已退款');
+ 
+  // ---------- 已付款 ----------
+  if (已付款) {
+    清除未付款訂單(orderKey);
+    設定付款標題('付款完成', 'PAYMENT COMPLETED');
+    設定狀態列(2);
+    box.innerHTML =
+      '<span class="pay-done-icon">🥑</span>' +
+      '<p class="pay-lead">我們已收到您的付款，將盡快為您安排出貨。<br>感謝您的支持！</p>';
+    return;
+  }
+ 
+  // ---------- 已取消 ----------
+  if (已取消) {
+    設定付款標題('訂單已取消', 'ORDER CANCELLED');
+    設定狀態列(0);
+    box.innerHTML =
+      '<p class="pay-lead">這筆訂單已經取消。<br>如需重新訂購，請回到訂購頁面。</p>';
+    return;
+  }
+ 
+  // ---------- 已取號（ATM / 超商代碼），尚未繳費 ----------
+  const 是延遲付款 = pay && pay.payNo &&
+    (pay.paymentMethod === 'ATM' || pay.paymentMethod === 'CVS');
+ 
+  if (是延遲付款) {
+    const isAtm = pay.paymentMethod === 'ATM';
+    設定付款標題(isAtm ? '請完成轉帳' : '請至超商繳費', 'AWAITING PAYMENT');
+    設定狀態列(1);
+ 
+    box.innerHTML =
+      '<div class="pay-field">' +
+        '<p class="pay-field-label">' + (isAtm ? '虛擬帳號' : '繳費代碼') + '</p>' +
+        '<p class="pay-field-value">' + esc(pay.payNo) + '</p>' +
+        '<button type="button" class="btn-copy" onclick="複製付款帳號(\'' + esc(pay.payNo) + '\', this)">複製</button>' +
+      '</div>' +
+      (pay.expireDate
+        ? '<div class="pay-field"><p class="pay-field-label">繳費期限</p>' +
+          '<p class="pay-field-value" style="font-size:1.05rem">' + esc(pay.expireDate) + '</p></div>'
+        : '') +
+      '<p class="pay-lead" style="margin:18px 0 0">✨ 完成付款後，才會為您排入出貨序列</p>' +
+      保存連結區塊(orderKey) +
+      '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡查看，訂單不會消失。</p>';
+    return;
+  }
+ 
+  // ---------- 尚未付款 ----------
+  設定付款標題('訂單已建立', 'ORDER CREATED');
+  設定狀態列(1);
+  記住未付款訂單(orderKey, (currentOrderSummary && currentOrderSummary.total) || 0);
+ 
+  box.innerHTML =
+    '<p class="pay-lead">✨ 完成付款後，才會為您排入出貨序列</p>' +
+    '<a class="btn-primary" href="' + 付款連結(orderKey) + '">前往付款</a>' +
+    保存連結區塊(orderKey) +
+    '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡重新付款，訂單不會消失。</p>';
+}
+ 
+function 保存連結區塊(orderKey) {
+  return '<div class="pay-save">' +
+    '<button type="button" class="btn-secondary" onclick="複製訂單連結(\'' + orderKey + '\', this)">保存訂單連結</button>' +
+    '<p class="pay-save-note">建議複製起來傳給自己，隨時可以查看訂單與完成付款</p>' +
+    '</div>';
+}
+ 
+// 這些字串會進 innerHTML，一律跳脫。
+//
+// ⚠️ 這個函式被 renderSuccessPage 與 渲染匯款資訊 兩處呼叫，
+//    少了它整個成功頁會在第一行就丟 ReferenceError 而完全不渲染。
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 /** 逃生開關切到 bank 時，渲染舊的匯款資訊。
  *
  *  ⚠️ 三項刻意包在「同一張卡」裡而不是各自成框。
