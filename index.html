@@ -284,13 +284,42 @@
 </div>
 
 <!-- ------ 第5頁：匯款成功頁面 ------ -->
+<!-- ------ 第5頁：訂單完成 / 付款 ------
+ 
+     ⚠️ 標題刻意不寫「訂購成功」。
+     接了金流之後，沒付款的訂單是不算數的 —— 客人看到「成功」兩個字
+     會很合理地以為事情辦完了，然後關掉頁面。
+     這不是文案問題，是會直接造成未付款訂單的認知問題。
+-->
 <div id="step5-payment-info" class="page-content" style="display: none;">
-  <h2 class="main-title">✨ 已收到資料 謝謝您 ✨</h2>
-  <div class="sub-title">Your Trust, Our Harvest. Thank You.</div>
+ 
+  <h2 class="main-title" id="pay-title">訂單已建立</h2>
+  <div class="sub-title" id="pay-subtitle">ORDER CREATED</div>
   <div class="title-divider"></div>
-
+ 
+  <!-- 🔵 三階狀態列。目前位置用實心暖褐、已完成用山丘綠、未到是空心。 -->
+  <div class="pay-steps" id="pay-steps">
+    <div class="pay-step is-done">
+      <span class="pay-step-dot"></span>
+      <span class="pay-step-label">訂單已建立</span>
+    </div>
+    <div class="pay-step is-current">
+      <span class="pay-step-dot"></span>
+      <span class="pay-step-label">待付款</span>
+    </div>
+    <div class="pay-step">
+      <span class="pay-step-dot"></span>
+      <span class="pay-step-label">準備出貨</span>
+    </div>
+  </div>
+ 
+  <!-- 💳 付款區。內容由 script.js 依 paymentMode 與付款狀態決定。 -->
+  <div class="info-block" id="pay-action-card">
+    <div id="pay-action-content"></div>
+  </div>
+ 
+  <!-- 🧾 訂購內容。id 沿用舊版，renderSuccessPage 的骨架不用改。 -->
   <div id="order-summary-card" class="info-block">
-    <!-- ⚡ v7：補上 .section-title -->
     <h3 class="section-title">🧾 本次訂購內容</h3>
     <div id="order-summary-content"></div>
     <div class="order-total-inside">
@@ -298,48 +327,30 @@
       <span id="final-amount-display">$0</span>
     </div>
   </div>
-
+ 
   <div class="info-block">
-    <div class="payment-switch-container">
-      <div id="switch-bg" class="switch-active-bg"></div>
-      <div class="switch-option active" id="opt-bank" onclick="switchPayment('bank')">銀行轉帳</div>
-      <div class="switch-option" id="opt-linepay" onclick="switchPayment('linepay')">LINE Pay</div>
-    </div>
-
-    <div id="content-bank" class="payment-content active">
-      <div class="payment-detail-card">
-        <h3 class="payment-card-title">💰 匯款資料</h3>
-        <div class="payment-fields">
-          <p><strong>銀行：</strong><span id="bank-val"></span></p>
-          <p><strong>帳號：</strong><span id="account-val"></span><button type="button" class="btn-copy" id="copy-account-btn" onclick="複製匯款帳號()">複製</button></p>
-          <p><strong>戶名：</strong><span id="name-val"></span></p>
-        </div>
-      </div>
-    </div>
-
-    <div id="content-linepay" class="payment-content">
-      <div class="payment-detail-card">
-        <!-- ⚡ v7：原本寫死 LINE 官方綠 #00b900，與品牌色衝突，改用統一標題樣式 -->
-        <h3 class="payment-card-title">🟢 LINE Pay 付款</h3>
-        <p id="lp-announcement"></p>
-        <div class="variety-img-container qr-frame">
-          <img id="lp-qrcode" src="" loading="lazy" onclick="showLightbox(this.src)">
-        </div>
-        <p class="caption-note">( 點擊圖片可放大掃描 )</p>
-      </div>
-    </div>
-
-    <hr class="soft-divider">
     <p id="success-reminder-msg" class="success-warm-text"></p>
-
+    <hr class="soft-divider">
     <div class="button-group">
-      <a id="final-line-btn" href="javascript:void(0)" onclick="handleLineJump()" class="btn-primary btn-wide">
-        確認匯款回報
+      <a id="final-line-btn" href="javascript:void(0)" onclick="handleLineJump()" class="btn-secondary btn-wide">
+        聯繫我們
       </a>
       <button type="button" onclick="goToStep(1)" class="btn-secondary">回首頁</button>
     </div>
   </div>
 </div>
+ 
+ 
+<!-- ═══════════════════════════════════════════════════════════
+     🔔 回訪提示橫幅
+     請貼在 index.html 的 <div class="main-wrapper"> 之後、
+     banner-container 之前（跟 #release-banner 同一層）
+     ═══════════════════════════════════════════════════════════ -->
+ 
+<!-- 🔔 有未完成付款的訂單時自動出現。資料來自 localStorage，
+     失效（換裝置、清快取、LINE 內建瀏覽器隔離）只是不顯示，
+     不影響任何功能 —— 客人還是可以從訂單連結或聯繫我們處理。 -->
+<div id="pending-order-banner" class="pending-banner" style="display:none;"></div>
 
 <!-- ------ 燈箱效果 ------
      ⚡ v7：整組 inline style 改為 .lightbox-* class -->
