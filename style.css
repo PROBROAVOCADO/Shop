@@ -1792,3 +1792,241 @@ select:focus, input:focus, textarea:focus {
   color: var(--avo-accent);
   padding: 8px 10px;
 }
+/* ═══════════════════════════════════════════════════════════
+   💳 金流相關樣式 — 請整段追加到 style.css 最後面
+   ═══════════════════════════════════════════════════════════ */
+
+/* 🔵 三階狀態列
+   沿用 .title-divider 的語彙：細線 + 圓點。
+   刻意不用 App 式的粗進度條 —— 那跟紙感完全不搭。
+   目前位置用實心暖褐，已完成用山丘綠，未到是空心細框。 */
+.pay-steps {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  max-width: 420px;
+  margin: 0 auto 26px;
+  padding: 0 10px;
+}
+
+.pay-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+/* 連接線：畫在圓點的垂直中心，往右延伸到下一個點 */
+.pay-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: calc(50% + 10px);
+  right: calc(-50% + 10px);
+  height: 1px;
+  background: var(--rule);
+}
+
+.pay-step-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--rule);
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+
+.pay-step-label {
+  font-size: 0.74rem;
+  letter-spacing: 1px;
+  color: var(--avo-accent);
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.pay-step.is-done .pay-step-dot {
+  background: var(--sage);
+  border-color: var(--sage);
+}
+.pay-step.is-done .pay-step-label { opacity: 0.75; }
+
+.pay-step.is-current .pay-step-dot {
+  background: var(--avo-accent);
+  border-color: var(--avo-accent);
+  box-shadow: 0 0 0 4px rgba(154, 126, 93, 0.16);
+}
+.pay-step.is-current .pay-step-label {
+  color: var(--avo-dark);
+  font-weight: 700;
+  opacity: 1;
+}
+
+@media screen and (max-width: 767px) {
+  .pay-steps { margin-bottom: 22px; }
+  .pay-step-label { font-size: 0.68rem; letter-spacing: 0.5px; }
+}
+
+/* 💳 付款區塊 */
+#pay-action-card { text-align: center; }
+
+.pay-lead {
+  font-size: 0.92rem;
+  line-height: 1.8;
+  color: var(--avo-dark);
+  margin: 0 0 22px;
+  letter-spacing: 0.8px;
+}
+
+.pay-action-card .btn-primary,
+#pay-action-content .btn-primary {
+  width: 100%;
+  font-size: 1rem !important;
+  padding: 17px 10px !important;
+}
+
+/* 「保存訂單連結」的次要按鈕與說明 */
+.pay-save {
+  margin-top: 14px;
+}
+.pay-save .btn-secondary {
+  width: 100%;
+  font-size: 0.88rem !important;
+  padding: 12px 10px !important;
+  letter-spacing: 1.5px;
+}
+.pay-save-note {
+  font-size: 0.76rem;
+  line-height: 1.7;
+  color: var(--avo-accent);
+  margin: 8px 0 0;
+  opacity: 0.9;
+}
+
+.pay-tail-note {
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: var(--avo-accent);
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px dashed var(--rule-soft);
+  opacity: 0.9;
+}
+
+/* 💰 虛擬帳號 / 繳費代碼顯示區
+   數字要夠大、要能一眼看完 —— 客人會邊看邊在網銀 App 上打。 */
+.pay-field {
+  background: rgba(237, 228, 211, 0.5);
+  border: 1px dashed var(--avo-accent);
+  border-radius: var(--r-field);
+  padding: 18px 16px;
+  margin: 0 0 14px;
+}
+.pay-field-label {
+  font-size: 0.76rem;
+  letter-spacing: 1.5px;
+  color: var(--clay-deep);
+  margin: 0 0 6px;
+}
+.pay-field-value {
+  font-family: var(--heading-font);
+  font-size: 1.45rem;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: var(--avo-dark);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  word-break: break-all;
+  line-height: 1.4;
+}
+.pay-field .btn-copy { margin: 10px 0 0; }
+
+@media screen and (max-width: 767px) {
+  .pay-field-value { font-size: 1.25rem; }
+}
+
+/* ✅ 已付款的狀態 */
+.pay-done-icon {
+  font-size: 2.4rem;
+  margin-bottom: 10px;
+  display: block;
+}
+
+/* 🔔 回訪提示橫幅
+   刻意做得比 .release-banner 收斂 —— 它是提醒不是主角，
+   而且客人可以按 ✕ 關掉，關掉之後這一次進站就不再打擾他。 */
+.pending-banner {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto 16px auto;
+  padding: 14px 18px;
+  box-sizing: border-box;
+  background: var(--creamy);
+  border: 1px solid var(--avo-accent);
+  border-radius: var(--r-field);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: releaseBannerIn 0.5s ease both;
+}
+
+.pending-banner-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--avo-dark);
+  letter-spacing: 0.5px;
+}
+.pending-banner-text strong {
+  color: var(--avo-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.pending-banner-btn {
+  flex: 0 0 auto;
+  padding: 9px 18px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--herb-green);
+  color: var(--creamy);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.pending-banner-btn:hover { background: #5F7A46; }
+
+.pending-banner-close {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--avo-accent);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.6;
+}
+.pending-banner-close:hover { opacity: 1; }
+
+@media screen and (max-width: 767px) {
+  .pending-banner {
+    padding: 12px 14px;
+    gap: 8px;
+    border-radius: 12px;
+  }
+  .pending-banner-text { font-size: 0.78rem; }
+  .pending-banner-btn { padding: 8px 14px; font-size: 0.76rem; }
+}
