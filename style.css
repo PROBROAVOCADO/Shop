@@ -1,16 +1,33 @@
 /* =========================================================
    🥑 波波酪梨 Pro-Bro Avocado
-   style.css ｜ v7・品牌一致性改版（文青田園）
+   style.css ｜ v8・PAYUNi 金流改版
 
-   設計依據：LINE 圖文選單、配送時間海報、社群貼文
+   【v8 相對 v7 的改動】
+
+   ➕ 新增：金流相關樣式（檔案最後一區）
+      ・.pay-steps      三階狀態列（訂單已建立 → 待付款 → 準備出貨）
+      ・.pay-field      虛擬帳號 / 繳費代碼顯示區
+      ・.pay-bank       匯款資訊單卡（逃生開關切到 bank 時）
+      ・.pending-banner 回訪時的「尚未完成付款」提示
+
+   ➖ 移除：成功頁改版後不再使用的規則
+      ・.payment-switch-container / .switch-active-bg / .switch-option
+        → 銀行轉帳 ⇄ LINE Pay 的膠囊切換器已整組拿掉
+      ・.payment-content / @keyframes fadeIn
+      ・.payment-detail-card / .payment-card-title / .payment-fields
+      ・.qr-frame / #lp-qrcode / #lp-announcement / .caption-note
+        → LINE Pay QR code 區塊已移除
+      ・.order-total（未被任何頁面使用，.order-total-inside 才是實際在用的）
+
+   ⚠️ .btn-copy 保留 —— 新的付款頁與匯款卡都在用它
+
+   ─────────────────────────────────────────────────────
+   【v7 設計依據】LINE 圖文選單、配送時間海報、社群貼文
    ─ 米白紙底 + 鼠尾草綠山丘 + 暖褐棕印章色
-   ─ 標題改用宋體（思源宋體），內文維持黑體確保訂購好讀
+   ─ 標題用宋體（思源宋體），內文維持黑體確保訂購好讀
    ─ 卡片：細框線 + 顆粒紙紋，去掉大面積柔光陰影
    ─ 按鈕：膠囊型（沿用 LINE 選單的膠囊標籤）
    ─ 圖片：米色卡紙裱框（沿用「Avo Season 2026」貼文）
-
-   ⚠️ 所有原有 class / id 選擇器都保留，script.js 不需要改動
-   ⚠️ index.html 需同步更新（字體連結 + 移除寫死的 inline style）
    ========================================================= */
 
 :root {
@@ -221,8 +238,8 @@ body::before {
   text-align: center !important;
   margin-left: auto !important;
   margin-right: auto !important;
-  margin-top: 0;        /* 👈 新增 */
-  margin-bottom: 0;     /* 👈 新增 */   
+  margin-top: 0;
+  margin-bottom: 0;
   max-width: 800px;
   line-height: 1.9;
   padding-left: 15px;
@@ -230,7 +247,7 @@ body::before {
 }
 
 /* 公告卡：讓分隔線到文字的距離 = 文字到卡片底緣的距離
-   數字要跟 .info-block 的 padding-bottom 一致（桌機 32px /  24px） */
+   數字要跟 .info-block 的 padding-bottom 一致（桌機 32px / 手機 24px） */
 #step1-announcement .product-divider { margin-bottom: 32px; }
 
 @media screen and (max-width: 767px) {
@@ -248,9 +265,10 @@ body::before {
 }
 .form-label:first-child,
 .info-block > .form-label:first-of-type { margin-top: 0; }
+
 /* 📐 訂購頁｜統一垂直節奏
    規則只有三個數字：
-     區塊標題上方   28px（ 24px）
+     區塊標題上方   28px（手機 24px）
      標題 → 提示小字  8px
      提示 → 控制項   12px
    ⚠️ 用 #step4-order-form 包住，不影響其他頁面的 .form-label */
@@ -340,6 +358,41 @@ body::before {
 }
 .button-group .btn-secondary, .button-group .btn-primary { flex: 1; }
 .button-group .btn-wide { flex: 2; }
+
+/* 📋 一鍵複製的小膠囊按鈕。
+   ⚠️ v8 起有三處在用：虛擬帳號、繳費代碼、匯款帳號。不要刪。 */
+.btn-copy {
+  margin-left: 10px;
+  padding: 3px 12px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  letter-spacing: 1px;
+  color: var(--clay-deep);
+  background: var(--creamy);
+  border: 1px solid var(--avo-accent);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  vertical-align: middle;
+  white-space: nowrap;
+  transition: var(--transition-smooth);
+}
+.btn-copy:hover { background: var(--clay-pale); }
+.btn-copy:active { transform: scale(0.94); }
+.btn-copy:focus-visible { outline: 2px solid var(--clay-deep); outline-offset: 2px; }
+
+/* 複製成功後短暫變綠，兩秒後自己還原 */
+.btn-copy.is-done {
+  background: var(--herb-green);
+  border-color: var(--herb-green);
+  color: var(--creamy);
+}
+
+/* 柔性分隔線 */
+.soft-divider {
+  border: none;
+  border-top: 1px dashed var(--rule);
+  margin: 18px 0;
+}
 
 /* 🥑 第二頁｜品種名稱標題 */
 .variety-title {
@@ -456,6 +509,28 @@ select {
   resize: vertical;
 }
 
+/* 🥑 輸入框聚焦 */
+select:focus, input:focus, textarea:focus {
+  outline: none !important;
+  border-color: var(--herb-green) !important;
+  box-shadow: 0 0 0 3px rgba(111, 138, 84, 0.14);
+  background-color: #FFFEFA !important;
+}
+
+/* 🥑 填寫完成感 */
+.input-completed {
+  border-color: var(--sage) !important;
+  background-color: #FCFBF4 !important;
+  box-shadow: 0 0 0 2px rgba(169, 190, 148, 0.18);
+  transition: all 0.4s ease;
+}
+
+.readonly-input {
+  background: var(--clay-pale);
+  color: var(--clay-deep);
+  cursor: not-allowed;
+}
+
 /* 🥑 地址 UI */
 .address-grid {
   display: flex;
@@ -472,6 +547,19 @@ select {
   padding-right: 5px !important;
   background-color: var(--clay-pale) !important;
   border-style: dashed !important;
+}
+
+/* 🚨 地址欄位錯誤提示（磚紅，不用刺眼正紅） */
+.address-error {
+  border: 1.5px solid #A85B47 !important;
+  background-color: #FDF4F1 !important;
+}
+.address-error-hint {
+  color: #A85B47;
+  font-size: 0.85rem;
+  margin-top: 4px;
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
 }
 
 /* --- [品種等級小字備註]（虛線框，取自海報「注意事項」區塊） --- */
@@ -508,147 +596,18 @@ select {
   letter-spacing: 1px;
 }
 
-/* 膠囊切換器外框 */
-.payment-switch-container {
-  display: flex;
-  background: var(--clay-pale);
-  border: 1px solid var(--rule-soft);
-  border-radius: var(--r-pill);
-  position: relative;
-  margin-bottom: 25px;
-  padding: 4px;
-  cursor: pointer;
-}
-
-/* 滑動背景 */
-.switch-active-bg {
-  position: absolute;
-  width: calc(50% - 4px);
-  height: calc(100% - 8px);
-  background: var(--creamy);
-  border-radius: var(--r-pill);
-  box-shadow: 0 1px 3px rgba(122, 100, 73, 0.12);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 1;
-}
-
-.switch-option {
-  flex: 1;
-  text-align: center;
-  padding: 10px 0;
-  font-weight: 600;
-  letter-spacing: 1.5px;
-  z-index: 2;
+/* 🌱 淡暖色提示文字（配送方式備註、規格選擇備註）
+   white-space: pre-line → 試算表裡按 Alt+Enter 換行，網頁上就會換行 */
+.hint-warm-text {
+  font-size: 0.85rem;
+  line-height: 1.7;
+  letter-spacing: 0.5px;
   color: var(--avo-accent);
-  transition: color 0.3s;
-  font-size: 0.92rem;
-}
-.switch-option.active { color: var(--avo-dark); }
-
-.payment-content { display: none; }
-.payment-content.active { display: block; animation: fadeIn 0.4s ease; }
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* --- [匯款資料卡片] --- */
-.payment-detail-card {
-  background: rgba(237, 228, 211, 0.4);
-  padding: 24px;
-  border-radius: var(--r-card);
-  border: 1px dashed var(--avo-accent);
-  text-align: center !important;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.payment-card-title {
-  font-family: var(--heading-font);
-  margin-top: 0 !important;
-  margin-bottom: 16px !important;
-  font-size: 1.1rem;
-  font-weight: 600;
-  letter-spacing: 2px;
-  color: var(--avo-dark);
-  text-align: center;
-}
-
-.payment-fields {
-  font-size: 1.05rem;
-  line-height: 2;
-  color: var(--avo-dark);
-  width: 100%;
-}
-
-/* 📋 一鍵複製匯款帳號的小膠囊按鈕 */
-.btn-copy {
-  margin-left: 10px;
-  padding: 3px 12px;
-  font-size: 0.78rem;
-  font-family: inherit;
-  letter-spacing: 1px;
-  color: var(--clay-deep);
-  background: var(--creamy);
-  border: 1px solid var(--avo-accent);
-  border-radius: var(--r-pill);
-  cursor: pointer;
-  vertical-align: middle;
-  white-space: nowrap;
-  transition: var(--transition-smooth);
-}
-.btn-copy:hover { background: var(--clay-pale); }
-.btn-copy:active { transform: scale(0.94); }
-.btn-copy:focus-visible { outline: 2px solid var(--clay-deep); outline-offset: 2px; }
-
-/* 複製成功後短暫變綠，兩秒後自己還原 */
-.btn-copy.is-done {
-  background: var(--herb-green);
-  border-color: var(--herb-green);
-  color: var(--creamy);
-}
-
-.payment-detail-card p {
-  text-align: center !important;
-  margin: 8px 0 !important;
-}
-
-/* QR code 裱框 */
-.qr-frame {
-  max-width: 250px;
-  margin: 0 auto 15px auto;
-}
-#lp-qrcode {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  display: block;
-  border-radius: 8px;
-  cursor: zoom-in;
-}
-
-#lp-announcement {
   white-space: pre-line;
-  font-size: 0.95rem;
-  color: var(--avo-dark);
-  margin-bottom: 15px !important;
-  font-weight: 600;
 }
 
-.caption-note {
-  font-size: 0.8rem;
-  color: var(--avo-accent);
-  letter-spacing: 1px;
-  opacity: 0.85;
-}
-
-/* 柔性分隔線 */
-.soft-divider {
-  border: none;
-  border-top: 1px dashed var(--rule);
-  margin: 18px 0;
-}
+/* 規格選擇下方的備註：跟商品清單之間留一點呼吸 */
+#spec-note { margin-bottom: 12px; }
 
 /* --- [彈跳視窗] --- */
 #custom-alert-overlay {
@@ -827,64 +786,6 @@ select {
   display: block;
 }
 
-/* 成功頁－訂購內容區塊 */
-#order-summary-content p { margin: 6px 0; line-height: 1.5; }
-
-.order-total {
-  margin-top: 14px;
-  padding-top: 12px;
-  text-align: center;
-  font-family: var(--heading-font);
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: var(--avo-accent);
-}
-
-/* 訂購成功頁－卡片內總金額 */
-.order-total-inside {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px dashed var(--rule);
-  text-align: center;
-  font-family: var(--heading-font);
-  font-size: 1.15rem;
-  font-weight: 600;
-  letter-spacing: 2px;
-  color: var(--avo-dark);
-}
-.order-total-inside span {
-  display: inline-block;
-  margin-left: 8px;
-  font-size: 1.5rem;
-  color: var(--avo-accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.success-warm-text {
-  color: var(--avo-accent) !important;
-  font-size: 0.88rem !important;
-  text-align: center;
-  letter-spacing: 1.2px;
-  display: block;
-  font-weight: 500 !important;
-}
-
-/* 🥑 輸入框聚焦 */
-select:focus, input:focus, textarea:focus {
-  outline: none !important;
-  border-color: var(--herb-green) !important;
-  box-shadow: 0 0 0 3px rgba(111, 138, 84, 0.14);
-  background-color: #FFFEFA !important;
-}
-
-/* 🥑 填寫完成感 */
-.input-completed {
-  border-color: var(--sage) !important;
-  background-color: #FCFBF4 !important;
-  box-shadow: 0 0 0 2px rgba(169, 190, 148, 0.18);
-  transition: all 0.4s ease;
-}
-
 /* 🥑【價格表｜單列】 */
 .price-row {
   display: grid;
@@ -1020,19 +921,6 @@ select:focus, input:focus, textarea:focus {
 }
 .shipping-island-price { min-width: 42px; text-align: right; }
 
-/* 🌱 淡暖色提示文字（配送方式備註、規格選擇備註）
-   white-space: pre-line → 試算表裡按 Alt+Enter 換行，網頁上就會換行 */
-.hint-warm-text {
-  font-size: 0.85rem;
-  line-height: 1.7;
-  letter-spacing: 0.5px;
-  color: var(--avo-accent);
-  white-space: pre-line;
-}
-
-/* 規格選擇下方的備註：跟商品清單之間留一點呼吸 */
-#spec-note { margin-bottom: 12px; }
-
 /* 🧯 價格表不吃 info-block 的段落樣式 */
 #price-menu-container p {
   margin: 0 !important;
@@ -1049,6 +937,9 @@ select:focus, input:focus, textarea:focus {
 
 .price-info { text-align: left !important; }
 
+/* ✅ 價格表頁標題節奏 */
+#step3-price-list .title-divider { margin: 16px auto 24px; }
+
 /* 小計 / 運費 */
 .summary-row {
   display: flex;
@@ -1059,82 +950,6 @@ select:focus, input:focus, textarea:focus {
 }
 .summary-row .label { opacity: 0.9; }
 .summary-row .value { font-weight: 600; }
-
-/* ✅ 成功頁－訂購摘要 */
-.order-summary-list {
-  background: rgba(237, 228, 211, 0.45);
-  border: 1px solid var(--rule-soft);
-  border-radius: var(--r-field);
-  padding: 20px;
-  margin: 20px auto;
-  box-shadow: none;
-}
-
-.order-summary-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  font-size: 0.95rem;
-  color: var(--avo-dark);
-}
-.order-summary-row:last-child { margin-bottom: 0; }
-.order-summary-row .label { opacity: 0.85; font-weight: 500; }
-.order-summary-row .value { font-weight: 700; }
-
-/* ✅ 價格表頁標題節奏 */
-#step3-price-list .title-divider { margin: 16px auto 24px; }
-
-/* 👑 成功頁訂單摘要 */
-#step5-payment-info .order-summary-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-#step5-payment-info .order-summary-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-#step5-payment-info .order-summary-row .label {
-  font-size: 0.9rem;
-  color: var(--avo-dark);
-  opacity: 0.85;
-  margin: 0;
-}
-#step5-payment-info .order-summary-row .value {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-main);
-  margin: 0;
-  text-align: right;
-}
-
-/* 🌿 訂購成功卡片｜溫和浮現（原本的彈跳縮放對紙感太吵） */
-@keyframes successFloat {
-  0%   { opacity: 0; transform: translateY(10px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-.success-animate { animation: successFloat 0.6s ease-out; }
-
-.readonly-input {
-  background: var(--clay-pale);
-  color: var(--clay-deep);
-  cursor: not-allowed;
-}
-
-/* 🚨 地址欄位錯誤提示（磚紅，不用刺眼正紅） */
-.address-error {
-  border: 1.5px solid #A85B47 !important;
-  background-color: #FDF4F1 !important;
-}
-.address-error-hint {
-  color: #A85B47;
-  font-size: 0.85rem;
-  margin-top: 4px;
-  margin-bottom: 10px;
-  letter-spacing: 0.5px;
-}
 
 /* 🛒 購物車條列式品項 */
 .product-group-label {
@@ -1220,100 +1035,132 @@ select:focus, input:focus, textarea:focus {
   transition: all 0.2s ease;
 }
 
-/* 🌾 版權 + 山丘
-   兩座山丘取自 LINE 圖文選單底部，是全站唯一的插畫元素。
-
-   ⚠️ SVG 是整塊背景（不是只有稜線那一條帶），山丘下方一路實色填到底，
-      所以社群圖示與版權文字是「站在草地上」的。前景山丘內建一個由深到淺
-      的漸層，讓底部的文字區塊顏色淡一點、字才讀得清楚。
-   ⚠️ preserveAspectRatio='none' + background-size:100% 100%：
-      viewBox 高度 220 是照頁尾實際高度抓的，比例接近 1:1，曲線幾乎不變形。
-      如果之後大幅改動 padding，稜線會跟著被拉扁或拉高。 */
-.site-footer {
-  position: relative;
-  margin-top: 50px;
-  padding: 112px 10px 22px;
-  text-align: center;
-  font-size: 0.68rem;
-  color: var(--clay-deep);
-  letter-spacing: 0.8px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 220' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23D6DFC4'/%3E%3Cstop offset='0.55' stop-color='%23E2E7D6'/%3E%3Cstop offset='1' stop-color='%23EBEEE2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M0,220 L0,74 C80,26 165,96 250,88 C332,80 386,40 470,52 C556,64 622,20 720,58 L720,220 Z' fill='%23E6EBD6'/%3E%3Cpath d='M0,220 L0,100 C110,68 195,112 300,104 C420,95 505,74 604,86 C662,93 692,104 720,98 L720,220 Z' fill='url(%23g)'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center bottom;
-  background-size: 100% 100%;
+/* 📦 運費後面的箱數 */
+.box-count {
+  font-size: 0.82rem;
+  font-weight: 500;
+  opacity: 0.8;
+  margin-left: 2px;
 }
 
-/* 🔗 footer 社群連結：細框膠囊徽章 */
-.social-links {
+/* ☐ 分開寄出選項 */
+#cart-merge-option { margin-top: 10px; padding-left: 6px; }
+
+.cart-split-label {
   display: flex;
-  justify-content: center;
   align-items: flex-start;
-  gap: 22px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
+  gap: 8px;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--clay-deep);
+  cursor: pointer;
+  padding: 8px 10px;
+  background: rgba(237, 228, 211, 0.5);
+  border: 1px dashed var(--avo-accent);
+  border-radius: 10px;
+}
+.cart-split-label input {
+  width: auto !important;
+  margin: 4px 0 0 0;
+  padding: 0 !important;
+  flex: 0 0 auto;
+  accent-color: var(--herb-green);
 }
 
-.social-item {
+.cart-split-note {
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--avo-accent);
+  padding: 8px 10px;
+}
+
+/* ------------------------ */
+/* ✅ 成功頁 */
+/* ------------------------ */
+
+#order-summary-content p { margin: 6px 0; line-height: 1.5; }
+
+/* 訂購成功頁－卡片內總金額 */
+.order-total-inside {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--rule);
+  text-align: center;
+  font-family: var(--heading-font);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: var(--avo-dark);
+}
+.order-total-inside span {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 1.5rem;
+  color: var(--avo-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.success-warm-text {
+  color: var(--avo-accent) !important;
+  font-size: 0.88rem !important;
+  text-align: center;
+  letter-spacing: 1.2px;
+  display: block;
+  font-weight: 500 !important;
+}
+
+/* 訂購摘要 */
+.order-summary-list {
+  background: rgba(237, 228, 211, 0.45);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-field);
+  padding: 20px;
+  margin: 20px auto;
+  box-shadow: none;
+}
+
+.order-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 0.95rem;
+  color: var(--avo-dark);
+}
+.order-summary-row:last-child { margin-bottom: 0; }
+.order-summary-row .label { opacity: 0.85; font-weight: 500; }
+.order-summary-row .value { font-weight: 700; }
+
+#step5-payment-info .order-summary-list {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  min-width: 68px;
-  text-decoration: none;
+  gap: 10px;
 }
-
-.social-icon {
+#step5-payment-info .order-summary-row {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: transparent;
-  border: 1px solid var(--avo-accent);
-  color: var(--clay-deep);
-  transition: var(--transition-smooth);
 }
-.social-icon svg { width: 20px; height: 20px; }
+#step5-payment-info .order-summary-row .label {
+  font-size: 0.9rem;
+  color: var(--avo-dark);
+  opacity: 0.85;
+  margin: 0;
+}
+#step5-payment-info .order-summary-row .value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin: 0;
+  text-align: right;
+}
 
-.social-label {
-  font-size: 0.66rem;
-  color: var(--clay-deep);
-  letter-spacing: 0.8px;
-  opacity: 0.75;
+/* 🌿 訂購成功卡片｜溫和浮現（原本的彈跳縮放對紙感太吵） */
+@keyframes successFloat {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
-.social-item:hover .social-icon {
-  background: var(--avo-accent);
-  color: var(--creamy);
-}
-.social-item:hover .social-label { opacity: 1; }
-
-/* 🔗 footer 政策連結 */
-.footer-policy-links {
-  margin-bottom: 8px;
-  font-size: 0.68rem;
-  letter-spacing: 0.8px;
-}
-.footer-policy-links a {
-  color: var(--clay-deep);
-  text-decoration: none;
-  opacity: 0.8;
-  border-bottom: 1px solid transparent;
-  transition: var(--transition-smooth);
-}
-.footer-policy-links a:hover {
-  opacity: 1;
-  border-bottom-color: var(--avo-accent);
-}
-.footer-policy-links a:focus-visible {
-  outline: 2px solid var(--clay-deep);
-  outline-offset: 3px;
-}
-.footer-policy-links span {
-  color: var(--avo-accent);
-  opacity: 0.5;
-  margin: 0 6px;
-}
+.success-animate { animation: successFloat 0.6s ease-out; }
 
 /* ------------------------ */
 /* 浮動購物車 */
@@ -1362,9 +1209,9 @@ select:focus, input:focus, textarea:focus {
   font-size: 0.9rem;
 }
 #floating-cart-handle:hover { background: #BD9E77; }   /* hover 往亮走 */
+
 /* 桌機把手是直排（writing-mode: vertical-rl），所以「上下間距」
-   要用 margin-top 而不是 margin-left —— 直排時主軸是垂直的。
-   ⚠️ index.html 裡那三個 &nbsp; 請一併刪掉，兩者會疊加。 */
+   要用 margin-top 而不是 margin-left —— 直排時主軸是垂直的。 */
 .cart-hint {
   font-size: 0.75rem;
   opacity: 0.8;
@@ -1443,7 +1290,7 @@ select:focus, input:focus, textarea:focus {
 }
 
 #floating-cart-totals {
-  flex: 0 0 auto;          /* 👈 新增 */
+  flex: 0 0 auto;
   margin-top: 12px;
   padding: 10px 12px 0;
   display: flex;
@@ -1515,7 +1362,7 @@ select:focus, input:focus, textarea:focus {
   max-width:none;
 }
 
-/* 🌫️ 半透明遮罩（A）
+/* 🌫️ 半透明遮罩
    用 ::before 而不是新的 DOM 元素 —— 點到它時事件的 target 會是
    #floating-cart 本身，剛好可以拿來判斷「點在購物車外面」。 */
 #floating-cart::before{
@@ -1534,8 +1381,8 @@ select:focus, input:focus, textarea:focus {
   width:100%;
   min-height:calc(56px + env(safe-area-inset-bottom,0px));
   padding:0 18px env(safe-area-inset-bottom,0px);
-  background: #A98A63;   /* 牛皮紙褐。⚠️ 要跟手機版那處保持一致 */
-  color: #2A2118;        /* 深咖啡字，對比 4.9:1 —— 底色淺，字必須夠深 */
+  background: #A98A63;
+  color: #2A2118;
   display:flex;align-items:center;gap:10px;
   font-weight:600;font-size:.92rem;letter-spacing:1.5px;
   cursor:pointer;user-select:none;
@@ -1566,7 +1413,7 @@ select:focus, input:focus, textarea:focus {
              opacity .2s ease,
              padding .35s cubic-bezier(.4,0,.2,1);
 }
-/* 🎬 內容淡入延遲（C）：面板先滑出，內容晚 0.12 秒才浮現。
+/* 🎬 內容淡入延遲：面板先滑出，內容晚 0.12 秒才浮現。
    收合時不延遲 —— 關的時候要俐落，拖泥帶水會覺得卡。 */
 #floating-cart.show #floating-cart-content{
   max-height:55vh;opacity:1;padding:14px 14px 0;
@@ -1744,6 +1591,101 @@ select:focus, input:focus, textarea:focus {
   letter-spacing: 0.5px;
 }
 
+/* 🌾 版權 + 山丘
+   兩座山丘取自 LINE 圖文選單底部，是全站唯一的插畫元素。
+
+   ⚠️ SVG 是整塊背景（不是只有稜線那一條帶），山丘下方一路實色填到底，
+      所以社群圖示與版權文字是「站在草地上」的。前景山丘內建一個由深到淺
+      的漸層，讓底部的文字區塊顏色淡一點、字才讀得清楚。
+   ⚠️ preserveAspectRatio='none' + background-size:100% 100%：
+      viewBox 高度 220 是照頁尾實際高度抓的，比例接近 1:1，曲線幾乎不變形。
+      如果之後大幅改動 padding，稜線會跟著被拉扁或拉高。 */
+.site-footer {
+  position: relative;
+  margin-top: 50px;
+  padding: 112px 10px 22px;
+  text-align: center;
+  font-size: 0.68rem;
+  color: var(--clay-deep);
+  letter-spacing: 0.8px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 220' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23D6DFC4'/%3E%3Cstop offset='0.55' stop-color='%23E2E7D6'/%3E%3Cstop offset='1' stop-color='%23EBEEE2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M0,220 L0,74 C80,26 165,96 250,88 C332,80 386,40 470,52 C556,64 622,20 720,58 L720,220 Z' fill='%23E6EBD6'/%3E%3Cpath d='M0,220 L0,100 C110,68 195,112 300,104 C420,95 505,74 604,86 C662,93 692,104 720,98 L720,220 Z' fill='url(%23g)'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  background-size: 100% 100%;
+}
+
+/* 🔗 footer 社群連結：細框膠囊徽章 */
+.social-links {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 22px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.social-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 68px;
+  text-decoration: none;
+}
+
+.social-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--avo-accent);
+  color: var(--clay-deep);
+  transition: var(--transition-smooth);
+}
+.social-icon svg { width: 20px; height: 20px; }
+
+.social-label {
+  font-size: 0.66rem;
+  color: var(--clay-deep);
+  letter-spacing: 0.8px;
+  opacity: 0.75;
+}
+.social-item:hover .social-icon {
+  background: var(--avo-accent);
+  color: var(--creamy);
+}
+.social-item:hover .social-label { opacity: 1; }
+
+/* 🔗 footer 政策連結 */
+.footer-policy-links {
+  margin-bottom: 8px;
+  font-size: 0.68rem;
+  letter-spacing: 0.8px;
+}
+.footer-policy-links a {
+  color: var(--clay-deep);
+  text-decoration: none;
+  opacity: 0.8;
+  border-bottom: 1px solid transparent;
+  transition: var(--transition-smooth);
+}
+.footer-policy-links a:hover {
+  opacity: 1;
+  border-bottom-color: var(--avo-accent);
+}
+.footer-policy-links a:focus-visible {
+  outline: 2px solid var(--clay-deep);
+  outline-offset: 3px;
+}
+.footer-policy-links span {
+  color: var(--avo-accent);
+  opacity: 0.5;
+  margin: 0 6px;
+}
+
 /* ♿ 尊重系統的「減少動態效果」設定 */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1754,47 +1696,10 @@ select:focus, input:focus, textarea:focus {
   .variety-images:hover .avocado-img { transform: none; }
 }
 
-/* 📦 運費後面的箱數 */
-.box-count {
-  font-size: 0.82rem;
-  font-weight: 500;
-  opacity: 0.8;
-  margin-left: 2px;
-}
 
-/* ☐ 分開寄出選項 */
-#cart-merge-option { margin-top: 10px; padding-left: 6px; }
-
-.cart-split-label {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 0.82rem;
-  line-height: 1.6;
-  color: var(--clay-deep);
-  cursor: pointer;
-  padding: 8px 10px;
-  background: rgba(237, 228, 211, 0.5);
-  border: 1px dashed var(--avo-accent);
-  border-radius: 10px;
-}
-.cart-split-label input {
-  width: auto !important;
-  margin: 4px 0 0 0;
-  padding: 0 !important;
-  flex: 0 0 auto;
-  accent-color: var(--herb-green);
-}
-
-.cart-split-note {
-  font-size: 0.78rem;
-  line-height: 1.6;
-  color: var(--avo-accent);
-  padding: 8px 10px;
-}
-/* ═══════════════════════════════════════════════════════════
-   💳 金流相關樣式 — 請整段追加到 style.css 最後面
-   ═══════════════════════════════════════════════════════════ */
+/* =========================================================
+   💳 v8 新增：金流相關樣式
+   ========================================================= */
 
 /* 🔵 三階狀態列
    沿用 .title-divider 的語彙：細線 + 圓點。
@@ -1882,7 +1787,6 @@ select:focus, input:focus, textarea:focus {
   letter-spacing: 0.8px;
 }
 
-.pay-action-card .btn-primary,
 #pay-action-content .btn-primary {
   width: 100%;
   font-size: 1rem !important;
@@ -1890,9 +1794,8 @@ select:focus, input:focus, textarea:focus {
 }
 
 /* 「保存訂單連結」的次要按鈕與說明 */
-.pay-save {
-  margin-top: 14px;
-}
+.pay-save { margin-top: 14px; }
+
 .pay-save .btn-secondary {
   width: 100%;
   font-size: 0.88rem !important;
@@ -1947,6 +1850,59 @@ select:focus, input:focus, textarea:focus {
 
 @media screen and (max-width: 767px) {
   .pay-field-value { font-size: 1.25rem; }
+}
+
+/* 💰 匯款資訊單卡（逃生開關切到 bank 時）
+   銀行、帳號、戶名是一組要一起看的資訊，包在同一張卡裡，
+   用細虛線分隔而不是三個獨立框 —— 拆開會讓視線一直被打斷。
+   只有帳號需要放大，那是唯一要逐字輸入的東西。 */
+.pay-bank { padding: 4px 18px 18px; text-align: left; }
+
+.pay-bank-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px dashed var(--rule-soft);
+}
+.pay-bank-row:last-of-type { border-bottom: none; }
+
+.pay-bank-label {
+  flex: 0 0 auto;
+  width: 68px;
+  font-size: 0.78rem;
+  letter-spacing: 1px;
+  color: var(--clay-deep);
+  opacity: 0.85;
+}
+
+.pay-bank-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.95rem;
+  color: var(--avo-dark);
+  word-break: break-all;
+  text-align: right;
+}
+
+.pay-bank-acc {
+  font-family: var(--heading-font);
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-bank-copy {
+  display: block;
+  margin: 16px auto 0;
+}
+
+@media screen and (max-width: 767px) {
+  .pay-bank { padding: 4px 14px 16px; }
+  .pay-bank-label { width: 58px; font-size: 0.74rem; }
+  .pay-bank-value { font-size: 0.9rem; }
+  .pay-bank-acc { font-size: 1.15rem; letter-spacing: 1px; }
 }
 
 /* ✅ 已付款的狀態 */
