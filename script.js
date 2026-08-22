@@ -2855,18 +2855,50 @@ function 付款連結(orderKey) {
   return PAY_WORKER_URL.replace(/\/+$/, '') + '/pay?k=' + encodeURIComponent(orderKey);
 }
  
-/** 讀一次付款狀態。查不到回 null（代表還沒進到金流）。 */
+/**
+ * 讀一次付款狀態。
+ *
+ * 回傳值有三種，呼叫端要分得出來：
+ *   物件  → 有付款紀錄
+ *   null  → 確實沒有這筆（正常，代表客人還沒進到金流）
+ *   false → 查詢失敗（權限、網路、伺服器錯誤）
+ *
+ * ⚠️ 這裡曾經把三種情況全部回 null，結果是：
+ *    Firebase 規則沒開 payments 讀取權限時，前端拿到 Permission denied
+ *    卻被當成「還沒付款」—— ATM 虛擬帳號不顯示、已付款的訂單一直跳橫幅，
+ *    而 console 一片乾淨，完全看不出原因。查了半小時才找到。
+ *    失敗一定要能被區分出來，而且要在 console 留下痕跡。
+ */
 async function 查詢付款狀態(orderKey) {
   if (!orderKey) return null;
+
+  const url = FIREBASE_DB_URL + '/' + FIREBASE_PAYMENTS_PATH + '/' +
+              encodeURIComponent(orderKey) + '.json';
+
   try {
-    const res = await fetch(
-      FIREBASE_DB_URL + '/' + FIREBASE_PAYMENTS_PATH + '/' +
-      encodeURIComponent(orderKey) + '.json',
-      { cache: 'no-store' }
-    );
-    if (!res.ok) return null;
+    const res = await fetch(url, { cache: 'no-store' });
+
+    if (!res.ok) {
+      const 內文 = await res.text().catch(() => '');
+      if (res.status === 401 || res.status === 403 || 內文.indexOf('Permission denied') > -1) {
+        console.error(
+          '[付款狀態] ❌ Firebase 拒絕讀取 payments 節點。\n' +
+          '　 這通常是資料庫規則沒有開放 payments/$orderKey 的讀取權限。\n' +
+          '　 症狀：虛擬帳號不顯示、已付款仍跳未付款橫幅。\n' +
+          '　 訂單：' + orderKey
+        );
+      } else {
+        console.error('[付款狀態] ❌ 查詢失敗 HTTP ' + res.status + '：' + 內文.substring(0, 120));
+      }
+      return false;   // ⚠️ 不是 null —— 讓呼叫端知道「查不到」不等於「沒付款」
+    }
+
     return await res.json();
-  } catch (e) { return null; }
+
+  } catch (e) {
+    console.error('[付款狀態] ❌ 連線失敗（可能是網路中斷）：' + e.message);
+    return false;
+  }
 }
  
 /**
