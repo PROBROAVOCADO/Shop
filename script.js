@@ -2601,19 +2601,17 @@ function renderSuccessPage() {
  * （收據保留 72 小時）。
  */
 async function 從網址載入訂單() {
-  let key = '';
-  try {
-    key = new URLSearchParams(location.search).get('order') || '';
-  } catch (e) { return false; }
- 
-  if (!/^[0-9a-fA-F-]{36}$/.test(key)) return false;
- 
+  // orderKey 在檔案最頂端就已經從網址取出並清除（避免流進 GA4 的 page_location），
+  // 所以這裡直接用那個變數，不要再讀 location.search —— 那時候已經是空的了。
+  const key = 進站訂單Key;
+  if (!key) return false;
+
   const receipt = await fetchOrderReceipt(key);
   if (!receipt) {
     customAlert('⚠️ 查不到這筆訂單，可能已超過保留期限。\n\n若有疑問請透過 LINE 與我們聯繫。');
     return false;
   }
- 
+
   currentOrderSummary = {
     orderKey: key,
     subtotal: Number(receipt.subtotal) || 0,
@@ -2625,14 +2623,8 @@ async function 從網址載入訂單() {
     address: '',   // 收據不含地址（個資），這一列會顯示空白
     shippingMethod: ''
   };
- 
+
   goToStep(5);
- 
-  // 網址清乾淨，客人重新整理不會又跑一次
-  try {
-    history.replaceState(null, '', location.pathname);
-  } catch (e) { /* 忽略 */ }
- 
   return true;
 }
 
