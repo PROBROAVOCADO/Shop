@@ -1391,7 +1391,9 @@ function renderTurnstile_() {
       action: 'place_order',
       theme: 'light',
       size: 'flexible',
-      appearance: 'interaction-only',
+      // 訂購頁固定顯示驗證狀態，讓客人知道頁面並非卡住。
+      // Managed 模式仍會自動判斷是否需要客人互動。
+      appearance: 'always',
       callback: function (token) { turnstileToken = String(token || ''); },
       'expired-callback': function () { turnstileToken = ''; resetTurnstile_(); },
       'timeout-callback': function () { turnstileToken = ''; resetTurnstile_(); },

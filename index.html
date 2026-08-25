@@ -84,9 +84,6 @@
     <p class="text-story" id="announcement-content"></p>
   </div>
 
-  <div id="turnstile-container" class="turnstile-container" style="display:none;"
-       aria-label="人機驗證"></div>
-
   <p class="order-policy-notice">
     送出訂單前請確認已閱讀
     <a href="refund-policy.html" target="_blank" rel="noopener">退換貨政策</a>
@@ -289,6 +286,9 @@
       placeholder="有特殊出貨需求可以告訴我們&#10;（例如指定分箱方式、想對我們說的話blabla...）"></textarea>
   </div>
 
+  <div id="turnstile-container" class="turnstile-container" style="display:none;"
+       aria-label="人機驗證"></div>
+
   <div class="button-group">
     <button class="btn-secondary" onclick="goToStep(3)">🥑 返回價格表</button>
     <button class="btn-primary" id="submit-btn" onclick="submitOrder()">✅ 確認訂購</button>
@@ -435,6 +435,6 @@
 
     <!-- 📊 GA4 追蹤模組。必須在 script.js「之前」 -->
     <script src="analytics.js?v=2.3"></script>
-    <script src="script.js?v=10"></script>
+<script src="script.js?v=11"></script>
   </body>
 </html>
