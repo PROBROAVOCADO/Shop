@@ -3084,6 +3084,7 @@ function 渲染付款區塊(pay) {
  
   const 已付款 = pay && (pay.tradeStatus === '1' || pay.status === '已付款');
   const 已取消 = pay && (pay.status === '已取消' || pay.status === '已退款');
+  const 付款失敗 = pay && (pay.tradeStatus === '2' || pay.status === '付款失敗');
  
   // ---------- 已付款 ----------
   if (已付款) {
@@ -3104,6 +3105,21 @@ function 渲染付款區塊(pay) {
       '<p class="pay-lead">這筆訂單已經取消。<br>如需重新訂購，請回到訂購頁面。</p>';
     return;
   }
+
+  // ---------- 付款失敗 ----------
+  // 不顯示 PAYUNi 原始錯誤內容，避免技術資訊或付款識別資料出現在前端。
+  // 同一 MerTradeNo 有安全去重時間，立即重試時 Worker 會顯示剩餘分鐘數。
+  if (付款失敗) {
+    設定付款標題('付款未完成', 'PAYMENT NOT COMPLETED');
+    設定狀態列(1);
+    記住未付款訂單(orderKey, (currentOrderSummary && currentOrderSummary.total) || 0);
+    box.innerHTML =
+      '<p class="pay-lead">本次付款沒有完成，訂單仍為您保留。<br>若剛從付款頁返回，請稍候約 11 分鐘再重新付款。</p>' +
+      付款開始表單(orderKey) +
+      保存連結區塊(orderKey) +
+      '<p class="pay-tail-note">重新付款時可以改選其他可用的付款方式。</p>';
+    return;
+  }
  
   // ---------- 已取號（ATM / 超商代碼），尚未繳費 ----------
   const 是延遲付款 = pay && pay.payNo &&
@@ -3111,10 +3127,20 @@ function 渲染付款區塊(pay) {
  
   if (是延遲付款) {
     const isAtm = pay.paymentMethod === 'ATM';
+    const bankCode = isAtm ? String(pay.bankType || '').trim() : '';
+    const bankCodeBlock = isAtm
+      ? (bankCode
+        ? '<div class="pay-field">' +
+            '<p class="pay-field-label">銀行代碼</p>' +
+            '<p class="pay-field-value">' + esc(bankCode) + '</p>' +
+          '</div>'
+        : '<p class="pay-tail-note">銀行代碼尚未取得，請先不要轉帳；請稍後重新整理或透過 LINE 聯繫我們確認。</p>')
+      : '';
     設定付款標題(isAtm ? '請完成轉帳' : '請至超商繳費', 'AWAITING PAYMENT');
     設定狀態列(1);
  
     box.innerHTML =
+      bankCodeBlock +
       '<div class="pay-field">' +
         '<p class="pay-field-label">' + (isAtm ? '虛擬帳號' : '繳費代碼') + '</p>' +
         '<p class="pay-field-value">' + esc(pay.payNo) + '</p>' +
@@ -3124,6 +3150,9 @@ function 渲染付款區塊(pay) {
         ? '<div class="pay-field"><p class="pay-field-label">繳費期限</p>' +
           '<p class="pay-field-value" style="font-size:1.05rem">' + esc(pay.expireDate) + '</p></div>'
         : '') +
+      (isAtm
+        ? '<p class="pay-tail-note">銀行 App 的「銀行代碼」填上方代碼，「帳號」填虛擬帳號。</p>'
+        : '') +
       '<p class="pay-lead" style="margin:18px 0 0">✨ 完成付款後，才會為您排入出貨序列</p>' +
       保存連結區塊(orderKey) +
       '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡查看，訂單不會消失。</p>';
@@ -3131,7 +3160,7 @@ function 渲染付款區塊(pay) {
   }
  
   // ---------- 尚未付款 ----------
-  設定付款標題('訂單已建立', 'ORDER CREATED');
+  設定付款標題('付款尚未完成', 'AWAITING PAYMENT');
   設定狀態列(1);
   記住未付款訂單(orderKey, (currentOrderSummary && currentOrderSummary.total) || 0);
  
