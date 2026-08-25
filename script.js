@@ -2947,6 +2947,19 @@ function 關閉未付款提示() {
 function 付款連結(orderKey) {
   return PAY_WORKER_URL.replace(/\/+$/, '') + '/pay?k=' + encodeURIComponent(orderKey);
 }
+
+/**
+ * 一般下單完成頁由客人親自按下按鈕，因此可直接用 POST 開始付款。
+ * 保存／分享用的連結仍使用上方的只讀 GET，避免 LINE 或瀏覽器的
+ * 連結預覽機器人提前建立付款資料、讓真正的客人被鎖住。
+ */
+function 付款開始表單(orderKey) {
+  const action = PAY_WORKER_URL.replace(/\/+$/, '') + '/pay/start';
+  return '<form method="POST" action="' + esc(action) + '" autocomplete="off">' +
+    '<input type="hidden" name="k" value="' + esc(orderKey) + '">' +
+    '<button type="submit" class="btn-primary">前往付款</button>' +
+    '</form>';
+}
  
 /**
  * 讀一次付款狀態。
@@ -3124,7 +3137,7 @@ function 渲染付款區塊(pay) {
  
   box.innerHTML =
     '<p class="pay-lead">✨ 完成付款後，才會為您排入出貨序列</p>' +
-    '<a class="btn-primary" href="' + 付款連結(orderKey) + '">前往付款</a>' +
+    付款開始表單(orderKey) +
     保存連結區塊(orderKey) +
     '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡重新付款，訂單不會消失。</p>';
 }
