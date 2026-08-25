@@ -79,6 +79,7 @@ try {
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwbkKqipfPrimFs7-d6ZorySDv0g5yhq_vbGGp2xmWZm2diNsblTfMjwP8kz-Hx9iRDTQ/exec';
 const CONFIG_JSON_URL  = 'https://probroavocado.com/data/config.json';
 const PAY_WORKER_URL = 'https://probro-payuni-crypto.probroavocado.workers.dev';
+const ORDER_PROXY_URL = PAY_WORKER_URL.replace(/\/+$/, '') + '/order';
 const FIREBASE_PAYMENTS_PATH = 'payments';
 const ADDRESS_JSON_URL = 'https://probroavocado.com/data/address.json';
 
@@ -160,6 +161,13 @@ var paymentMode = 'payuni';
 // 目前成功頁正在顯示哪一筆訂單，以及它的付款狀態監聽
 var currentPayOrderKey = null;
 var payStatusRef = null;
+
+// 🛡️ Cloudflare Turnstile。site key 是公開識別碼，從「首頁」設定讀取；
+// secret 只放在 Worker。未設定 site key 時保持相容模式，不顯示也不阻擋，
+// 方便依照部署清單分階段開啟。
+var turnstileWidgetId = null;
+var turnstileToken = '';
+var turnstileRenderAttempts = 0;
 
 // 🩺 健康判斷用（v6 修正誤報）
 const 控制節點寬限MS = 20000;   // 進站後這段時間內不做健康判斷
@@ -649,6 +657,7 @@ window.onload = async function () {
       linePayMsg:   cfgGet(cfg['匯款'], 'LINE_PAY公告') || '',
       linePayImgId: cfgGet(cfg['匯款'], 'LINE_PAY圖片ID') || '',
       successMsg:   cfgGet(cfg['匯款'], '成功頁提醒文字') || '',
+      turnstileSiteKey: String(cfgGet(cfg['首頁'], 'Turnstile網站金鑰') || '').trim(),
       stockData:    cfg['庫存'] || {},
       orderConfig:  cfg['訂購'] || {},
       addressMap:   addressMap || {},
@@ -1354,9 +1363,61 @@ function goToStep(step) {
     updateAddressSection();
     calculateCartTotal();
     updateOrderPageStopState(); // 若在瀏覽期間被停售，進來就要看得到
+    renderTurnstile_();
   }
 
   window.scrollTo(0, 0);
+}
+
+function renderTurnstile_() {
+  const box = document.getElementById('turnstile-container');
+  const siteKey = String((window.APP_CONFIG && window.APP_CONFIG.turnstileSiteKey) || '').trim();
+  if (!box) return;
+  if (!siteKey) {
+    box.style.display = 'none';
+    return;
+  }
+  box.style.display = 'flex';
+  if (turnstileWidgetId !== null) return;
+  if (!window.turnstile || typeof window.turnstile.render !== 'function') {
+    turnstileRenderAttempts++;
+    if (turnstileRenderAttempts <= 40) setTimeout(renderTurnstile_, 250);
+    else box.textContent = '人機驗證載入失敗，請重新整理頁面後再試。';
+    return;
+  }
+  try {
+    turnstileWidgetId = window.turnstile.render(box, {
+      sitekey: siteKey,
+      action: 'place_order',
+      theme: 'light',
+      size: 'flexible',
+      appearance: 'interaction-only',
+      callback: function (token) { turnstileToken = String(token || ''); },
+      'expired-callback': function () { turnstileToken = ''; resetTurnstile_(); },
+      'timeout-callback': function () { turnstileToken = ''; resetTurnstile_(); },
+      'error-callback': function () { turnstileToken = ''; return true; }
+    });
+  } catch (err) {
+    console.warn('[Turnstile] 載入失敗，請重新整理頁面');
+  }
+}
+
+function resetTurnstile_() {
+  turnstileToken = '';
+  if (turnstileWidgetId === null || !window.turnstile) return;
+  try { window.turnstile.reset(turnstileWidgetId); } catch (e) { /* 不影響下單狀態 */ }
+}
+
+function turnstileErrorText_(code) {
+  const known = {
+    TURNSTILE_TOKEN_INVALID: '請先完成人機驗證後再送出。',
+    TURNSTILE_REJECTED: '人機驗證已失效，請再試一次。',
+    TURNSTILE_UNAVAILABLE: '人機驗證服務暫時忙碌，請稍後再試。',
+    TURNSTILE_ACTION_MISMATCH: '人機驗證資料不符，請重新整理後再試。',
+    TURNSTILE_HOSTNAME_MISMATCH: '網站驗證設定尚未完成，請稍後再試。',
+    ORDER_PROXY_NOT_CONFIGURED: '訂購服務正在設定中，請稍後再試。'
+  };
+  return known[String(code || '')] || '';
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2296,6 +2357,24 @@ async function submitOrder(e) {
     return;
   }
 
+  const turnstileEnabled = !!String(
+    (window.APP_CONFIG && window.APP_CONFIG.turnstileSiteKey) || ''
+  ).trim();
+  if (turnstileEnabled) {
+    renderTurnstile_();
+    try {
+      if (!turnstileToken && window.turnstile && turnstileWidgetId !== null) {
+        turnstileToken = String(window.turnstile.getResponse(turnstileWidgetId) || '');
+      }
+    } catch (e) { turnstileToken = ''; }
+    if (!turnstileToken) {
+      customAlert('🛡️ 請先完成人機驗證，再確認訂購。');
+      const box = document.getElementById('turnstile-container');
+      if (box) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+  }
+
   isSubmitting = true;
   submitBtn.innerText = '確認庫存中...';
   submitBtn.disabled = true;
@@ -2304,6 +2383,7 @@ async function submitOrder(e) {
     isSubmitting = false;
     submitBtn.disabled = false;
     submitBtn.innerText = '✅ 確認訂購';
+    resetTurnstile_();
     flushPendingControl();      // 補上送單期間延後的畫面更新
     updateOrderPageStopState(); // 期間若被停售，按鈕要維持灰色
   };
@@ -2378,6 +2458,8 @@ async function submitOrder(e) {
     splitShipping: splitShipping
   };
 
+  if (turnstileEnabled) orderData.turnstileToken = turnstileToken;
+
   // 📊 GA4 識別碼（供後端補送 purchase 事件用）。
   //    寫在物件外面而不是用展開語法，相容性最穩。
   //    analytics.js 沒載入時整段跳過，送單完全不受影響。
@@ -2391,7 +2473,7 @@ async function submitOrder(e) {
   currentOrderSummary = orderData;
 
   try {
-    const res = await fetch(GAS_URL, {
+    const res = await fetch(ORDER_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(orderData)
@@ -2404,7 +2486,10 @@ async function submitOrder(e) {
     try { json = JSON.parse(rawText); }
     catch (parseErr) { throw new Error('SERVER_TIMEOUT_NON_JSON'); }
 
-    if (!json.success) throw new Error(json.error || '送單失敗');
+    if (!json.success) {
+      if (json.mayHaveSucceeded) throw new Error('SERVER_TIMEOUT_NON_JSON');
+      throw new Error(turnstileErrorText_(json.error) || json.error || '送單失敗');
+    }
 
     // 🔑 A2：成功頁改用後端實際成交的金額。
     // 舊版顯示的是前端自己算的數字，一旦你在客人開著頁面時改了價格，
@@ -2888,11 +2973,10 @@ async function 查詢付款狀態(orderKey) {
       const 內文 = await res.text().catch(() => '');
       if (res.status === 401 || res.status === 403 || 內文.indexOf('Permission denied') > -1) {
         console.error(
-          '[付款狀態] ❌ Firebase 拒絕讀取 payments 節點。\n' +
-          '　 這通常是資料庫規則沒有開放 payments/$orderKey 的讀取權限。\n' +
-          '　 症狀：虛擬帳號不顯示、已付款仍跳未付款橫幅。\n' +
-          '　 訂單：' + orderKey
-        );
+           '[付款狀態] ❌ Firebase 拒絕讀取 payments 節點。\n' +
+           '　 這通常是資料庫規則沒有開放 payments/$orderKey 的讀取權限。\n' +
+           '　 症狀：虛擬帳號不顯示、已付款仍跳未付款橫幅。'
+         );
       } else {
         console.error('[付款狀態] ❌ 查詢失敗 HTTP ' + res.status + '：' + 內文.substring(0, 120));
       }

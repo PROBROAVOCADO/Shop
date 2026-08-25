@@ -32,9 +32,11 @@
     <link rel="preconnect" href="https://script.google.com">
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://www.gstatic.com">
+    <link rel="preconnect" href="https://challenges.cloudflare.com">
     <link rel="preconnect" href="https://probro-stock-default-rtdb.asia-southeast1.firebasedatabase.app">
 
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js" defer></script>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
 
     <!-- 🥑 Open Graph 社群分享預覽圖 -->
     <meta property="og:title" content="🥑 波波酪梨｜南投小農 用心種植" />
@@ -45,7 +47,7 @@
     <meta name="twitter:card" content="summary_large_image" />
 
     <title>波波酪梨｜線上訂購</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=10">
   </head>
 
   <body>
@@ -81,6 +83,16 @@
     <div class="product-divider"></div>
     <p class="text-story" id="announcement-content"></p>
   </div>
+
+  <div id="turnstile-container" class="turnstile-container" style="display:none;"
+       aria-label="人機驗證"></div>
+
+  <p class="order-policy-notice">
+    送出訂單前請確認已閱讀
+    <a href="refund-policy.html" target="_blank" rel="noopener">退換貨政策</a>
+    與 <a href="privacy.html" target="_blank" rel="noopener">隱私權政策</a>。新鮮酪梨屬易於腐敗、保存期限較短的生鮮商品，
+    不適用七日無條件退貨；商品瑕疵或運送損壞仍依法協助處理。
+  </p>
 
   <div class="button-group">
     <button id="order-enter-btn" class="btn-primary" onclick="handleOrderEnter()">
@@ -422,7 +434,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
     <!-- 📊 GA4 追蹤模組。必須在 script.js「之前」 -->
-    <script src="analytics.js?v=2.2"></script>
-    <script src="script.js?v=9"></script>
+    <script src="analytics.js?v=2.3"></script>
+    <script src="script.js?v=10"></script>
   </body>
 </html>

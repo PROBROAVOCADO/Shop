@@ -1,5 +1,5 @@
 /*************************************************************
- * 波波酪梨 GA4 追蹤模組 — analytics.js  v2.0
+ * 波波酪梨 GA4 追蹤模組 — analytics.js  v2.1
  * 評估 ID：G-99EP460CDY
  *
  * 【為什麼用掛鉤（hook）而不是散進 script.js】
@@ -17,11 +17,11 @@
  *   1. 絕不弄壞下單。所有掛鉤都是「先呼叫原函式、拿到結果、
  *      再做追蹤」，追蹤那段包在 try/catch 裡。
  *   2. 絕不進入關鍵路徑。不攔截 fetch、不在送單前後加任何等待。
- *   3. purchase 以 orderKey 為 transaction_id，
- *      localStorage + 記憶體雙層去重。
+ *   3. purchase 使用 orderKey 的 SHA-256 衍生識別碼，GA4 不保存可直接
+ *      查詢 Firebase 訂單的原始鑰匙；localStorage + 記憶體雙層去重。
  *
  * 【載入位置】index.html 的 </body> 之前，script.js 的「上面」：
- *   <script src="analytics.js?v=2.0"></script>
+ *   <script src="analytics.js?v=2.1"></script>
  *   <script src="script.js"></script>
  *************************************************************/
 
@@ -173,6 +173,28 @@
     return !!loadSent()[orderKey];
   }
 
+  /**
+   * GA4 專用交易識別碼。
+   *
+   * 原始 orderKey 同時是 Firebase 單筆訂單的查詢鑰匙，不能再送進 GA4。
+   * WebCrypto 在背景計算 SHA-256；失敗時寧可少一筆分析事件，也絕不退回
+   * 使用原始 orderKey。pb_ 前綴讓分析報表可辨認新版資料。
+   */
+  function analyticsId(orderKey) {
+    var raw = String(orderKey || '').trim();
+    if (!raw) return Promise.reject(new Error('ORDER_KEY_EMPTY'));
+    if (!global.crypto || !global.crypto.subtle || typeof global.TextEncoder !== 'function') {
+      return Promise.reject(new Error('WEBCRYPTO_UNAVAILABLE'));
+    }
+    return global.crypto.subtle.digest('SHA-256', new global.TextEncoder().encode(raw))
+      .then(function (buf) {
+        var bytes = new Uint8Array(buf);
+        var hex = '';
+        for (var i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+        return 'pb_' + hex;
+      });
+  }
+
   /* ==========================================================
    *  資料轉換 —— 配合 script.js 的實際結構
    *
@@ -276,7 +298,7 @@
 
   var PBTrack = {
 
-    version: '2.0',
+    version: '2.1',
 
     /**
      * 送單 payload 要帶的識別碼。
@@ -351,26 +373,37 @@
         _pendingRecovered = false;
       }
 
-      var key = String(order.orderKey);
-      if (alreadySent(key)) {
-        log('訂單 ' + key + ' 已送過 purchase，略過（去重生效）');
+      var rawKey = String(order.orderKey);
+
+      // 相容舊版 localStorage：舊版若已用原始 key 送過，不能因新版改成雜湊
+      // 又重送一次。只讀取舊值做轉換期去重，不再新增原始 key。
+      if (alreadySent(rawKey)) {
+        log('這筆訂單已送過 purchase，略過（舊版去重生效）');
         return false;
       }
 
       var 名稱 = { post: '中華郵政', '711': '7-11超商', blackcat: '黑貓宅急便' };
 
-      send('purchase', {
-        transaction_id: key,
-        currency: CONFIG.CURRENCY,
-        value: Number(order.total) || 0,
-        shipping: Number(order.shippingFee) || 0,
-        items: cartToItems(order.cart),
-        shipping_tier: 名稱[order.shippingMethod] || '',
-        order_source: order.source || 'frontend'
+      return analyticsId(rawKey).then(function (id) {
+        if (alreadySent(id)) {
+          log('這筆訂單已送過 purchase，略過（去重生效）');
+          return false;
+        }
+        send('purchase', {
+          transaction_id: id,
+          currency: CONFIG.CURRENCY,
+          value: Number(order.total) || 0,
+          shipping: Number(order.shippingFee) || 0,
+          items: cartToItems(order.cart),
+          shipping_tier: 名稱[order.shippingMethod] || '',
+          order_source: order.source || 'frontend'
+        });
+        markSent(id);
+        return true;
+      }).catch(function (err) {
+        warn('purchase 分析識別碼產生失敗（已略過，不影響下單）', err);
+        return false;
       });
-
-      markSent(key);
-      return true;
     }, 'purchase'),
 
     /* ---------- 秒殺營運事件 ---------- */
@@ -428,10 +461,14 @@
     }, 'order_submit_fail'),
 
     orderRecovered: safe(function (orderKey, source) {
-      send('order_recovered', {
-        transaction_id: String(orderKey || ''),
-        attempt_no: _attemptNo,
-        recovery_source: source || 'unknown'
+      return analyticsId(orderKey).then(function (id) {
+        send('order_recovered', {
+          transaction_id: id,
+          attempt_no: _attemptNo,
+          recovery_source: source || 'unknown'
+        });
+      }).catch(function (err) {
+        warn('order_recovered 分析識別碼產生失敗（已略過）', err);
       });
     }, 'order_recovered'),
 
@@ -467,7 +504,7 @@
         env: detectEnv(),
         queued: _queue.length,
         hooksInstalled: _hooksInstalled,
-        sentOrders: Object.keys(loadSent())
+        sentOrdersCount: Object.keys(loadSent()).length
       };
       console.log('[PBTrack] 狀態', info);
       return info;

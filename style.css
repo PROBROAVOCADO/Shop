@@ -61,6 +61,36 @@
                   "PMingLiU", "MingLiU", serif;
 }
 
+/* Cloudflare Turnstile：只有後台提供 site key 時才由 JS 顯示。
+   flexible 尺寸可在手機版撐滿，但不讓 iframe 超出訂購卡片。 */
+.turnstile-container {
+  width: 100%;
+  min-height: 66px;
+  margin: 22px auto 4px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.turnstile-container > div,
+.turnstile-container iframe {
+  max-width: 100%;
+}
+
+.order-policy-notice {
+  margin: 14px auto 6px;
+  color: var(--clay-deep);
+  font-size: 0.78rem;
+  line-height: 1.75;
+  text-align: center;
+}
+
+.order-policy-notice a {
+  color: var(--herb-green);
+  font-weight: 700;
+  text-underline-offset: 3px;
+}
+
 /* ✅ 全站盒模型修正 */
 *, *::before, *::after { box-sizing: border-box; }
 
