@@ -2973,7 +2973,7 @@ function 付款方式選擇區塊(orderKey) {
       ? '<div class="pay-choice-separator"><span>或</span></div>' +
         '<div class="pay-choice-item">' +
           LINEPay人工選擇表單(orderKey, token) +
-          '<p class="pay-choice-note">使用固定 LINE Pay QR；點選只會記錄選擇時間，付款仍需由我們人工核對。</p>' +
+          '<p class="pay-choice-note">使用LINE Pay</p>' +
         '</div>'
       : '') +
     '</div>';
