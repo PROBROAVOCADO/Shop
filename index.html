@@ -47,7 +47,8 @@
     <meta name="twitter:card" content="summary_large_image" />
 
     <title>波波酪梨｜線上訂購</title>
-    <link rel="stylesheet" href="style.css?v=11">
+    <!-- 2026-08-26：v12 同步多筆未付款提示版面 -->
+    <link rel="stylesheet" href="style.css?v=12">
   </head>
 
   <body>
@@ -359,7 +360,8 @@
      banner-container 之前（跟 #release-banner 同一層）
      ═══════════════════════════════════════════════════════════ -->
  
-<!-- 🔔 有未完成付款的訂單時自動出現。資料來自 localStorage，
+<!-- 🔔 有一筆或多筆未完成付款的訂單時自動出現。只顯示筆數與合計，
+     不列出姓名、電話、品項、訂單識別碼或付款方式。資料來自 localStorage，
      失效（換裝置、清快取、LINE 內建瀏覽器隔離）只是不顯示，
      不影響任何功能 —— 客人還是可以從訂單連結或聯繫我們處理。 -->
 <div id="pending-order-banner" class="pending-banner" style="display:none;"></div>
@@ -435,6 +437,6 @@
 
     <!-- 📊 GA4 追蹤模組。必須在 script.js「之前」 -->
     <script src="analytics.js?v=2.3"></script>
-<script src="script.js?v=15"></script>
+<script src="script.js?v=16"></script>
   </body>
 </html>

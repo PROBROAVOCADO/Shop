@@ -1,6 +1,8 @@
 /* =========================================================
    🥑 波波酪梨 Pro-Bro Avocado
-   style.css ｜ v8・PAYUNi 金流改版
+   style.css ｜ v9・多筆付款提醒版（2026-08-26）
+
+   【v9】未付款提示可顯示多筆合計、分筆付款說明與最近一筆入口。
 
    【v8 相對 v7 的改動】
 
@@ -1990,6 +1992,13 @@ select:focus, input:focus, textarea:focus {
   font-variant-numeric: tabular-nums;
 }
 
+.pending-banner-detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--avo-accent);
+  font-size: 0.76rem;
+}
+
 .pending-banner-btn {
   flex: 0 0 auto;
   padding: 9px 18px;
@@ -2031,5 +2040,6 @@ select:focus, input:focus, textarea:focus {
     border-radius: 12px;
   }
   .pending-banner-text { font-size: 0.78rem; }
+  .pending-banner-detail { font-size: 0.72rem; }
   .pending-banner-btn { padding: 8px 14px; font-size: 0.76rem; }
 }

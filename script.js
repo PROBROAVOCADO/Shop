@@ -1,6 +1,12 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08 Firebase 控制節點版 (v5) + v7 樣式改版配套
+ * 版本：2026-08-26 付款提醒與逾期狀態安全版
+ *
+ * 【2026-08-26 付款提醒與逾期更新】
+ *  ・付款頁同時提供 PAYUNi 與固定 LINE Pay，兩者採用同等主按鈕樣式
+ *  ・未付款提示可同時保留多筆，只顯示筆數、合計與最近一筆付款入口
+ *  ・已付款、人工取消、實際到期或 LINE Pay 超過 24 小時會移除對應提示
+ *  ・查不到遠端狀態時才使用 48 小時本機備援期限，不顯示任何訂單識別資料
  *
  * 【v5 主要改動】共四項
  *
@@ -2836,7 +2842,10 @@ function handleLineJump() {
 // 💾 未完成訂單的本地記錄
 // ========================================
  
-const PENDING_ORDER_KEY = 'probro_pending_order';
+const PENDING_ORDER_KEY = 'probro_pending_orders_v2';
+const LEGACY_PENDING_ORDER_KEY = 'probro_pending_order';
+const PENDING_FALLBACK_MAX_MS = 48 * 60 * 60 * 1000;
+const LINE_PAY_REMINDER_MAX_MS = 24 * 60 * 60 * 1000;
  
 /**
  * 記住這筆訂單，客人下次進站時提醒他還沒付款。
@@ -2850,41 +2859,126 @@ const PENDING_ORDER_KEY = 'probro_pending_order';
 function 記住未付款訂單(orderKey, total, paymentActionToken) {
   if (!orderKey) return;
   try {
-    localStorage.setItem(PENDING_ORDER_KEY, JSON.stringify({
+    const list = 讀取未付款訂單();
+    const next = {
       key: orderKey,
       total: Number(total) || 0,
       at: Date.now(),
       token: String(paymentActionToken || '')
-    }));
+    };
+    const index = list.findIndex(function (rec) { return rec.key === orderKey; });
+    if (index >= 0) {
+      next.at = Number(list[index].at || next.at);
+      if (!next.token) next.token = String(list[index].token || '');
+      list[index] = next;
+    } else {
+      list.push(next);
+    }
+    儲存未付款訂單_(list);
   } catch (e) { /* 無痕模式或空間不足，忽略 */ }
 }
  
 function 清除未付款訂單(orderKey) {
   try {
-    const raw = localStorage.getItem(PENDING_ORDER_KEY);
-    if (!raw) return;
-    if (orderKey) {
-      const rec = JSON.parse(raw);
-      if (rec && rec.key !== orderKey) return;   // 不是同一筆就別動
+    if (!orderKey) {
+      localStorage.removeItem(PENDING_ORDER_KEY);
+      localStorage.removeItem(LEGACY_PENDING_ORDER_KEY);
+      return;
     }
-    localStorage.removeItem(PENDING_ORDER_KEY);
+    const list = 讀取未付款訂單().filter(function (rec) {
+      return rec.key !== orderKey;
+    });
+    儲存未付款訂單_(list);
   } catch (e) { /* 忽略 */ }
 }
  
 function 讀取未付款訂單() {
   try {
-    const raw = localStorage.getItem(PENDING_ORDER_KEY);
-    if (!raw) return null;
-    const rec = JSON.parse(raw);
-    if (!rec || !rec.key) return null;
-    // 超過三天就不再提醒 —— 那時候訂單早就被取消了，
-    // 還跳出來只會讓客人以為訂單還在。
-    if (Date.now() - Number(rec.at || 0) > 3 * 86400000) {
-      清除未付款訂單();
-      return null;
+    let raw = localStorage.getItem(PENDING_ORDER_KEY);
+    let parsed = raw ? JSON.parse(raw) : [];
+
+    // 舊版只保存一筆；第一次讀取時無痛搬到新版陣列格式。
+    if (!Array.isArray(parsed)) parsed = parsed && parsed.key ? [parsed] : [];
+    if (parsed.length === 0) {
+      const legacyRaw = localStorage.getItem(LEGACY_PENDING_ORDER_KEY);
+      const legacy = legacyRaw ? JSON.parse(legacyRaw) : null;
+      if (legacy && legacy.key) parsed = [legacy];
     }
-    return rec;
-  } catch (e) { return null; }
+
+    const seen = {};
+    const list = parsed.filter(function (rec) {
+      if (!rec || !rec.key || seen[rec.key]) return false;
+      seen[rec.key] = true;
+      rec.total = Number(rec.total) || 0;
+      rec.at = Number(rec.at) || Date.now();
+      rec.token = String(rec.token || '');
+      return true;
+    }).sort(function (a, b) { return a.at - b.at; });
+
+    // 正常使用只有少量紀錄；保留最近 50 筆可避免異常腳本塞滿 localStorage。
+    const bounded = list.slice(-50);
+    儲存未付款訂單_(bounded);
+    return bounded;
+  } catch (e) { return []; }
+}
+
+function 儲存未付款訂單_(list) {
+  try {
+    const safeList = Array.isArray(list) ? list : [];
+    if (safeList.length) localStorage.setItem(PENDING_ORDER_KEY, JSON.stringify(safeList));
+    else localStorage.removeItem(PENDING_ORDER_KEY);
+    localStorage.removeItem(LEGACY_PENDING_ORDER_KEY);
+  } catch (e) { /* 忽略 */ }
+}
+
+function 付款日期期限毫秒_(value) {
+  const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return 0;
+  return Date.parse(match[1] + '-' + match[2] + '-' + match[3] + 'T23:59:59+08:00') || 0;
+}
+
+function 付款已完成_(pay) {
+  return !!(pay && (String(pay.tradeStatus) === '1' || pay.status === '已付款' ||
+    pay.tradeStatus === 'manual_paid'));
+}
+
+function 付款已關閉_(pay) {
+  if (!pay) return false;
+  const status = String(pay.status || '');
+  const tradeStatus = String(pay.tradeStatus || '');
+  const payuniAttemptEnded = pay.source === 'payuni-callback' &&
+    (tradeStatus === '2' || tradeStatus === '4');
+  return (!payuniAttemptEnded && status === '已取消') || status === '已取消（人工處理）' ||
+    status === '已退款' || status === '已逾期' ||
+    status === '付款逾期（待人工處理）' ||
+    tradeStatus === '3' ||
+    tradeStatus === 'expired' || tradeStatus === 'manual_cancelled';
+}
+
+function 未付款提醒仍有效_(rec, pay, receipt) {
+  const now = serverNow();
+  if (付款已完成_(pay) || 付款已關閉_(pay)) return false;
+
+  const orderAt = Number((receipt && receipt.at) || rec.at || 0);
+  const isLinePay = !!(pay && pay.paymentMethod === 'LINEPAY' &&
+    (pay.source === 'manual-linepay-choice' || pay.source === 'manual-linepay-confirmed'));
+  if (isLinePay && orderAt && now - orderAt >= LINE_PAY_REMINDER_MAX_MS) return false;
+
+  // ATM／超商以 PAYUNi 實際回傳期限為先；尚未取號時才使用訂單要求期限。
+  const actualExpireAt = 付款日期期限毫秒_(pay && pay.expireDate);
+  const requestedExpireAt = Number(receipt && receipt.reservationExpiresAt) ||
+    付款日期期限毫秒_(receipt && receipt.paymentExpireDate);
+  const expireAt = actualExpireAt || requestedExpireAt;
+  if (expireAt && now > expireAt) return false;
+
+  if (receipt && (receipt.reservationState === 'cancelled' ||
+      receipt.reservationState === 'cancelled-no-restock' ||
+      receipt.reservationState === 'expired' ||
+      receipt.reservationState === 'payment_expired_manual')) return false;
+
+  // 遠端狀態暫時查不到時才使用本機備援期限，避免提示永久殘留。
+  if (!pay && !receipt && orderAt && now - orderAt >= PENDING_FALLBACK_MAX_MS) return false;
+  return true;
 }
  
 /**
@@ -2894,23 +2988,34 @@ function 讀取未付款訂單() {
 async function 檢查未付款訂單() {
   if (paymentMode !== 'payuni') return;
  
-  const rec = 讀取未付款訂單();
-  if (!rec) return;
- 
-  const pay = await 查詢付款狀態(rec.key);
-  if (pay && (pay.tradeStatus === '1' || pay.status === '已付款')) {
-    清除未付款訂單(rec.key);
-    return;
-  }
+  const list = 讀取未付款訂單();
+  if (!list.length) return;
+
+  const checked = await Promise.all(list.map(async function (rec) {
+    const result = await Promise.all([
+      查詢付款狀態(rec.key),
+      fetchOrderReceipt(rec.key)
+    ]);
+    return 未付款提醒仍有效_(rec, result[0], result[1]) ? rec : null;
+  }));
+  const active = checked.filter(Boolean);
+  儲存未付款訂單_(active);
+  if (!active.length) return;
  
   const banner = document.getElementById('pending-order-banner');
   if (!banner) return;
+
+  const latest = active.slice().sort(function (a, b) { return b.at - a.at; })[0];
+  const total = active.reduce(function (sum, rec) { return sum + (Number(rec.total) || 0); }, 0);
+  const title = active.length === 1
+    ? '🥑 您有一筆訂單尚未完成付款'
+    : '🥑 您有多筆訂單尚未完成付款';
  
   banner.innerHTML =
-    '<div class="pending-banner-text">🥑 您有一筆訂單尚未完成付款' +
-    (rec.total > 0 ? '　<strong>NT$ ' + rec.total + '</strong>' : '') +
-    '</div>' +
-    '<a class="pending-banner-btn" href="' + esc(付款連結(rec.key, rec.token)) + '">選擇付款方式</a>' +
+    '<div class="pending-banner-text">' + title +
+    (total > 0 ? '｜合計 <strong>NT$ ' + total + '</strong>' : '') +
+    '<span class="pending-banner-detail">各筆訂單須分開付款</span></div>' +
+    '<a class="pending-banner-btn" href="' + esc(付款連結(latest.key, latest.token)) + '">繼續最近一筆付款</a>' +
     '<button class="pending-banner-close" onclick="關閉未付款提示()" aria-label="關閉">✕</button>';
   banner.style.display = 'flex';
 }
@@ -2958,7 +3063,7 @@ function LINEPay人工選擇表單(orderKey, paymentActionToken) {
   return '<form method="POST" action="' + esc(action) + '" autocomplete="off">' +
     '<input type="hidden" name="k" value="' + esc(orderKey) + '">' +
     '<input type="hidden" name="t" value="' + esc(paymentActionToken) + '">' +
-    '<button type="submit" class="btn-primary pay-line-choice-btn"> LINE Pay </button>' +
+    '<button type="submit" class="btn-primary pay-line-choice-btn">LINE Pay</button>' +
     '</form>';
 }
 
@@ -2967,7 +3072,7 @@ function 付款方式選擇區塊(orderKey) {
   return '<div class="pay-choice-list">' +
     '<div class="pay-choice-item">' +
       付款開始表單(orderKey, token) +
-      '<p class="pay-choice-note">開啟 PAYUNi 統一付款頁</p>' +
+      '<p class="pay-choice-note">開啟 PAYUNi 統一付款頁，請依收銀台顯示選擇可用方式。</p>' +
     '</div>' +
     (token
       ? '<div class="pay-choice-separator"><span>或</span></div>' +
@@ -3074,7 +3179,7 @@ function 設定付款標題(title, sub) {
 }
 
 /**
- * 依付款狀態渲染中間那張卡片。共五種樣貌：
+ * 依付款狀態渲染中間那張卡片。主要有六種樣貌：
  *   manual    → LINE Pay QR + LINE 官方帳號（人工確認）
  *   已付款    → 完成
  *   已取消    → 訂單已取消
@@ -3100,9 +3205,15 @@ function 渲染付款區塊(pay) {
     return;
   }
  
-  const 已付款 = pay && (pay.tradeStatus === '1' || pay.status === '已付款');
-  const 已取消 = pay && (pay.status === '已取消' || pay.status === '已退款');
-  const 付款失敗 = pay && (pay.tradeStatus === '2' || pay.status === '付款失敗');
+  const 已付款 = 付款已完成_(pay);
+  const 已取消 = pay && (pay.status === '已取消（人工處理）' ||
+    pay.status === '已退款' || pay.tradeStatus === 'manual_cancelled' ||
+    (pay.status === '已取消' && pay.source !== 'payuni-callback'));
+  const 已逾期 = pay && (pay.status === '已逾期' ||
+    pay.status === '付款逾期（待人工處理）' || pay.tradeStatus === 'expired');
+  const 付款失敗 = pay && (pay.tradeStatus === '2' || pay.tradeStatus === '4' ||
+    pay.status === '付款失敗' ||
+    (pay.status === '已取消' && pay.source === 'payuni-callback'));
   const 已選人工LINEPay = pay && pay.tradeStatus === 'review' &&
     pay.source === 'manual-linepay-choice' && pay.paymentMethod === 'LINEPAY';
  
@@ -3119,10 +3230,22 @@ function 渲染付款區塊(pay) {
  
   // ---------- 已取消 ----------
   if (已取消) {
+    清除未付款訂單(orderKey);
     設定付款標題('訂單已取消', 'ORDER CANCELLED');
     設定狀態列(0);
     box.innerHTML =
       '<p class="pay-lead">這筆訂單已經取消。<br>如需重新訂購，請回到訂購頁面。</p>';
+    return;
+  }
+
+  // ---------- 付款期限已過 ----------
+  if (已逾期) {
+    清除未付款訂單(orderKey);
+    設定付款標題('付款期限已過', 'PAYMENT EXPIRED');
+    設定狀態列(1);
+    box.innerHTML =
+      '<p class="pay-lead">這筆訂單的付款期限已過，請勿再使用舊的繳費資料。<br>' +
+      '若您已完成付款，請透過 LINE 聯繫我們協助核對。</p>';
     return;
   }
 
@@ -3147,7 +3270,8 @@ function 渲染付款區塊(pay) {
       (currentOrderSummary && currentOrderSummary.total) || 0,
       付款操作憑證_());
     box.innerHTML =
-      '<p class="pay-lead">本次付款沒有完成，訂單仍為您保留。<br>若剛從付款頁返回，請稍候約 11 分鐘再重新付款。</p>' +
+      '<p class="pay-lead">本次付款沒有完成，但訂單已成功建立，不需要重新下單。<br>' +
+      '若要再次開啟 PAYUNi，請等安全保護時間結束；也可立即改選 LINE Pay。</p>' +
       付款方式選擇區塊(orderKey) +
       保存連結區塊(orderKey) +
       '<p class="pay-tail-note">重新付款時可以改選其他可用的付款方式。</p>';
