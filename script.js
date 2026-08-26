@@ -1,6 +1,10 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08-26 付款提醒與逾期狀態安全版
+ * 版本：2026-08-27 付款提醒與退款狀態安全版
+ *
+ * 【2026-08-27 退款狀態更新】
+ *  ・退款處理中／已退款／爭議處理中優先於原付款成功碼
+ *  ・客人重開訂單時顯示對應中性說明，不再誤顯示為付款完成或訂單取消
  *
  * 【2026-08-26 付款提醒與逾期更新】
  *  ・付款頁同時提供 PAYUNi 與固定 LINE Pay，兩者採用同等主按鈕樣式
@@ -2937,9 +2941,19 @@ function 付款日期期限毫秒_(value) {
   return Date.parse(match[1] + '-' + match[2] + '-' + match[3] + 'T23:59:59+08:00') || 0;
 }
 
+function 付款退款狀態_(pay) {
+  if (!pay) return '';
+  const status = String(pay.status || '');
+  if (status === '退款處理中') return 'processing';
+  if (status === '爭議處理中') return 'dispute';
+  if (status === '已退款' || String(pay.tradeStatus || '') === '3') return 'refunded';
+  return '';
+}
+
 function 付款已完成_(pay) {
-  return !!(pay && (String(pay.tradeStatus) === '1' || pay.status === '已付款' ||
-    pay.tradeStatus === 'manual_paid'));
+  return !!(pay && !付款退款狀態_(pay) &&
+    (String(pay.tradeStatus) === '1' || pay.status === '已付款' ||
+      pay.tradeStatus === 'manual_paid'));
 }
 
 function 付款已關閉_(pay) {
@@ -2949,6 +2963,7 @@ function 付款已關閉_(pay) {
   const payuniAttemptEnded = pay.source === 'payuni-callback' &&
     (tradeStatus === '2' || tradeStatus === '4');
   return (!payuniAttemptEnded && status === '已取消') || status === '已取消（人工處理）' ||
+    status === '退款處理中' || status === '爭議處理中' ||
     status === '已退款' || status === '已逾期' ||
     status === '付款逾期（待人工處理）' ||
     tradeStatus === '3' ||
@@ -3205,9 +3220,10 @@ function 渲染付款區塊(pay) {
     return;
   }
  
+  const 退款狀態 = 付款退款狀態_(pay);
   const 已付款 = 付款已完成_(pay);
   const 已取消 = pay && (pay.status === '已取消（人工處理）' ||
-    pay.status === '已退款' || pay.tradeStatus === 'manual_cancelled' ||
+    pay.tradeStatus === 'manual_cancelled' ||
     (pay.status === '已取消' && pay.source !== 'payuni-callback'));
   const 已逾期 = pay && (pay.status === '已逾期' ||
     pay.status === '付款逾期（待人工處理）' || pay.tradeStatus === 'expired');
@@ -3217,6 +3233,28 @@ function 渲染付款區塊(pay) {
   const 已選人工LINEPay = pay && pay.tradeStatus === 'review' &&
     pay.source === 'manual-linepay-choice' && pay.paymentMethod === 'LINEPAY';
  
+  // ---------- 退款／爭議管理 ----------
+  if (退款狀態) {
+    清除未付款訂單(orderKey);
+    if (退款狀態 === 'refunded') {
+      設定付款標題('退款已完成', 'REFUND COMPLETED');
+      設定狀態列(2);
+      box.innerHTML = '<p class="pay-lead">這筆訂單的退款狀態已更新。<br>' +
+        '實際入帳時間依付款工具與金融機構作業為準。</p>';
+    } else if (退款狀態 === 'processing') {
+      設定付款標題('退款處理中', 'REFUND IN PROGRESS');
+      設定狀態列(1);
+      box.innerHTML = '<p class="pay-lead">我們正在處理這筆退款。<br>' +
+        '完成時間依付款工具與金融機構作業為準。</p>';
+    } else {
+      設定付款標題('付款核對中', 'PAYMENT REVIEW');
+      設定狀態列(1);
+      box.innerHTML = '<p class="pay-lead">這筆付款正在人工核對，請勿重複付款。<br>' +
+        '如需協助，請透過 LINE 聯繫我們。</p>';
+    }
+    return;
+  }
+
   // ---------- 已付款 ----------
   if (已付款) {
     清除未付款訂單(orderKey);
