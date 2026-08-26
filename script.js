@@ -2948,7 +2948,7 @@ function 付款開始表單(orderKey, paymentActionToken) {
     (paymentActionToken
       ? '<input type="hidden" name="t" value="' + esc(paymentActionToken) + '">'
       : '') +
-    '<button type="submit" class="btn-primary">前往 PAYUNi 收銀台</button>' +
+    '<button type="submit" class="btn-primary">前往 PAYUNi 支付</button>' +
     '</form>';
 }
 
@@ -2958,7 +2958,7 @@ function LINEPay人工選擇表單(orderKey, paymentActionToken) {
   return '<form method="POST" action="' + esc(action) + '" autocomplete="off">' +
     '<input type="hidden" name="k" value="' + esc(orderKey) + '">' +
     '<input type="hidden" name="t" value="' + esc(paymentActionToken) + '">' +
-    '<button type="submit" class="btn-secondary pay-line-choice-btn">使用 LINE Pay（人工確認）</button>' +
+    '<button type="submit" class="btn-primary pay-line-choice-btn"> LINE Pay </button>' +
     '</form>';
 }
 
@@ -2967,7 +2967,7 @@ function 付款方式選擇區塊(orderKey) {
   return '<div class="pay-choice-list">' +
     '<div class="pay-choice-item">' +
       付款開始表單(orderKey, token) +
-      '<p class="pay-choice-note">開啟 PAYUNi 統一付款頁，可選擇信用卡、ATM 等當下可用方式。</p>' +
+      '<p class="pay-choice-note">開啟 PAYUNi 統一付款頁</p>' +
     '</div>' +
     (token
       ? '<div class="pay-choice-separator"><span>或</span></div>' +
