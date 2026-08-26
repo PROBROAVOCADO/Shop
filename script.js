@@ -56,7 +56,7 @@
  *
  * 📝 資料來源分工（依「變動速度」而非「資料種類」）
  *   即時層 → Firebase control 節點：庫存、上架時間、訂單開關、配送開關
- *   靜態層 → GitHub 快照：品種、圖片、公告、匯款、價格運費表，兼冷啟動與備援
+ *   靜態層 → GitHub 快照：品種、圖片、公告、公開付款顯示、價格運費表，兼冷啟動與備援
  *   權威層 → GAS：下單當下的最終覆核，錢與庫存只認這一層
  *************************************************************/
 
@@ -153,8 +153,8 @@ var serverClockOffset = 0; // 伺服器時間 - 本機時間
 var orderSwitch = '開';
 var shippingSwitch = { post: '', '711': '', blackcat: '' };
 
-// 💳 付款模式。'payuni' = 線上金流；'bank' = 退回舊的匯款資訊。
-//    讀不到時預設 payuni（正常營運是新流程，這是安全的那一邊）。
+// 💳 付款流程。'payuni' = 線上金流；'manual' = LINE QR + 人工確認。
+//    舊值 bank 仍相容；讀不到或無法辨識時預設 payuni。
 //    冷啟動由快照提供，Firebase 一連上就以推播為準 —— 跟 orderSwitch 同一個機制。
 var paymentMode = 'payuni';
  
@@ -368,6 +368,17 @@ function cfgGet(obj, key) {
 }
 function cfgNum(obj, key) {
   return Number(cfgGet(obj, key)) || 0;
+}
+
+// 新版試算表使用「付款流程」：payuni / manual。
+// 過渡期間仍接受舊的「付款模式」與 bank，讓程式和試算表不必同一秒切換。
+function normalizePaymentMode(raw) {
+  const value = String(raw || 'payuni').trim().toLowerCase();
+  return (value === 'manual' || value === 'bank') ? 'manual' : 'payuni';
+}
+
+function paymentModeFromHome(home) {
+  return normalizePaymentMode(cfgGet(home, '付款流程') || cfgGet(home, '付款模式'));
 }
 
 function isIslandAddress(county, district) {
@@ -651,11 +662,9 @@ window.onload = async function () {
 
     window.APP_CONFIG = {
       mainTitle:    cfgGet(cfg['首頁'], '網頁大標題') || '波波酪梨',
-      bankName:     cfgGet(cfg['匯款'], '匯款銀行') || '',
-      bankAcc:      cfgGet(cfg['匯款'], '匯款帳號') || '',
-      bankUser:     cfgGet(cfg['匯款'], '戶名') || '',
       linePayMsg:   cfgGet(cfg['匯款'], 'LINE_PAY公告') || '',
       linePayImgId: cfgGet(cfg['匯款'], 'LINE_PAY圖片ID') || '',
+      lineOfficialUrl: String(cfgGet(cfg['首頁'], 'LINE連結') || '').trim(),
       successMsg:   cfgGet(cfg['匯款'], '成功頁提醒文字') || '',
       turnstileSiteKey: String(cfgGet(cfg['首頁'], 'Turnstile網站金鑰') || '').trim(),
       stockData:    cfg['庫存'] || {},
@@ -665,13 +674,11 @@ window.onload = async function () {
     };
 
     window.allVarieties = cfg['品種'] || [];
-    window.paymentConfig = cfg['匯款'] || {};
-
     // 冷啟動：只有在還沒收到任何即時資料時，才用快照填即時層。
     if (!已有即時資料) {
       applyReleaseStatus(cfg['上架狀態']);
       applySwitches(cfgGet(cfg['首頁'], '訂單開關') || '開', 讀取配送開關(cfg['訂購']));
-      paymentMode = String(cfgGet(cfg['首頁'], '付款模式') || 'payuni').trim();
+      paymentMode = paymentModeFromHome(cfg['首頁']);
     }
 
     // 🔑 D1：初始化時設定一次基準，之後 lastKnown 只由 ticker 更新。
@@ -1128,7 +1135,7 @@ function applyConfigToPage(cfg) {
   設定提示('spec-note',     cfgGet(訂購, '規格選擇備註'));
 
   const lineBtn = document.getElementById('final-line-btn');
-  if (lineBtn) lineBtn.textContent = cfgGet(cfg['匯款'], '跳轉按鈕名稱') || '確認匯款回報';
+  if (lineBtn) lineBtn.textContent = '聯絡 LINE 官方帳號';
 
   const bannerId = cfgGet(h, '網頁頂部橫幅網址') || '';
   if (bannerId) {
@@ -2003,7 +2010,13 @@ async function refreshFromSnapshot() {
     const 舊價格 = JSON.stringify(價格表);
     applyStaticTables(json.data['訂購'] || {});
     window.allVarieties = json.data['品種'] || [];
-    window.paymentConfig = json.data['匯款'] || {};
+    const publicPayment = json.data['匯款'] || {};
+    window.APP_CONFIG.linePayMsg = cfgGet(publicPayment, 'LINE_PAY公告') || '';
+    window.APP_CONFIG.linePayImgId = cfgGet(publicPayment, 'LINE_PAY圖片ID') || '';
+    window.APP_CONFIG.successMsg = cfgGet(publicPayment, '成功頁提醒文字') || '';
+    window.APP_CONFIG.lineOfficialUrl = String(
+      cfgGet(json.data['首頁'], 'LINE連結') || ''
+    ).trim();
     applyConfigToPage(json.data);
 
     const 價格有變 = JSON.stringify(價格表) !== 舊價格;
@@ -2021,6 +2034,7 @@ async function refreshFromSnapshot() {
     if (!firebaseLive) {
       applyReleaseStatus(json.data['上架狀態']);
       applySwitches(cfgGet(json.data['首頁'], '訂單開關') || '開', 讀取配送開關(json.data['訂購']));
+      paymentMode = paymentModeFromHome(json.data['首頁']);
       applyLatestStockMap(json.data['庫存'] || {});
     }
   } catch (err) {
@@ -2135,7 +2149,7 @@ function applyControl(control) {
   });
 
   orderSwitch = String(control.orderSwitch || '開').trim();
-  paymentMode = String(control.paymentMode || 'payuni').trim();
+  paymentMode = normalizePaymentMode(control.paymentMode);
   shippingSwitch = {
     post:     String((control.shipping && control.shipping.post) || '').trim(),
     '711':    String((control.shipping && control.shipping['711']) || '').trim(),
@@ -2765,21 +2779,6 @@ function showLightbox(s) {
   document.getElementById('lightbox-overlay').style.display = 'flex';
 }
 
-function switchPayment(type) {
-  const bg = document.getElementById('switch-bg');
-  const optBank = document.getElementById('opt-bank');
-  const optLine = document.getElementById('opt-linepay');
-  const contentBank = document.getElementById('content-bank');
-  const contentLine = document.getElementById('content-linepay');
-
-  const isBank = (type === 'bank');
-  bg.style.transform = isBank ? 'translateX(0)' : 'translateX(100%)';
-  optBank.classList.toggle('active', isBank);
-  optLine.classList.toggle('active', !isBank);
-  contentBank.classList.toggle('active', isBank);
-  contentLine.classList.toggle('active', !isBank);
-}
-
 // confetti 是第三方 CDN 且用 defer 載入，掛掉時原本會丟 ReferenceError
 function fireConfetti() {
   if (typeof confetti !== 'function') return;
@@ -2791,63 +2790,15 @@ function fireConfetti() {
   }());
 }
 
-// 📋 一鍵複製匯款帳號
-//
-// 資料直接讀 window.APP_CONFIG.bankAcc（來自試算表「4-匯款資訊」的匯款帳號），
-// 所以你改後台就會跟著變，這裡不需要維護第二份。
-//
-// ⚠️ navigator.clipboard 需要 HTTPS（你的站是），但 LINE 內建瀏覽器
-//    偶爾會拒絕授權，所以保留舊的 execCommand 作為後備。
-//    兩條路都失敗時一定要講出來 —— 靜默失敗的話客人會以為複製好了，
-//    貼到銀行 App 才發現是空白，那時候他已經離開這個頁面了。
-async function 複製匯款帳號() {
-  const btn = document.getElementById('copy-account-btn');
-  const 帳號 = String((window.APP_CONFIG && window.APP_CONFIG.bankAcc) || '').trim();
-
-  if (!帳號) {
-    customAlert('⚠️ 目前讀不到匯款帳號，請重新整理頁面，\n或直接透過 LINE 與我們聯繫。');
-    return;
-  }
-
-  let ok = false;
-  try {
-    await navigator.clipboard.writeText(帳號);
-    ok = true;
-  } catch (err) {
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = 帳號;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.top = '-1000px';
-      document.body.appendChild(ta);
-      ta.select();
-      ta.setSelectionRange(0, 帳號.length);   // iOS 需要這一行才選得到
-      ok = document.execCommand('copy');
-      document.body.removeChild(ta);
-    } catch (e2) { ok = false; }
-  }
-
-  if (!ok) {
-    customAlert('⚠️ 這個瀏覽器不支援自動複製，請長按帳號手動選取：\n\n' + 帳號);
-    return;
-  }
-
-  if (btn) {
-    btn.textContent = '✓ 已複製';
-    btn.classList.add('is-done');
-    clearTimeout(btn._resetTimer);
-    btn._resetTimer = setTimeout(() => {
-      btn.textContent = '複製';
-      btn.classList.remove('is-done');
-    }, 2000);
-  }
-}
-
 function handleLineJump() {
-  const targetUrl = String(cfgGet(window.paymentConfig, '跳轉按鈕連結') || '').trim();
-  if (targetUrl.startsWith('http')) window.open(targetUrl, '_blank');
-  else customAlert('✨ 感謝您的訂購！\n請手動回報匯款唷～ ✨');
+  const targetUrl = String(
+    (window.APP_CONFIG && window.APP_CONFIG.lineOfficialUrl) || ''
+  ).trim();
+  if (/^https?:\/\//i.test(targetUrl)) {
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+  } else {
+    customAlert('⚠️ LINE 官方帳號連結目前無法開啟，請回到首頁使用 LINE 按鈕聯絡我們。');
+  }
 }
 
 // ========================================
@@ -3057,7 +3008,7 @@ function 設定付款標題(title, sub) {
 
 /**
  * 依付款狀態渲染中間那張卡片。共五種樣貌：
- *   bank      → 舊的匯款資訊（逃生開關切到 bank 時）
+ *   manual    → LINE Pay QR + LINE 官方帳號（人工確認）
  *   已付款    → 完成
  *   已取消    → 訂單已取消
  *   已取號    → 顯示虛擬帳號 / 繳費代碼
@@ -3069,10 +3020,10 @@ function 渲染付款區塊(pay) {
  
   const orderKey = currentPayOrderKey;
  
-  // 🛟 逃生開關：切到 bank 就完全走舊流程，一行程式碼都不用改。
+  // 🛟 緊急人工模式：不公開銀行帳戶，只顯示固定 LINE Pay QR 與官方 LINE。
   if (paymentMode !== 'payuni') {
-    渲染匯款資訊(box);
-    設定付款標題('已收到您的訂單', 'ORDER RECEIVED');
+    渲染人工付款資訊(box);
+    設定付款標題('請聯絡我們確認付款', 'MANUAL PAYMENT');
     設定狀態列(1);
     return;
   }
@@ -3180,41 +3131,36 @@ function 保存連結區塊(orderKey) {
  
 // 這些字串會進 innerHTML，一律跳脫。
 //
-// ⚠️ 這個函式被 renderSuccessPage 與 渲染匯款資訊 兩處呼叫，
+// ⚠️ 這個函式被 renderSuccessPage 與付款區塊兩處呼叫，
 //    少了它整個成功頁會在第一行就丟 ReferenceError 而完全不渲染。
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
-/** 逃生開關切到 bank 時，渲染舊的匯款資訊。
- *
- *  ⚠️ 三項刻意包在「同一張卡」裡而不是各自成框。
- *     銀行、帳號、戶名是一組要一起看的資訊 —— 客人是照著這三行
- *     填進網銀 App 的，拆成三個虛線框反而讓視線一直被打斷。
- *     只有帳號需要放大（那是唯一要逐字輸入的東西）。
+/** 緊急人工模式：只顯示固定 LINE Pay QR 與官方 LINE 聯絡按鈕。
+ *  銀行帳戶留在私人試算表，需要時由本人透過 LINE 個別提供。
  */
-function 渲染匯款資訊(box) {
+function 渲染人工付款資訊(box) {
   const c = window.APP_CONFIG || {};
-  const acc = String(c.bankAcc || '');
+  const qrUrl = resolveImageUrl(c.linePayImgId || '', 500);
+  const msg = String(c.linePayMsg || '').trim() ||
+    '目前採人工付款確認。您可使用下方 LINE Pay QR，或聯絡官方 LINE 取得其他付款資訊。';
+  const qrBlock = qrUrl
+    ? '<div class="manual-pay-qr">' +
+        '<p class="manual-pay-label">LINE Pay</p>' +
+        '<img src="' + esc(qrUrl) + '" alt="LINE Pay 付款 QR Code">' +
+      '</div>'
+    : '<p class="pay-tail-note">LINE Pay QR 目前未顯示，請直接聯絡官方 LINE 取得付款資訊。</p>';
+
   box.innerHTML =
-    '<div class="pay-field pay-bank">' +
-      '<div class="pay-bank-row">' +
-        '<span class="pay-bank-label">匯款銀行</span>' +
-        '<span class="pay-bank-value">' + esc(c.bankName || '') + '</span>' +
-      '</div>' +
-      '<div class="pay-bank-row is-main">' +
-        '<span class="pay-bank-label">匯款帳號</span>' +
-        '<span class="pay-bank-value pay-bank-acc">' + esc(acc) + '</span>' +
-      '</div>' +
-      '<div class="pay-bank-row">' +
-        '<span class="pay-bank-label">戶名</span>' +
-        '<span class="pay-bank-value">' + esc(c.bankUser || '') + '</span>' +
-      '</div>' +
-      '<button type="button" class="btn-copy pay-bank-copy" ' +
-        'onclick="複製付款帳號(\'' + esc(acc) + '\', this)">複製帳號</button>' +
-    '</div>' +
-    '<p class="pay-lead" style="margin:18px 0 0">✨ 完成匯款後，才會為您排入出貨序列</p>';
+    '<p class="pay-lead">' + esc(msg) + '</p>' +
+    qrBlock +
+    '<button type="button" class="btn-primary manual-line-btn" onclick="handleLineJump()">' +
+      '聯絡 LINE 官方帳號' +
+    '</button>' +
+    '<p class="pay-tail-note">使用 QR 完成付款後，請傳送訂購姓名與金額供我們核對；' +
+      '若要使用銀行轉帳，也請透過官方 LINE 取得帳戶資訊。</p>';
 }
  
 // ========================================

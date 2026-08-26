@@ -1882,57 +1882,42 @@ select:focus, input:focus, textarea:focus {
   .pay-field-value { font-size: 1.25rem; }
 }
 
-/* 💰 匯款資訊單卡（逃生開關切到 bank 時）
-   銀行、帳號、戶名是一組要一起看的資訊，包在同一張卡裡，
-   用細虛線分隔而不是三個獨立框 —— 拆開會讓視線一直被打斷。
-   只有帳號需要放大，那是唯一要逐字輸入的東西。 */
-.pay-bank { padding: 4px 18px 18px; text-align: left; }
-
-.pay-bank-row {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 13px 0;
-  border-bottom: 1px dashed var(--rule-soft);
-}
-.pay-bank-row:last-of-type { border-bottom: none; }
-
-.pay-bank-label {
-  flex: 0 0 auto;
-  width: 68px;
-  font-size: 0.78rem;
-  letter-spacing: 1px;
-  color: var(--clay-deep);
-  opacity: 0.85;
+/* 🟢 緊急人工付款：固定 LINE Pay QR + 官方 LINE。
+   QR 保持足夠留白，避免截圖或另一支手機掃描時辨識失敗。 */
+.manual-pay-qr {
+  width: min(100%, 320px);
+  margin: 0 auto 18px;
+  padding: 18px;
+  box-sizing: border-box;
+  background: #FFFDF8;
+  border: 1px dashed var(--avo-accent);
+  border-radius: var(--r-field);
+  text-align: center;
 }
 
-.pay-bank-value {
-  flex: 1;
-  min-width: 0;
-  font-size: 0.95rem;
-  color: var(--avo-dark);
-  word-break: break-all;
-  text-align: right;
-}
-
-.pay-bank-acc {
+.manual-pay-label {
+  margin: 0 0 12px;
   font-family: var(--heading-font);
-  font-size: 1.3rem;
+  font-size: 1rem;
   font-weight: 600;
-  letter-spacing: 1.5px;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: 2px;
+  color: var(--avo-dark);
 }
 
-.pay-bank-copy {
+.manual-pay-qr img {
   display: block;
-  margin: 16px auto 0;
+  width: 100%;
+  max-width: 250px;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 8px;
 }
+
+#pay-action-content .manual-line-btn { margin-top: 4px; }
 
 @media screen and (max-width: 767px) {
-  .pay-bank { padding: 4px 14px 16px; }
-  .pay-bank-label { width: 58px; font-size: 0.74rem; }
-  .pay-bank-value { font-size: 0.9rem; }
-  .pay-bank-acc { font-size: 1.15rem; letter-spacing: 1px; }
+  .manual-pay-qr { width: 100%; padding: 14px; }
+  .manual-pay-qr img { max-width: 230px; }
 }
 
 /* ✅ 已付款的狀態 */
