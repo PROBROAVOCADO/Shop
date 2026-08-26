@@ -108,6 +108,7 @@ var cart = {};
 var totalWeight = 0;
 var isSubmitting = false;
 var currentOrderKey = null;      // 同一筆訂單的重試共用同一組，防止重複下單
+var currentPaymentActionToken = null; // 同一筆訂單的付款操作憑證；只傳遞原文，後端只存雜湊
 var lastSnapshotStamp = null;    // 內容比對用
 var configLoaded = false;
 var firebaseLive = false;        // Firebase 是否連線中（決定即時層資料要信誰）
@@ -153,7 +154,8 @@ var serverClockOffset = 0; // 伺服器時間 - 本機時間
 var orderSwitch = '開';
 var shippingSwitch = { post: '', '711': '', blackcat: '' };
 
-// 💳 付款流程。'payuni' = 線上金流；'manual' = LINE QR + 人工確認。
+// 💳 付款流程。'payuni' = PAYUNi，並讓新訂單可另選固定 LINE QR 人工確認；
+//    'manual' = 緊急模式，只顯示 LINE QR + 人工確認。
 //    舊值 bank 仍相容；讀不到或無法辨識時預設 payuni。
 //    冷啟動由快照提供，Firebase 一連上就以推播為準 —— 跟 orderSwitch 同一個機制。
 var paymentMode = 'payuni';
@@ -161,6 +163,24 @@ var paymentMode = 'payuni';
 // 目前成功頁正在顯示哪一筆訂單，以及它的付款狀態監聽
 var currentPayOrderKey = null;
 var payStatusRef = null;
+
+/**
+ * 產生訂單專屬的付款操作憑證。
+ * 原文只留在客人的瀏覽器與他保存的付款連結；Firebase 收據只保存 SHA-256 雜湊。
+ * 因此知道 orderKey 只能查狀態，不能把訂單任意改成 LINE Pay 人工確認。
+ */
+function 建立付款操作憑證_() {
+  try {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    let binary = '';
+    bytes.forEach(function (b) { binary += String.fromCharCode(b); });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch (e) {
+    // 極舊瀏覽器沒有安全亂數時，不建立人工付款權限；PAYUNi 仍可正常使用。
+    return '';
+  }
+}
 
 // 🛡️ Cloudflare Turnstile。site key 是公開識別碼，從「首頁」設定讀取；
 // secret 只放在 Worker。未設定 site key 時保持相容模式，不顯示也不阻擋，
@@ -2453,7 +2473,10 @@ async function submitOrder(e) {
   // 後端的快取是可被驅逐的，尖峰時有機會失效；但只有重試才需要那道
   // 額外查詢，第一次下單不可能重複，就不必付那 150ms。
   const isRetry = !!currentOrderKey;
-  if (!currentOrderKey) currentOrderKey = makeOrderKey();
+  if (!currentOrderKey) {
+    currentOrderKey = makeOrderKey();
+    currentPaymentActionToken = 建立付款操作憑證_();
+  }
 
   const orderData = {
     orderKey: currentOrderKey,
@@ -2473,6 +2496,12 @@ async function submitOrder(e) {
     district: districtEl ? districtEl.value : '',
     splitShipping: splitShipping
   };
+
+  // 讓 GAS 只把憑證雜湊寫入收據。沒有安全亂數的極舊瀏覽器不帶此欄，
+  // 該筆仍可使用 PAYUNi，但不開放 LINE Pay 人工狀態寫入。
+  if (currentPaymentActionToken) {
+    orderData.paymentActionToken = currentPaymentActionToken;
+  }
 
   if (turnstileEnabled) orderData.turnstileToken = turnstileToken;
 
@@ -2529,6 +2558,7 @@ async function submitOrder(e) {
     cart = {};
     totalWeight = 0;
     currentOrderKey = null; // 這筆已完成，下一筆要用新的識別碼
+    currentPaymentActionToken = null;
 
     收尾();
     goToStep(5);
@@ -2562,6 +2592,7 @@ async function submitOrder(e) {
       return;
     } else {
       currentOrderKey = null; // 這是明確的失敗（例如庫存不足），下次是新的一筆
+      currentPaymentActionToken = null;
       customAlert(err.message || '送單失敗，請稍後再試');
       收尾();
       // 🔑 被後端擋下來通常代表庫存剛剛歸零。
@@ -2816,13 +2847,14 @@ const PENDING_ORDER_KEY = 'probro_pending_order';
  *    客人還是可以從訂單連結或聯繫我們處理。
  *    所以絕對不要在畫面上承諾「我們會幫你記住」。
  */
-function 記住未付款訂單(orderKey, total) {
+function 記住未付款訂單(orderKey, total, paymentActionToken) {
   if (!orderKey) return;
   try {
     localStorage.setItem(PENDING_ORDER_KEY, JSON.stringify({
       key: orderKey,
       total: Number(total) || 0,
-      at: Date.now()
+      at: Date.now(),
+      token: String(paymentActionToken || '')
     }));
   } catch (e) { /* 無痕模式或空間不足，忽略 */ }
 }
@@ -2878,7 +2910,7 @@ async function 檢查未付款訂單() {
     '<div class="pending-banner-text">🥑 您有一筆訂單尚未完成付款' +
     (rec.total > 0 ? '　<strong>NT$ ' + rec.total + '</strong>' : '') +
     '</div>' +
-    '<a class="pending-banner-btn" href="' + 付款連結(rec.key) + '">前往付款</a>' +
+    '<a class="pending-banner-btn" href="' + esc(付款連結(rec.key, rec.token)) + '">選擇付款方式</a>' +
     '<button class="pending-banner-close" onclick="關閉未付款提示()" aria-label="關閉">✕</button>';
   banner.style.display = 'flex';
 }
@@ -2895,8 +2927,9 @@ function 關閉未付款提示() {
 // 💳 付款狀態
 // ========================================
  
-function 付款連結(orderKey) {
-  return PAY_WORKER_URL.replace(/\/+$/, '') + '/pay?k=' + encodeURIComponent(orderKey);
+function 付款連結(orderKey, paymentActionToken) {
+  const base = PAY_WORKER_URL.replace(/\/+$/, '') + '/pay?k=' + encodeURIComponent(orderKey);
+  return paymentActionToken ? base + '&t=' + encodeURIComponent(paymentActionToken) : base;
 }
 
 /**
@@ -2904,12 +2937,46 @@ function 付款連結(orderKey) {
  * 保存／分享用的連結仍使用上方的只讀 GET，避免 LINE 或瀏覽器的
  * 連結預覽機器人提前建立付款資料、讓真正的客人被鎖住。
  */
-function 付款開始表單(orderKey) {
+function 付款操作憑證_() {
+  return String((currentOrderSummary && currentOrderSummary.paymentActionToken) || '');
+}
+
+function 付款開始表單(orderKey, paymentActionToken) {
   const action = PAY_WORKER_URL.replace(/\/+$/, '') + '/pay/start';
   return '<form method="POST" action="' + esc(action) + '" autocomplete="off">' +
     '<input type="hidden" name="k" value="' + esc(orderKey) + '">' +
-    '<button type="submit" class="btn-primary">前往付款</button>' +
+    (paymentActionToken
+      ? '<input type="hidden" name="t" value="' + esc(paymentActionToken) + '">'
+      : '') +
+    '<button type="submit" class="btn-primary">前往 PAYUNi 收銀台</button>' +
     '</form>';
+}
+
+function LINEPay人工選擇表單(orderKey, paymentActionToken) {
+  if (!paymentActionToken) return '';
+  const action = PAY_WORKER_URL.replace(/\/+$/, '') + '/pay/linepay';
+  return '<form method="POST" action="' + esc(action) + '" autocomplete="off">' +
+    '<input type="hidden" name="k" value="' + esc(orderKey) + '">' +
+    '<input type="hidden" name="t" value="' + esc(paymentActionToken) + '">' +
+    '<button type="submit" class="btn-secondary pay-line-choice-btn">使用 LINE Pay（人工確認）</button>' +
+    '</form>';
+}
+
+function 付款方式選擇區塊(orderKey) {
+  const token = 付款操作憑證_();
+  return '<div class="pay-choice-list">' +
+    '<div class="pay-choice-item">' +
+      付款開始表單(orderKey, token) +
+      '<p class="pay-choice-note">開啟 PAYUNi 統一付款頁，可選擇信用卡、ATM 等當下可用方式。</p>' +
+    '</div>' +
+    (token
+      ? '<div class="pay-choice-separator"><span>或</span></div>' +
+        '<div class="pay-choice-item">' +
+          LINEPay人工選擇表單(orderKey, token) +
+          '<p class="pay-choice-note">使用固定 LINE Pay QR；點選只會記錄選擇時間，付款仍需由我們人工核對。</p>' +
+        '</div>'
+      : '') +
+    '</div>';
 }
  
 /**
@@ -3012,7 +3079,7 @@ function 設定付款標題(title, sub) {
  *   已付款    → 完成
  *   已取消    → 訂單已取消
  *   已取號    → 顯示虛擬帳號 / 繳費代碼
- *   未付款    → 前往付款按鈕
+ *   未付款    → PAYUNi／LINE Pay 人工確認兩種選擇
  */
 function 渲染付款區塊(pay) {
   const box = document.getElementById('pay-action-content');
@@ -3036,6 +3103,8 @@ function 渲染付款區塊(pay) {
   const 已付款 = pay && (pay.tradeStatus === '1' || pay.status === '已付款');
   const 已取消 = pay && (pay.status === '已取消' || pay.status === '已退款');
   const 付款失敗 = pay && (pay.tradeStatus === '2' || pay.status === '付款失敗');
+  const 已選人工LINEPay = pay && pay.tradeStatus === 'review' &&
+    pay.source === 'manual-linepay-choice' && pay.paymentMethod === 'LINEPAY';
  
   // ---------- 已付款 ----------
   if (已付款) {
@@ -3057,16 +3126,29 @@ function 渲染付款區塊(pay) {
     return;
   }
 
+  // ---------- 已選擇 LINE Pay（人工確認） ----------
+  if (已選人工LINEPay) {
+    設定付款標題('請使用 LINE Pay 並聯絡我們確認', 'LINE PAY · MANUAL REVIEW');
+    設定狀態列(1);
+    記住未付款訂單(orderKey,
+      (currentOrderSummary && currentOrderSummary.total) || 0,
+      付款操作憑證_());
+    渲染人工付款資訊(box, pay, false);
+    return;
+  }
+
   // ---------- 付款失敗 ----------
   // 不顯示 PAYUNi 原始錯誤內容，避免技術資訊或付款識別資料出現在前端。
   // 同一 MerTradeNo 有安全去重時間，立即重試時 Worker 會顯示剩餘分鐘數。
   if (付款失敗) {
     設定付款標題('付款未完成', 'PAYMENT NOT COMPLETED');
     設定狀態列(1);
-    記住未付款訂單(orderKey, (currentOrderSummary && currentOrderSummary.total) || 0);
+    記住未付款訂單(orderKey,
+      (currentOrderSummary && currentOrderSummary.total) || 0,
+      付款操作憑證_());
     box.innerHTML =
       '<p class="pay-lead">本次付款沒有完成，訂單仍為您保留。<br>若剛從付款頁返回，請稍候約 11 分鐘再重新付款。</p>' +
-      付款開始表單(orderKey) +
+      付款方式選擇區塊(orderKey) +
       保存連結區塊(orderKey) +
       '<p class="pay-tail-note">重新付款時可以改選其他可用的付款方式。</p>';
     return;
@@ -3113,18 +3195,22 @@ function 渲染付款區塊(pay) {
   // ---------- 尚未付款 ----------
   設定付款標題('付款尚未完成', 'AWAITING PAYMENT');
   設定狀態列(1);
-  記住未付款訂單(orderKey, (currentOrderSummary && currentOrderSummary.total) || 0);
- 
+  記住未付款訂單(orderKey,
+    (currentOrderSummary && currentOrderSummary.total) || 0,
+    付款操作憑證_());
+
   box.innerHTML =
-    '<p class="pay-lead">✨ 完成付款後，才會為您排入出貨序列</p>' +
-    付款開始表單(orderKey) +
+    '<p class="pay-lead">✨ 完成付款並經確認後，才會為您排入出貨序列。</p>' +
+    付款方式選擇區塊(orderKey) +
     保存連結區塊(orderKey) +
     '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡重新付款，訂單不會消失。</p>';
 }
  
 function 保存連結區塊(orderKey) {
+  const token = 付款操作憑證_();
   return '<div class="pay-save">' +
-    '<button type="button" class="btn-secondary" onclick="複製訂單連結(\'' + orderKey + '\', this)">保存訂單連結</button>' +
+    '<button type="button" class="btn-secondary" onclick="複製訂單連結(\'' +
+      esc(orderKey) + '\', \'' + esc(token) + '\', this)">保存訂單連結</button>' +
     '<p class="pay-save-note">建議複製起來傳給自己，隨時可以查看訂單與完成付款</p>' +
     '</div>';
 }
@@ -3141,11 +3227,14 @@ function esc(s) {
 /** 緊急人工模式：只顯示固定 LINE Pay QR 與官方 LINE 聯絡按鈕。
  *  銀行帳戶留在私人試算表，需要時由本人透過 LINE 個別提供。
  */
-function 渲染人工付款資訊(box) {
+function 渲染人工付款資訊(box, pay, emergencyMode) {
   const c = window.APP_CONFIG || {};
   const qrUrl = resolveImageUrl(c.linePayImgId || '', 500);
-  const msg = String(c.linePayMsg || '').trim() ||
-    '目前採人工付款確認。您可使用下方 LINE Pay QR，或聯絡官方 LINE 取得其他付款資訊。';
+  const isChoice = emergencyMode === false;
+  const msg = isChoice
+    ? '您已選擇 LINE Pay。請使用下方固定 QR 完成付款，再透過官方 LINE 告知訂購姓名與金額。'
+    : (String(c.linePayMsg || '').trim() ||
+      '目前採人工付款確認。您可使用下方 LINE Pay QR，或聯絡官方 LINE 取得其他付款資訊。');
   const qrBlock = qrUrl
     ? '<div class="manual-pay-qr">' +
         '<p class="manual-pay-label">LINE Pay</p>' +
@@ -3159,8 +3248,11 @@ function 渲染人工付款資訊(box) {
     '<button type="button" class="btn-primary manual-line-btn" onclick="handleLineJump()">' +
       '聯絡 LINE 官方帳號' +
     '</button>' +
-    '<p class="pay-tail-note">使用 QR 完成付款後，請傳送訂購姓名與金額供我們核對；' +
-      '若要使用銀行轉帳，也請透過官方 LINE 取得帳戶資訊。</p>';
+    '<p class="pay-tail-note">' +
+      (isChoice
+        ? '系統記錄的是您選擇 LINE Pay 的時間，不代表款項已完成；我們核對後才會更新付款狀態。'
+        : '使用 QR 完成付款後，請傳送訂購姓名與金額供我們核對；若要使用銀行轉帳，也請透過官方 LINE 取得帳戶資訊。') +
+      '</p>';
 }
  
 // ========================================
@@ -3213,8 +3305,8 @@ async function 複製付款帳號(帳號, btn) {
   複製回饋_(btn, '複製');
 }
  
-async function 複製訂單連結(orderKey, btn) {
-  const url = 付款連結(orderKey);
+async function 複製訂單連結(orderKey, paymentActionToken, btn) {
+  const url = 付款連結(orderKey, paymentActionToken);
   const ok = await 複製文字_(url);
   if (!ok) {
     customAlert('⚠️ 這個瀏覽器不支援自動複製，請長按下方網址手動選取：\n\n' + url);

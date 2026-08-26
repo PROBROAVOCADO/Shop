@@ -1823,6 +1823,38 @@ select:focus, input:focus, textarea:focus {
   padding: 17px 10px !important;
 }
 
+/* PAYUNi 與固定 LINE Pay 並存時的付款選擇。
+   每個方式都附上差異說明，避免把「點選 LINE Pay」誤認為已付款。 */
+.pay-choice-list { width: 100%; }
+.pay-choice-item form { margin: 0; }
+.pay-choice-item .btn-primary,
+.pay-choice-item .btn-secondary { width: 100%; }
+.pay-choice-item .pay-line-choice-btn {
+  padding: 15px 10px !important;
+  font-size: 0.95rem !important;
+}
+.pay-choice-note {
+  margin: 8px 10px 0;
+  color: var(--avo-accent);
+  font-size: 0.76rem;
+  line-height: 1.7;
+}
+.pay-choice-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  color: var(--avo-accent);
+  font-size: 0.74rem;
+}
+.pay-choice-separator::before,
+.pay-choice-separator::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--rule-soft);
+}
+
 /* 「保存訂單連結」的次要按鈕與說明 */
 .pay-save { margin-top: 14px; }
 
