@@ -1,6 +1,11 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08-27 付款提醒與退款狀態安全版
+ * 版本：2026-08-27 LINE Pay 直接開啟與 QR 備援版
+ *
+ * 【2026-08-27 LINE Pay 成功頁更新】
+ *  ・手機可從成功頁直接開啟固定 LINE Pay 官方連結
+ *  ・電腦與跳轉失敗時仍保留固定 QR，並提供開啟／儲存圖片按鈕
+ *  ・付款連結只接受 HTTPS 的 line.me 官方網域，設定異常時自動隱藏按鈕
  *
  * 【2026-08-27 退款狀態更新】
  *  ・退款處理中／已退款／爭議處理中優先於原付款成功碼
@@ -694,6 +699,7 @@ window.onload = async function () {
       mainTitle:    cfgGet(cfg['首頁'], '網頁大標題') || '波波酪梨',
       linePayMsg:   cfgGet(cfg['匯款'], 'LINE_PAY公告') || '',
       linePayImgId: cfgGet(cfg['匯款'], 'LINE_PAY圖片ID') || '',
+      linePayUrl:   String(cfgGet(cfg['匯款'], 'LINE_PAY付款連結') || '').trim(),
       lineOfficialUrl: String(cfgGet(cfg['首頁'], 'LINE連結') || '').trim(),
       successMsg:   cfgGet(cfg['匯款'], '成功頁提醒文字') || '',
       turnstileSiteKey: String(cfgGet(cfg['首頁'], 'Turnstile網站金鑰') || '').trim(),
@@ -2043,6 +2049,9 @@ async function refreshFromSnapshot() {
     const publicPayment = json.data['匯款'] || {};
     window.APP_CONFIG.linePayMsg = cfgGet(publicPayment, 'LINE_PAY公告') || '';
     window.APP_CONFIG.linePayImgId = cfgGet(publicPayment, 'LINE_PAY圖片ID') || '';
+    window.APP_CONFIG.linePayUrl = String(
+      cfgGet(publicPayment, 'LINE_PAY付款連結') || ''
+    ).trim();
     window.APP_CONFIG.successMsg = cfgGet(publicPayment, '成功頁提醒文字') || '';
     window.APP_CONFIG.lineOfficialUrl = String(
       cfgGet(json.data['首頁'], 'LINE連結') || ''
@@ -2842,6 +2851,34 @@ function handleLineJump() {
   }
 }
 
+// 固定付款 QR 雖然本來就公開顯示，直接開啟按鈕仍只接受 LINE 官方網域。
+// 這可避免試算表誤貼其他網址時，把付款頁變成任意外部跳轉入口。
+function 安全LINEPay付款連結_(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    const host = String(url.hostname || '').toLowerCase();
+    const isOfficialLine = host === 'line.me' || host.endsWith('.line.me');
+    return url.protocol === 'https:' && isOfficialLine ? url.href : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function handleLinePayDirect() {
+  const targetUrl = 安全LINEPay付款連結_(
+    window.APP_CONFIG && window.APP_CONFIG.linePayUrl
+  );
+  if (targetUrl) {
+    // 使用同一分頁最能相容 LINE、Facebook 等手機內建瀏覽器；
+    // 付款 App 關閉後按返回即可回到仍保有訂單狀態的成功頁。
+    window.location.assign(targetUrl);
+  } else {
+    customAlert('⚠️ LINE Pay 直接開啟目前無法使用，請改掃描下方 QR Code 或聯絡我們。');
+  }
+}
+
 // ========================================
 // 💾 未完成訂單的本地記錄
 // ========================================
@@ -3386,26 +3423,41 @@ function esc(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
-/** 緊急人工模式：只顯示固定 LINE Pay QR 與官方 LINE 聯絡按鈕。
+/** 緊急人工模式：顯示直接開啟、固定 LINE Pay QR 與官方 LINE 聯絡按鈕。
  *  銀行帳戶留在私人試算表，需要時由本人透過 LINE 個別提供。
  */
 function 渲染人工付款資訊(box, pay, emergencyMode) {
   const c = window.APP_CONFIG || {};
   const qrUrl = resolveImageUrl(c.linePayImgId || '', 500);
+  const directUrl = 安全LINEPay付款連結_(c.linePayUrl || '');
   const isChoice = emergencyMode === false;
   const msg = isChoice
-    ? '您已選擇 LINE Pay。請使用下方固定 QR 完成付款，再透過官方 LINE 告知訂購姓名與金額。'
+    ? '您已選擇 LINE Pay。手機可直接開啟付款，或使用下方固定 QR，再透過官方 LINE 告知訂購姓名與金額。'
     : (String(c.linePayMsg || '').trim() ||
-      '目前採人工付款確認。您可使用下方 LINE Pay QR，或聯絡官方 LINE 取得其他付款資訊。');
+      '目前採人工付款確認。您可直接開啟 LINE Pay、使用下方 QR，或聯絡官方 LINE 取得其他付款資訊。');
+  const directBlock = directUrl
+    ? '<button type="button" class="btn-primary manual-linepay-open-btn" onclick="handleLinePayDirect()">' +
+        '<span class="manual-linepay-open-icon" aria-hidden="true">↗</span>' +
+        '<span>直接開啟 LINE Pay</span>' +
+      '</button>' +
+      '<p class="manual-pay-action-note">手機可直接開啟；若無法跳轉或使用電腦，請改用下方 QR Code。</p>' +
+      (qrUrl ? '<div class="manual-pay-separator"><span>或使用 QR Code</span></div>' : '')
+    : '';
   const qrBlock = qrUrl
     ? '<div class="manual-pay-qr">' +
         '<p class="manual-pay-label">LINE Pay</p>' +
-        '<img src="' + esc(qrUrl) + '" alt="LINE Pay 付款 QR Code">' +
-      '</div>'
+        '<a class="manual-pay-qr-image-link" href="' + esc(qrUrl) + '" target="_blank" rel="noopener noreferrer" aria-label="開啟 LINE Pay QR 圖片">' +
+          '<img src="' + esc(qrUrl) + '" alt="LINE Pay 付款 QR Code">' +
+        '</a>' +
+      '</div>' +
+      '<a class="btn-secondary manual-qr-open-btn" href="' + esc(qrUrl) + '" target="_blank" rel="noopener noreferrer">' +
+        '開啟／儲存 QR 圖片' +
+      '</a>'
     : '<p class="pay-tail-note">LINE Pay QR 目前未顯示，請直接聯絡官方 LINE 取得付款資訊。</p>';
 
   box.innerHTML =
     '<p class="pay-lead">' + esc(msg) + '</p>' +
+    directBlock +
     qrBlock +
     '<button type="button" class="btn-primary manual-line-btn" onclick="handleLineJump()">' +
       '聯絡 LINE 官方帳號' +

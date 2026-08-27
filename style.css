@@ -1,7 +1,8 @@
 /* =========================================================
    🥑 波波酪梨 Pro-Bro Avocado
-   style.css ｜ v9・多筆付款提醒版（2026-08-26）
+   style.css ｜ v9.1・LINE Pay 直接開啟與 QR 備援版（2026-08-27）
 
+   【v9.1】LINE Pay 成功頁新增直接開啟主按鈕、QR 分隔與圖片開啟備案。
    【v9】未付款提示可顯示多筆合計、分筆付款說明與最近一筆入口。
 
    【v8 相對 v7 的改動】
@@ -1916,8 +1917,50 @@ select:focus, input:focus, textarea:focus {
   .pay-field-value { font-size: 1.25rem; }
 }
 
-/* 🟢 緊急人工付款：固定 LINE Pay QR + 官方 LINE。
+/* 🟢 人工付款：直接開啟 LINE Pay + 固定 QR + 官方 LINE。
    QR 保持足夠留白，避免截圖或另一支手機掃描時辨識失敗。 */
+.manual-linepay-open-btn {
+  width: 100%;
+  gap: 9px;
+  margin: 0;
+}
+
+.manual-linepay-open-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border: 1px solid rgba(250, 247, 239, 0.72);
+  border-radius: 50%;
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.manual-pay-action-note {
+  margin: 9px 12px 0;
+  color: var(--avo-accent);
+  font-size: 0.76rem;
+  line-height: 1.7;
+}
+
+.manual-pay-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+  color: var(--avo-accent);
+  font-size: 0.74rem;
+}
+
+.manual-pay-separator::before,
+.manual-pay-separator::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--rule-soft);
+}
+
 .manual-pay-qr {
   width: min(100%, 320px);
   margin: 0 auto 18px;
@@ -1945,6 +1988,24 @@ select:focus, input:focus, textarea:focus {
   height: auto;
   margin: 0 auto;
   border-radius: 8px;
+}
+
+.manual-pay-qr-image-link {
+  display: block;
+  border-radius: 8px;
+}
+
+.manual-pay-qr-image-link:focus-visible {
+  outline: 2px solid var(--clay-deep);
+  outline-offset: 4px;
+}
+
+.manual-qr-open-btn {
+  width: 100%;
+  margin: -2px 0 14px;
+  padding: 12px 10px !important;
+  font-size: 0.86rem !important;
+  letter-spacing: 1.4px;
 }
 
 #pay-action-content .manual-line-btn { margin-top: 4px; }
