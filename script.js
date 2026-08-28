@@ -1,6 +1,11 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08-28 付款入口文案與保存區塊版
+ * 版本：2026-08-28 ATM 付款資訊與逾期提醒版
+ *
+ * 【2026-08-28 ATM／超商付款資訊更新】
+ *  ・銀行代碼與虛擬帳號合併為同一張淡綠卡片，應繳金額獨立成第二張
+ *  ・繳費期限移到卡片外，移除銀行 App 欄位填寫說明
+ *  ・加入深綠色逾期失效警語，並與 Worker 保存頁保持一致
  *
  * 【2026-08-28 付款頁文字與版面更新】
  *  ・PAYUNi 按鈕改用不限定收銀台付款方式的中性文字
@@ -3365,34 +3370,42 @@ function 渲染付款區塊(pay) {
   if (是延遲付款) {
     const isAtm = pay.paymentMethod === 'ATM';
     const bankCode = isAtm ? String(pay.bankType || '').trim() : '';
-    const bankCodeBlock = isAtm
-      ? (bankCode
-        ? '<div class="pay-field">' +
+    const bankCodeSection = isAtm && bankCode
+      ? '<div class="pay-field-part">' +
             '<p class="pay-field-label">銀行代碼</p>' +
             '<p class="pay-field-value">' + esc(bankCode) + '</p>' +
-          '</div>'
-        : '<p class="pay-tail-note">銀行代碼尚未取得，請先不要轉帳；請稍後重新整理或透過 LINE 聯繫我們確認。</p>')
+        '</div>'
+      : '';
+    const bankCodeWarning = isAtm && !bankCode
+      ? '<p class="pay-warning-note">銀行代碼尚未取得，請先不要轉帳<br>' +
+          '請稍後重新整理或透過 LINE 聯繫我們確認</p>'
       : '';
     設定付款標題(isAtm ? '請完成轉帳' : '請至超商繳費', 'AWAITING PAYMENT');
     設定狀態列(1);
  
     box.innerHTML =
-      bankCodeBlock +
-      '<div class="pay-field">' +
-        '<p class="pay-field-label">' + (isAtm ? '虛擬帳號' : '繳費代碼') + '</p>' +
-        '<p class="pay-field-value">' + esc(pay.payNo) + '</p>' +
-        '<button type="button" class="btn-copy" onclick="複製付款帳號(\'' + esc(pay.payNo) + '\', this)">複製</button>' +
+      bankCodeWarning +
+      '<div class="pay-field pay-account-card">' +
+        bankCodeSection +
+        '<div class="pay-field-part">' +
+          '<p class="pay-field-label">' + (isAtm ? '虛擬帳號' : '繳費代碼') + '</p>' +
+          '<p class="pay-field-value">' + esc(pay.payNo) + '</p>' +
+          '<button type="button" class="btn-copy" onclick="複製付款帳號(\'' + esc(pay.payNo) + '\', this)">複製</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pay-field pay-amount-card">' +
+        '<p class="pay-field-label">應繳金額</p>' +
+        '<p class="pay-field-value">NT$ ' + esc(pay.tradeAmt || '') + '</p>' +
       '</div>' +
       (pay.expireDate
-        ? '<div class="pay-field"><p class="pay-field-label">繳費期限</p>' +
-          '<p class="pay-field-value" style="font-size:1.05rem">' + esc(pay.expireDate) + '</p></div>'
+        ? '<p class="pay-expiry-note">繳費期限　' + esc(pay.expireDate) + '</p>'
         : '') +
-      (isAtm
-        ? '<p class="pay-tail-note">銀行 App 的「銀行代碼」填上方代碼，「帳號」填虛擬帳號。</p>'
-        : '') +
-      '<p class="pay-lead" style="margin:18px 0 0">✨ 完成付款後，才會為您排入出貨序列</p>' +
+      '<p class="pay-deadline-message">' +
+        '<span>✨ 完成付款後，才會為您排入出貨序列</span>' +
+        '<span>逾期未付款，該筆訂單將失效，請勿再付款</span>' +
+      '</p>' +
       保存連結區塊(orderKey) +
-      '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡查看，訂單不會消失。</p>';
+      '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡查看，訂單不會消失</p>';
     return;
   }
  

@@ -1,7 +1,8 @@
 /* =========================================================
    🥑 波波酪梨 Pro-Bro Avocado
-   style.css ｜ v9.2・付款入口與保存區塊調整版（2026-08-28）
+   style.css ｜ v9.3・ATM 付款資訊統一版（2026-08-28）
 
+   【v9.3】ATM／超商付款改為兩張淡綠卡片，新增深綠色付款期限警語。
    【v9.2】保存訂單連結併入付款方式下方的虛線區域，說明文字依序排列。
    【v9.1】LINE Pay 成功頁新增直接開啟主按鈕、QR 分隔與圖片開啟備案。
    【v9】未付款提示可顯示多筆合計、分筆付款說明與最近一筆入口。
@@ -1901,11 +1902,16 @@ select:focus, input:focus, textarea:focus {
 /* 💰 虛擬帳號 / 繳費代碼顯示區
    數字要夠大、要能一眼看完 —— 客人會邊看邊在網銀 App 上打。 */
 .pay-field {
-  background: rgba(237, 228, 211, 0.5);
-  border: 1px dashed var(--avo-accent);
+  background: var(--sage-mist);
+  border: 0;
   border-radius: var(--r-field);
   padding: 18px 16px;
   margin: 0 0 14px;
+}
+.pay-field-part + .pay-field-part {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid var(--rule-soft);
 }
 .pay-field-label {
   font-size: 0.76rem;
@@ -1926,8 +1932,34 @@ select:focus, input:focus, textarea:focus {
 }
 .pay-field .btn-copy { margin: 10px 0 0; }
 
+.pay-expiry-note {
+  margin: 4px 0 0;
+  color: var(--avo-accent);
+  font-size: 0.82rem;
+  line-height: 1.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-warning-note {
+  margin: 0 0 14px;
+  color: var(--clay-deep);
+  font-size: 0.84rem;
+  line-height: 1.8;
+}
+
+.pay-deadline-message {
+  margin: 18px 0 0;
+  color: var(--avo-dark);
+  font-size: 0.96rem;
+  font-weight: 600;
+  line-height: 1.9;
+  letter-spacing: 0.6px;
+}
+.pay-deadline-message span { display: block; }
+
 @media screen and (max-width: 767px) {
   .pay-field-value { font-size: 1.25rem; }
+  .pay-deadline-message { font-size: 0.9rem; }
 }
 
 /* 🟢 人工付款：直接開啟 LINE Pay + 固定 QR + 官方 LINE。
