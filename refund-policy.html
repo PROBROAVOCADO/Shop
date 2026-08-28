@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>退換貨政策｜波波酪梨 Pro-Bro Avocado</title>
-<meta name="description" content="波波酪梨的退換貨、補寄與退款處理原則。生鮮農產品請於收貨當日開箱檢查。">
+<meta name="description" content="波波酪梨的退換貨、補寄與退款處理原則。生鮮農產品請於收貨後儘速開箱檢查。">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -73,7 +73,7 @@
     background: var(--sage);
   }
 
-  /* 不受理清單：改用暖褐色圓點，視覺上與可受理項目區隔 */
+  /* 非商品瑕疵清單：改用暖褐色圓點，與可受理項目區隔。 */
   .policy-page .policy-list.is-excluded li::before { background: var(--avo-accent); }
 
   .policy-page .policy-updated {
@@ -85,7 +85,7 @@
     margin: 0 0 4px;
   }
 
-  /* 收貨當日開箱是全頁最重要的一句話，給它獨立的框 */
+  /* 提醒消費者儘速開箱，但不以單一時限排除依法得主張的權利。 */
   .policy-page .policy-callout {
     background: rgba(228, 234, 215, 0.55);
     border: 1px solid var(--rule-soft);
@@ -126,25 +126,13 @@
   }
   .policy-page .step-row p { margin: 0; }
 
-  .policy-page .contact-card {
-    background: rgba(237, 228, 211, 0.5);
-    border: 1px dashed var(--avo-accent);
-    border-radius: var(--r-field);
-    padding: 18px 20px;
-    margin-top: 6px;
+  .policy-page .contact-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin-top: 8px;
   }
-  .policy-page .contact-card p {
-    margin: 0 0 6px;
-    font-size: 0.93rem;
-    line-height: 1.8;
-  }
-  .policy-page .contact-card p:last-child { margin-bottom: 0; }
-  .policy-page .contact-card a {
-    color: var(--herb-green);
-    text-decoration: none;
-    border-bottom: 1px solid var(--rule);
-  }
-  .policy-page .contact-card a:hover { border-bottom-color: var(--herb-green); }
 
   .policy-page .back-link-wrap { margin-top: 26px; }
   .policy-page .back-link-wrap .btn-secondary { width: 100%; }
@@ -166,8 +154,8 @@
     <h1 class="main-title">退換貨政策</h1>
     <p class="sub-title">RETURNS &amp; REFUNDS</p>
     <div class="title-divider"></div>
-    <!-- 2026-08-26：同步付款逾期改採人工處理、不自動補庫存的實際流程 -->
-    <p class="policy-updated">最後更新：2026 年 8 月 26 日</p>
+    <!-- 2026-08-28：集中業者資訊，並避免以絕對條款限制商品瑕疵申訴 -->
+    <p class="policy-updated">最後更新：2026 年 8 月 28 日</p>
 
     <div class="info-block">
       <div class="policy-section">
@@ -175,22 +163,22 @@
       </div>
 
       <div class="policy-section">
-        <h2 class="policy-heading"><span class="policy-num">01</span>收到貨請立即開箱</h2>
+        <h2 class="policy-heading"><span class="policy-num">01</span>收到貨請儘速開箱</h2>
         <div class="policy-callout">
-          <p>請於收到包裹的當日拆箱檢查。若發現果實有運送碰撞、擠壓、腐壞等問題，請立即拍照，並透過 LINE 官方帳號與我們聯繫。</p>
+          <p>建議於收到包裹的當日儘速拆箱檢查。若發現果實有運送碰撞、擠壓、腐壞等問題，請盡可能拍照，並透過 LINE 官方帳號與我們聯繫。</p>
         </div>
-        <p>酪梨每天都在變化，越晚反應越難判斷問題發生在運送途中還是保存期間。當日開箱不只是流程規定，是讓我們能真正幫上忙的前提。</p>
+        <p>酪梨每天都在變化，越早反應越容易釐清問題並協助處理。即使未能在收貨當日聯繫，我們仍會依商品狀況、配送紀錄及其他可得資料個案處理，不影響您依法得主張的權利。</p>
       </div>
 
       <div class="policy-section">
         <h2 class="policy-heading"><span class="policy-num">02</span>怎麼跟我們反應</h2>
         <div class="step-row">
           <span class="step-mark">1</span>
-          <p>開箱後先拍照。整箱的全景一張，有問題的果實近拍一到兩張。</p>
+          <p>請盡可能拍攝整箱全景，以及有問題果實的一至兩張近照。</p>
         </div>
         <div class="step-row">
           <span class="step-mark">2</span>
-          <p>加入我們的 LINE 官方帳號，傳送照片並附上您的姓名與訂購電話。</p>
+          <p>加入我們的 LINE 官方帳號，傳送照片並附上訂購人姓名與訂購電話，協助我們核對訂單。</p>
         </div>
         <div class="step-row">
           <span class="step-mark">3</span>
@@ -206,15 +194,14 @@
       </div>
 
       <div class="policy-section">
-        <h2 class="policy-heading"><span class="policy-num">04</span>以下情形無法受理</h2>
+        <h2 class="policy-heading"><span class="policy-num">04</span>通常不屬於商品瑕疵的情形</h2>
         <ul class="policy-list is-excluded">
-          <li>果實若已經食用</li>
-          <li>後熟過度，已軟爛或變質</li>
-          <li>收貨後放置過久才反應</li>
-          <li>未提供照片，或照片無法辨識問題狀況</li>
-          <li>因個人口感喜好、熟度偏好而要求退換</li>
+          <li>因收貨後未依適當方式保存，造成後熟過度、軟爛或變質</li>
+          <li>商品已全數食用，且沒有其他資料足以辨識原有問題</li>
+          <li>僅因個人口感或熟度偏好提出退換，商品本身並無瑕疵</li>
+          <li>其他可確認為收貨後保存、碰撞或處理所造成的情形</li>
         </ul>
-        <p>酪梨在室溫下通常三到七天完成後熟，之後若未冷藏會快速軟化。這屬於水果的自然變化，不在補償範圍內。</p>
+        <p>酪梨在室溫下通常三到七天完成後熟，之後若未冷藏會快速軟化，這是水果的自然變化。照片有助於加速釐清，但未能提供照片時仍可先與我們聯繫，我們會依其他可得資料協助判斷。</p>
       </div>
 
       <div class="policy-section">
@@ -224,23 +211,18 @@
       </div>
 
       <div class="policy-section">
-        <h2 class="policy-heading"><span class="policy-num">06</span>取消訂單</h2>
-        <p>訂單成立後、尚未出貨前，可透過 LINE 官方帳號提出取消，我們會辦理全額退款。</p>
-        <p>包裹一旦交寄物流，即無法取消。若您指定超商取貨而逾期未領，包裹將退回本園，因商品已無法再次販售，恕無法退款，敬請留意取件通知。</p>
+        <h2 class="policy-heading"><span class="policy-num">06</span>取消訂單與付款逾期</h2>
+        <p>訂單成立後、尚未出貨前，可透過 LINE 官方帳號提出取消；如已完成付款，我們會辦理全額退款。</p>
+        <p>包裹交寄後通常已無法攔截配送，如有取消需求仍請立即與我們聯繫。若指定超商取貨而逾期未領，導致商品退回、品質變化或產生額外費用，我們將依商品實際狀況、已發生的必要費用及相關法令個案處理，不預先排除您依法得主張的權利。</p>
         <p>使用 PAYUNi 線上金流時，請在付款頁顯示的期限內完成付款；ATM、超商等方式以該筆交易實際顯示的期限為準。期限屆滿後，舊的虛擬帳號或繳費代碼請勿再使用，訂單會轉為人工處理；如已付款但狀態未更新，請立即聯繫我們核對。</p>
         <p>網站也可能提供固定 LINE Pay QR 與 LINE 官方帳號。此方式由本園人工核對，付款後請依頁面說明與我們聯繫。付款逾期或由本園人工取消時，系統不會自動增加網站庫存；是否仍可承接、重新付款或需要重新下單，將依當時果品保存及供貨狀況由本園協助確認。</p>
       </div>
 
       <div class="policy-section">
-        <h2 class="policy-heading"><span class="policy-num">07</span>聯絡我們</h2>
-        <div class="contact-card">
-          <p><strong>波波酪梨 Pro-Bro Avocado</strong></p>
-          <p>負責人：莊玉華</p>
-          <p>電話：<a href="tel:0972311983">0972-311-983</a></p>
-          <p>電子信箱：<a href="mailto:h82430@gmail.com">h82430@gmail.com</a></p>
-          <p>地址：南投縣名間鄉田仔巷 5 號</p>
-          <p>LINE 官方帳號：<a href="https://lin.ee/PBsoOcU" target="_blank" rel="noopener">@probroavocado</a></p>
-        </div>
+        <h2 class="policy-heading"><span class="policy-num">07</span>客服與申訴</h2>
+        <p>退換貨、退款及消費申訴，請優先透過 LINE 官方帳號與我們聯繫。為避免重複公開個人資料，完整業者資訊及其他聯絡方式統一列於隱私權政策的「商店資訊與客服」區塊。</p>
+        <a href="https://lin.ee/PBsoOcU" class="btn-primary contact-link" target="_blank" rel="noopener">使用 LINE 官方帳號聯絡</a>
+        <a href="privacy.html#shop-contact" class="btn-secondary contact-link">查看商店資訊與客服</a>
       </div>
 
       <div class="back-link-wrap">
