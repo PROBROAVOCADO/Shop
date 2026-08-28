@@ -1,7 +1,8 @@
 /* =========================================================
    🥑 波波酪梨 Pro-Bro Avocado
-   style.css ｜ v9.1・LINE Pay 直接開啟與 QR 備援版（2026-08-27）
+   style.css ｜ v9.2・付款入口與保存區塊調整版（2026-08-28）
 
+   【v9.2】保存訂單連結併入付款方式下方的虛線區域，說明文字依序排列。
    【v9.1】LINE Pay 成功頁新增直接開啟主按鈕、QR 分隔與圖片開啟備案。
    【v9】未付款提示可顯示多筆合計、分筆付款說明與最近一筆入口。
 
@@ -1858,8 +1859,13 @@ select:focus, input:focus, textarea:focus {
   background: var(--rule-soft);
 }
 
-/* 「保存訂單連結」的次要按鈕與說明 */
-.pay-save { margin-top: 14px; }
+/* 「保存訂單連結」併入付款方式下方的虛線區域。
+   順序固定為：虛線 → 按鈕 → 複製建議 → 中途離開說明。 */
+.pay-save {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--rule-soft);
+}
 
 .pay-save .btn-secondary {
   width: 100%;
@@ -1883,6 +1889,13 @@ select:focus, input:focus, textarea:focus {
   padding-top: 16px;
   border-top: 1px dashed var(--rule-soft);
   opacity: 0.9;
+}
+
+/* 保存區塊本身已經畫過虛線，緊接其後的離開說明不再重複畫第二條。 */
+.pay-save + .pay-tail-note {
+  margin-top: 12px;
+  padding-top: 0;
+  border-top: 0;
 }
 
 /* 💰 虛擬帳號 / 繳費代碼顯示區

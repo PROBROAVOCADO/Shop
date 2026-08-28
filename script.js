@@ -1,6 +1,11 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08-27 LINE Pay 直接開啟與 QR 備援版
+ * 版本：2026-08-28 付款入口文案與保存區塊版
+ *
+ * 【2026-08-28 付款頁文字與版面更新】
+ *  ・PAYUNi 按鈕改用不限定收銀台付款方式的中性文字
+ *  ・保存訂單連結移到付款方式下方的獨立虛線區塊
+ *  ・準備付款畫面的句號移除，維持簡潔一致的閱讀節奏
  *
  * 【2026-08-27 LINE Pay 成功頁更新】
  *  ・手機可從成功頁直接開啟固定 LINE Pay 官方連結
@@ -3105,7 +3110,7 @@ function 付款開始表單(orderKey, paymentActionToken) {
     (paymentActionToken
       ? '<input type="hidden" name="t" value="' + esc(paymentActionToken) + '">'
       : '') +
-    '<button type="submit" class="btn-primary">前往 PAYUNi 支付</button>' +
+    '<button type="submit" class="btn-primary">前往第三方支付 / ATM虛擬帳號</button>' +
     '</form>';
 }
 
@@ -3124,7 +3129,7 @@ function 付款方式選擇區塊(orderKey) {
   return '<div class="pay-choice-list">' +
     '<div class="pay-choice-item">' +
       付款開始表單(orderKey, token) +
-      '<p class="pay-choice-note">開啟 PAYUNi 統一付款頁，請依收銀台顯示選擇可用方式。</p>' +
+      '<p class="pay-choice-note">開啟 PAYUNi 統一付款頁，請依收銀台顯示選擇可用方式</p>' +
     '</div>' +
     (token
       ? '<div class="pay-choice-separator"><span>或</span></div>' +
@@ -3399,10 +3404,10 @@ function 渲染付款區塊(pay) {
     付款操作憑證_());
 
   box.innerHTML =
-    '<p class="pay-lead">✨ 完成付款並經確認後，才會為您排入出貨序列。</p>' +
+    '<p class="pay-lead">✨ 完成付款並經確認後，才會為您排入出貨序列</p>' +
     付款方式選擇區塊(orderKey) +
     保存連結區塊(orderKey) +
-    '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡重新付款，訂單不會消失。</p>';
+    '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡重新付款，訂單不會消失</p>';
 }
  
 function 保存連結區塊(orderKey) {
