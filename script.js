@@ -1,6 +1,11 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08-28 ATM 付款資訊與逾期提醒版
+ * 版本：2026-08-29 優惠申請與核准付款版
+ *
+ * 【2026-08-29】
+ *  ・新增集點優惠／其他優惠申請，待審核時鎖住所有付款入口
+ *  ・核准後顯示折抵金額與最終應付總額，PAYUNi／LINE Pay 共用同一金額
+ *  ・下單成立不再由前端送 purchase，改由後端付款確認後送出
  *
  * 【2026-08-28 ATM／超商付款資訊更新】
  *  ・銀行代碼與虛擬帳號合併為同一張淡綠卡片，應繳金額獨立成第二張
@@ -2295,6 +2300,11 @@ function 套用收據並前往成功頁(receipt, 收尾) {
       currentOrderSummary.total       = finalTotal;
       // 📦 舊訂單的收據沒有這個欄位，讀不到就給 0 → 成功頁自動隱藏那一列
       currentOrderSummary.boxCount    = Number(receipt.boxCount) || 0;
+      currentOrderSummary.baseTotal   = Number(receipt.baseTotal || receipt.total) || finalTotal;
+      currentOrderSummary.discountStatus = String(receipt.discountStatus || '未申請');
+      currentOrderSummary.discountType = String(receipt.discountType || '');
+      currentOrderSummary.discountAmount = Number(receipt.discountAmount) || 0;
+      currentOrderSummary.discountOptions = receipt.discountOptions || {};
     }
   }
   cart = {};
@@ -2576,6 +2586,10 @@ async function submitOrder(e) {
       currentOrderSummary.shippingFee = finalShippingFee;
       currentOrderSummary.total       = finalTotal;
       currentOrderSummary.boxCount    = Number(json.totals.boxCount) || 0;   // 📦
+      currentOrderSummary.baseTotal   = Number(json.totals.total) || finalTotal;
+      currentOrderSummary.discountStatus = String(json.totals.discountStatus || '未申請');
+      currentOrderSummary.discountAmount = Number(json.totals.discountAmount) || 0;
+      currentOrderSummary.discountOptions = json.totals.discountOptions || {};
     }
 
     // 本地先扣一次，避免回價目表看到舊數字（Firebase 推播通常 1 秒內就會蓋掉它）
@@ -2704,6 +2718,10 @@ function renderSuccessPage() {
   const 箱數列 = 箱數 > 0
     ? `<div class="order-summary-row"><span class="label">📦 出貨箱數</span><span class="value">${箱數} 箱</span></div>`
     : '';
+  const 優惠金額 = Number(o.discountAmount) || 0;
+  const 優惠列 = 優惠金額 > 0
+    ? `<div class="order-summary-row is-discount"><span class="label">🎟️ 優惠折抵</span><span class="value">-$${優惠金額}</span></div>`
+    : '';
  
   const summaryEl = document.getElementById('order-summary-content');
   if (summaryEl) {
@@ -2715,6 +2733,7 @@ function renderSuccessPage() {
         <div class="order-summary-row"><span class="label">🏠 收件地址(門市)</span><span class="value js-summary-address"></span></div>
         <div class="order-summary-row"><span class="label">💰 商品小計</span><span class="value">$${Number(o.subtotal) || 0}</span></div>
         <div class="order-summary-row"><span class="label">🚛 運費</span><span class="value">$${Number(o.shippingFee) || 0}</span></div>
+        ${優惠列}
       </div>`;
   }
  
@@ -2778,6 +2797,11 @@ async function 從網址載入訂單() {
     subtotal: Number(receipt.subtotal) || 0,
     shippingFee: Number(receipt.shippingFee) || 0,
     total: Number(receipt.total) || 0,
+    baseTotal: Number(receipt.baseTotal || receipt.total) || 0,
+    discountStatus: String(receipt.discountStatus || '未申請'),
+    discountType: String(receipt.discountType || ''),
+    discountAmount: Number(receipt.discountAmount) || 0,
+    discountOptions: receipt.discountOptions || {},
     boxCount: Number(receipt.boxCount) || 0,
     weight: String(receipt.items || '').replace(/、/g, '，'),
     shipping: receipt.shipping || '',
@@ -3129,9 +3153,68 @@ function LINEPay人工選擇表單(orderKey, paymentActionToken) {
     '</form>';
 }
 
+function 優惠待審核_(status) {
+  return status === '集點優惠（待審核）' || status === '其他優惠（待審核）';
+}
+
+function 優惠已核准_(status) {
+  return status === '集點優惠（已核准）' || status === '其他優惠（已核准）';
+}
+
+function 優惠申請表單_(orderKey, token, type, amount) {
+  const action = PAY_WORKER_URL.replace(/\/+$/, '') + '/pay/discount';
+  return '<form method="POST" action="' + esc(action) + '" autocomplete="off">' +
+    '<input type="hidden" name="k" value="' + esc(orderKey) + '">' +
+    '<input type="hidden" name="t" value="' + esc(token) + '">' +
+    '<input type="hidden" name="discountType" value="' + esc(type) + '">' +
+    '<button type="submit" class="btn-secondary discount-request-btn">' +
+      esc(type) + '（折抵 NT$ ' + esc(amount) + '）</button>' +
+    '</form>';
+}
+
+function 優惠付款前區塊_(orderKey, token) {
+  const o = currentOrderSummary || {};
+  const status = String(o.discountStatus || '未申請');
+  const amount = Number(o.discountAmount) || 0;
+  const options = o.discountOptions || {};
+
+  if (優惠待審核_(status)) {
+    return '<div class="discount-status-card is-pending">' +
+      '<strong>優惠審核中</strong>' +
+      '<p>請先透過 LINE 傳送兌換畫面<br>審核完成前付款入口會暫時鎖定</p>' +
+      '</div>';
+  }
+  if (優惠已核准_(status)) {
+    return '<div class="discount-status-card is-approved">' +
+      '<strong>' + esc(status.replace('（已核准）', '')) + '已核准</strong>' +
+      '<p>本筆折抵 NT$ ' + esc(amount) + '，下方付款金額已同步更新</p>' +
+      '</div>';
+  }
+  if (status === '不符合優惠資格') {
+    return '<div class="discount-status-card"><p>本次優惠未核准，您仍可依原應付總額付款</p></div>';
+  }
+  if (!token || status !== '未申請') return '';
+
+  const buttons = ['集點優惠', '其他優惠'].map(function (type) {
+    const discount = Math.max(0, Math.round(Number(options[type]) || 0));
+    return discount > 0 ? 優惠申請表單_(orderKey, token, type, discount) : '';
+  }).filter(Boolean).join('');
+  if (!buttons) return '';
+
+  return '<div class="discount-request-box">' +
+    '<p class="discount-request-title">需要使用優惠嗎？</p>' +
+    '<p class="discount-request-note">請先選擇優惠，並透過 LINE 傳送兌換畫面<br>人工核准後才會開放付款</p>' +
+    '<div class="discount-choice-list">' + buttons + '</div>' +
+    '</div>';
+}
+
 function 付款方式選擇區塊(orderKey) {
   const token = 付款操作憑證_();
-  return '<div class="pay-choice-list">' +
+  const discountBlock = 優惠付款前區塊_(orderKey, token);
+  if (優惠待審核_(String((currentOrderSummary && currentOrderSummary.discountStatus) || ''))) {
+    return discountBlock;
+  }
+  return discountBlock + '<div class="pay-choice-list">' +
     '<div class="pay-choice-item">' +
       付款開始表單(orderKey, token) +
       '<p class="pay-choice-note">開啟 PAYUNi 統一付款頁，請依收銀台顯示選擇可用方式</p>' +
@@ -3331,6 +3414,21 @@ function 渲染付款區塊(pay) {
     box.innerHTML =
       '<p class="pay-lead">這筆訂單的付款期限已過，請勿再使用舊的繳費資料。<br>' +
       '若您已完成付款，請透過 LINE 聯繫我們協助核對。</p>';
+    return;
+  }
+
+  // ---------- 優惠待審核：付款方式全部鎖住 ----------
+  if (優惠待審核_(String((currentOrderSummary && currentOrderSummary.discountStatus) || ''))) {
+    設定付款標題('優惠審核中', 'DISCOUNT REVIEW');
+    設定狀態列(1);
+    記住未付款訂單(orderKey,
+      (currentOrderSummary && currentOrderSummary.total) || 0,
+      付款操作憑證_());
+    box.innerHTML =
+      付款方式選擇區塊(orderKey) +
+      '<button type="button" class="btn-secondary" onclick="handleLineJump()">聯絡 LINE 官方帳號</button>' +
+      保存連結區塊(orderKey) +
+      '<p class="pay-tail-note">核准後重新開啟保存連結，即可使用折抵後金額付款</p>';
     return;
   }
 

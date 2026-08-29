@@ -1,5 +1,6 @@
 /*************************************************************
- * 波波酪梨 GA4 追蹤模組 — analytics.js  v2.1
+ * 波波酪梨 GA4 追蹤模組 — analytics.js  v2.4
+ * 2026-08-29：前端成功頁只送 order_created；purchase 改由後端在付款確認後送出。
  * 評估 ID：G-99EP460CDY
  *
  * 【為什麼用掛鉤（hook）而不是散進 script.js】
@@ -298,7 +299,7 @@
 
   var PBTrack = {
 
-    version: '2.1',
+    version: '2.4',
 
     /**
      * 送單 payload 要帶的識別碼。
@@ -405,6 +406,22 @@
         return false;
       });
     }, 'purchase'),
+
+    /** 訂單已建立，但尚未代表營收；不帶訂單識別碼，也不送 purchase。 */
+    orderCreated: safe(function (order) {
+      if (_pendingRecovered) {
+        order.source = 'recovery';
+        _pendingRecovered = false;
+      }
+      var 名稱 = { post: '中華郵政', '711': '7-11超商', blackcat: '黑貓宅急便' };
+      send('order_created', {
+        currency: CONFIG.CURRENCY,
+        quoted_value: Number(order && order.total) || 0,
+        item_count: order && order.cart ? Object.keys(order.cart).length : 0,
+        shipping_tier: 名稱[order && order.shippingMethod] || '',
+        order_source: (order && order.source) || 'frontend'
+      });
+    }, 'order_created'),
 
     /* ---------- 秒殺營運事件 ---------- */
 
@@ -581,11 +598,10 @@
     if (_hooksInstalled) return;
     _hooksInstalled = true;
 
-    /* ── 1. goToStep：漏斗步驟 + 成功頁的 purchase ───────────────
+    /* ── 1. goToStep：漏斗步驟 + 訂單建立事件 ────────────────────
      *
-     * purchase 統一在這裡送。兩條成功路徑（正常送單成功、
-     * Firebase 收據救回）最後都會走到 goToStep(5)，
-     * 所以放一個點就涵蓋全部，不會漏也不會重複。
+     * 優惠可能在下單後才核准，因此這裡不能先送 purchase。
+     * 真正的 purchase 由 Ga4.txt 在 P 欄確認「已付款」後送出。
      */
     wrap('goToStep', null, function (ctx, args) {
       var step = Number(args[0]);
@@ -598,8 +614,10 @@
 
       if (step === 5) {
         var o = global.currentOrderSummary;
+        // 保存連結只是查看既有訂單，不重複計為新訂單。
+        if (global.進站訂單Key) return;
         if (o && o.orderKey) {
-          PBTrack.purchase({
+          PBTrack.orderCreated({
             orderKey: o.orderKey,
             total: o.total,
             subtotal: o.subtotal,
@@ -608,7 +626,7 @@
             shippingMethod: o.shippingMethod
           });
         } else {
-          warn('走到成功頁但找不到 currentOrderSummary.orderKey，purchase 未送出');
+          warn('走到成功頁但找不到 currentOrderSummary.orderKey，order_created 未送出');
         }
       }
     });

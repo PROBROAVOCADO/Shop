@@ -1,6 +1,6 @@
 /* =========================================================
    🥑 波波酪梨 Pro-Bro Avocado
-   style.css ｜ v9.3・ATM 付款資訊統一版（2026-08-28）
+   style.css ｜ v9.4・優惠申請與審核狀態版（2026-08-29）
 
    【v9.3】ATM／超商付款改為兩張淡綠卡片，新增深綠色付款期限警語。
    【v9.2】保存訂單連結併入付款方式下方的虛線區域，說明文字依序排列。
@@ -287,6 +287,57 @@ body::before {
 
 @media screen and (max-width: 767px) {
   #step1-announcement .product-divider { margin-bottom: 24px; }
+}
+
+/* ============================================================
+   🎟️ v9.4：付款前優惠申請／審核
+   ============================================================ */
+.discount-request-box,
+.discount-status-card {
+  margin: 0 0 22px;
+  padding: 18px;
+  border-radius: var(--r-card);
+  background: var(--sage-mist);
+  color: var(--avo-dark);
+  text-align: center;
+}
+
+.discount-request-title,
+.discount-status-card strong {
+  display: block;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.discount-request-note,
+.discount-status-card p {
+  margin: 8px 0 0;
+  color: var(--clay-deep);
+  font-size: 0.84rem;
+  line-height: 1.8;
+}
+
+.discount-choice-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.discount-choice-list form { margin: 0; }
+
+.discount-request-btn {
+  width: 100%;
+  margin: 0;
+}
+
+.discount-status-card.is-pending { background: #fff2cc; }
+.discount-status-card.is-approved { background: var(--sage-mist); }
+
+.order-summary-row.is-discount .value {
+  color: var(--herb-green);
+  font-weight: 700;
 }
 
 /* 🏷️ 表單欄位標題（取代 index 裡寫死的 margin-top inline） */
