@@ -1,8 +1,10 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08-29 優惠申請與核准付款版
+ * 版本：2026-08-29 優惠資格彈窗與核准付款版
  *
  * 【2026-08-29】
+ *  ・優惠入口改為次要小按鈕，點擊後才開啟資格選擇視窗
+ *  ・優惠選項不公開折抵金額，維持 PAYUNi／LINE Pay 為主要操作
  *  ・新增集點優惠／其他優惠申請，待審核時鎖住所有付款入口
  *  ・核准後顯示折抵金額與最終應付總額，PAYUNi／LINE Pay 共用同一金額
  *  ・下單成立不再由前端送 purchase，改由後端付款確認後送出
@@ -3161,14 +3163,13 @@ function 優惠已核准_(status) {
   return status === '集點優惠（已核准）' || status === '其他優惠（已核准）';
 }
 
-function 優惠申請表單_(orderKey, token, type, amount) {
+function 優惠申請表單_(orderKey, token, type) {
   const action = PAY_WORKER_URL.replace(/\/+$/, '') + '/pay/discount';
   return '<form method="POST" action="' + esc(action) + '" autocomplete="off">' +
     '<input type="hidden" name="k" value="' + esc(orderKey) + '">' +
     '<input type="hidden" name="t" value="' + esc(token) + '">' +
     '<input type="hidden" name="discountType" value="' + esc(type) + '">' +
-    '<button type="submit" class="btn-secondary discount-request-btn">' +
-      esc(type) + '（折抵 NT$ ' + esc(amount) + '）</button>' +
+    '<button type="submit" class="btn-secondary discount-request-btn">' + esc(type) + '</button>' +
     '</form>';
 }
 
@@ -3197,15 +3198,31 @@ function 優惠付款前區塊_(orderKey, token) {
 
   const buttons = ['集點優惠', '其他優惠'].map(function (type) {
     const discount = Math.max(0, Math.round(Number(options[type]) || 0));
-    return discount > 0 ? 優惠申請表單_(orderKey, token, type, discount) : '';
+    return discount > 0 ? 優惠申請表單_(orderKey, token, type) : '';
   }).filter(Boolean).join('');
   if (!buttons) return '';
 
-  return '<div class="discount-request-box">' +
-    '<p class="discount-request-title">需要使用優惠嗎？</p>' +
-    '<p class="discount-request-note">請先選擇優惠，並透過 LINE 傳送兌換畫面<br>人工核准後才會開放付款</p>' +
-    '<div class="discount-choice-list">' + buttons + '</div>' +
-    '</div>';
+  return '<div class="discount-entry">' +
+      '<button type="button" class="discount-entry-btn" aria-haspopup="dialog" ' +
+        'aria-controls="discount-choice-dialog" ' +
+        'onclick="var d=document.getElementById(&quot;discount-choice-dialog&quot;);' +
+          'if(d.showModal){d.showModal()}else{d.setAttribute(&quot;open&quot;,&quot;&quot;)}">' +
+        '已有集點或優惠資格？</button>' +
+    '</div>' +
+    '<dialog id="discount-choice-dialog" class="discount-dialog" aria-labelledby="discount-dialog-title">' +
+      '<div class="discount-dialog-panel">' +
+        '<button type="button" class="discount-dialog-close" aria-label="關閉優惠選擇" ' +
+          'onclick="var d=this.closest(&quot;dialog&quot;);' +
+            'if(d.close){d.close()}else{d.removeAttribute(&quot;open&quot;)}">×</button>' +
+        '<p id="discount-dialog-title" class="discount-dialog-title">申請優惠折抵</p>' +
+        '<p class="discount-dialog-note">僅限已完成集點或取得指定優惠的顧客</p>' +
+        '<div class="discount-choice-list">' + buttons + '</div>' +
+        '<p class="discount-dialog-help">送出後請透過 LINE 傳送兌換畫面<br>核准前付款入口將暫時鎖定</p>' +
+        '<button type="button" class="discount-dialog-dismiss" ' +
+          'onclick="var d=this.closest(&quot;dialog&quot;);' +
+            'if(d.close){d.close()}else{d.removeAttribute(&quot;open&quot;)}">暫不使用</button>' +
+      '</div>' +
+    '</dialog>';
 }
 
 function 付款方式選擇區塊(orderKey) {
