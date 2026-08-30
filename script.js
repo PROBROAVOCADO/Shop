@@ -1,6 +1,12 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08-29 優惠資格彈窗與核准付款版
+ * 版本：2026-08-30 安心提示與付款按鈕版
+ *
+ * 【2026-08-30】
+ *  ・成功頁新增訂單已保留的安心提示，與 Worker 保存頁文字一致
+ *  ・PAYUNi／LINE Pay 主按鈕稍微縮小並加入柔和互動回饋
+ *  ・待審核時可由持有完整保存連結的客人放棄優惠並恢復原金額付款
+ *  ・優惠選擇彈窗標題改為「使用優惠折抵」
  *
  * 【2026-08-29】
  *  ・優惠入口改為次要小按鈕，點擊後才開啟資格選擇視窗
@@ -3141,7 +3147,7 @@ function 付款開始表單(orderKey, paymentActionToken) {
     (paymentActionToken
       ? '<input type="hidden" name="t" value="' + esc(paymentActionToken) + '">'
       : '') +
-    '<button type="submit" class="btn-primary">前往第三方支付 / ATM虛擬帳號</button>' +
+    '<button type="submit" class="btn-primary pay-method-btn">前往第三方支付 / ATM虛擬帳號</button>' +
     '</form>';
 }
 
@@ -3151,7 +3157,7 @@ function LINEPay人工選擇表單(orderKey, paymentActionToken) {
   return '<form method="POST" action="' + esc(action) + '" autocomplete="off">' +
     '<input type="hidden" name="k" value="' + esc(orderKey) + '">' +
     '<input type="hidden" name="t" value="' + esc(paymentActionToken) + '">' +
-    '<button type="submit" class="btn-primary pay-line-choice-btn">LINE Pay</button>' +
+    '<button type="submit" class="btn-primary pay-line-choice-btn pay-method-btn">LINE Pay</button>' +
     '</form>';
 }
 
@@ -3173,6 +3179,20 @@ function 優惠申請表單_(orderKey, token, type) {
     '</form>';
 }
 
+function 優惠放棄表單_(orderKey, token) {
+  if (!token) return '';
+  const action = PAY_WORKER_URL.replace(/\/+$/, '') + '/pay/discount/abandon';
+  return '<form method="POST" action="' + esc(action) + '" ' +
+      'class="discount-abandon-form" autocomplete="off">' +
+    '<input type="hidden" name="k" value="' + esc(orderKey) + '">' +
+    '<input type="hidden" name="t" value="' + esc(token) + '">' +
+    '<button type="submit" class="discount-abandon-btn" ' +
+      'onclick="return window.confirm(&quot;確定放棄這次優惠，並依原金額付款嗎？&quot;)">' +
+      '放棄優惠，依原金額付款</button>' +
+    '<p class="discount-abandon-note">放棄後，本筆訂單不能再次申請優惠</p>' +
+    '</form>';
+}
+
 function 優惠付款前區塊_(orderKey, token) {
   const o = currentOrderSummary || {};
   const status = String(o.discountStatus || '未申請');
@@ -3183,6 +3203,7 @@ function 優惠付款前區塊_(orderKey, token) {
     return '<div class="discount-status-card is-pending">' +
       '<strong>優惠審核中</strong>' +
       '<p>請先透過 LINE 傳送兌換畫面<br>審核完成前付款入口會暫時鎖定</p>' +
+      優惠放棄表單_(orderKey, token) +
       '</div>';
   }
   if (優惠已核准_(status)) {
@@ -3214,7 +3235,7 @@ function 優惠付款前區塊_(orderKey, token) {
         '<button type="button" class="discount-dialog-close" aria-label="關閉優惠選擇" ' +
           'onclick="var d=this.closest(&quot;dialog&quot;);' +
             'if(d.close){d.close()}else{d.removeAttribute(&quot;open&quot;)}">×</button>' +
-        '<p id="discount-dialog-title" class="discount-dialog-title">申請優惠折抵</p>' +
+        '<p id="discount-dialog-title" class="discount-dialog-title">使用優惠折抵</p>' +
         '<p class="discount-dialog-note">僅限已完成集點或取得指定優惠的顧客</p>' +
         '<div class="discount-choice-list">' + buttons + '</div>' +
         '<p class="discount-dialog-help">送出後請透過 LINE 傳送兌換畫面<br>核准前付款入口將暫時鎖定</p>' +
@@ -3223,6 +3244,13 @@ function 優惠付款前區塊_(orderKey, token) {
             'if(d.close){d.close()}else{d.removeAttribute(&quot;open&quot;)}">暫不使用</button>' +
       '</div>' +
     '</dialog>';
+}
+
+function 付款安心提示_() {
+  return '<div class="pay-reassurance" role="status">' +
+    '<strong><span aria-hidden="true">✓</span> 訂單已成功保留</strong>' +
+    '<p>請放心選擇適合您的付款方式<br>完成付款並經確認後才會排入出貨序列</p>' +
+    '</div>';
 }
 
 function 付款方式選擇區塊(orderKey) {
@@ -3532,7 +3560,7 @@ function 渲染付款區塊(pay) {
     付款操作憑證_());
 
   box.innerHTML =
-    '<p class="pay-lead">✨ 完成付款並經確認後，才會為您排入出貨序列</p>' +
+    付款安心提示_() +
     付款方式選擇區塊(orderKey) +
     保存連結區塊(orderKey) +
     '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡重新付款，訂單不會消失</p>';

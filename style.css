@@ -1,7 +1,9 @@
 /* =========================================================
    🥑 波波酪梨 Pro-Bro Avocado
-   style.css ｜ v9.5・優惠資格彈窗版（2026-08-29）
+   style.css ｜ v9.7・安心提示與付款按鈕版（2026-08-30）
 
+   【v9.7】新增訂單安心提示，付款主按鈕稍微縮小並加入柔和立體互動。
+   【v9.6】優惠待審核時可安全放棄優惠並依原金額繼續付款。
    【v9.5】優惠入口縮為次要按鈕，點擊後以彈窗選擇資格且不顯示折抵金額。
    【v9.3】ATM／超商付款改為兩張淡綠卡片，新增深綠色付款期限警語。
    【v9.2】保存訂單連結併入付款方式下方的虛線區域，說明文字依序排列。
@@ -315,6 +317,37 @@ body::before {
   color: var(--clay-deep);
   font-size: 0.84rem;
   line-height: 1.8;
+}
+
+.discount-abandon-form {
+  margin: 14px 0 0;
+}
+
+.discount-abandon-btn {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 16px;
+  border: 1px solid var(--avo-accent);
+  border-radius: 999px;
+  background: var(--creamy);
+  color: var(--clay-deep);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+}
+
+.discount-abandon-btn:hover,
+.discount-abandon-btn:focus-visible {
+  border-color: var(--herb-green);
+  color: var(--avo-dark);
+  outline: none;
+}
+
+.discount-status-card .discount-abandon-note {
+  margin-top: 7px;
+  font-size: 0.76rem;
 }
 
 .discount-entry {
@@ -1976,15 +2009,98 @@ select:focus, input:focus, textarea:focus {
   padding: 17px 10px !important;
 }
 
+.pay-reassurance {
+  margin: 0 0 20px;
+  padding: 15px 18px;
+  border: 1px solid rgba(111, 138, 84, 0.16);
+  border-radius: var(--r-card);
+  background: linear-gradient(135deg, rgba(228, 234, 215, 0.82), rgba(250, 247, 239, 0.72));
+  color: var(--avo-dark);
+  text-align: center;
+}
+
+.pay-reassurance strong {
+  display: block;
+  font-size: 0.94rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.pay-reassurance strong span {
+  color: var(--herb-green);
+}
+
+.pay-reassurance p {
+  margin: 6px 0 0;
+  color: var(--clay-deep);
+  font-size: 0.82rem;
+  line-height: 1.8;
+}
+
 /* PAYUNi 與固定 LINE Pay 並存時的付款選擇。
    每個方式都附上差異說明，避免把「點選 LINE Pay」誤認為已付款。 */
 .pay-choice-list { width: 100%; }
-.pay-choice-item form { margin: 0; }
+.pay-choice-item form {
+  width: 92%;
+  max-width: 460px;
+  margin: 0 auto;
+}
 .pay-choice-item .btn-primary,
 .pay-choice-item .btn-secondary { width: 100%; }
 .pay-choice-item .pay-line-choice-btn {
   padding: 15px 10px !important;
   font-size: 0.95rem !important;
+}
+
+#pay-action-content .pay-choice-item .pay-method-btn {
+  position: relative;
+  overflow: hidden;
+  padding: 13px 42px 13px 20px !important;
+  font-size: 0.92rem !important;
+  background: linear-gradient(135deg, #78975f 0%, #6f8a54 58%, #637e49 100%) !important;
+  border-color: #6f8a54 !important;
+  box-shadow: 0 7px 16px rgba(62, 76, 51, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+  animation: pay-method-arrive 360ms ease-out both;
+}
+
+#pay-action-content .pay-choice-item .pay-method-btn::after {
+  content: '›';
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-52%);
+  font-size: 1.25rem;
+  font-weight: 400;
+  opacity: 0.8;
+  transition: transform 180ms ease;
+}
+
+#pay-action-content .pay-choice-item .pay-method-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.04);
+  box-shadow: 0 10px 20px rgba(62, 76, 51, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+#pay-action-content .pay-choice-item .pay-method-btn:hover::after {
+  transform: translate(3px, -52%);
+}
+
+#pay-action-content .pay-choice-item .pay-method-btn:active {
+  transform: translateY(0) scale(0.99);
+  box-shadow: 0 4px 10px rgba(62, 76, 51, 0.15);
+}
+
+@keyframes pay-method-arrive {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #pay-action-content .pay-choice-item .pay-method-btn {
+    animation: none;
+    transition: none;
+  }
 }
 .pay-choice-note {
   margin: 8px 10px 0;
