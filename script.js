@@ -1,6 +1,11 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-08-30 安心提示與付款按鈕版
+ * 版本：2026-09-01 保存連結付款憑證修正版
+ *
+ * 【2026-09-01】
+ *  ・LINE Pay 返回成功頁時，從同一瀏覽器的未付款紀錄恢復付款操作憑證
+ *  ・再次複製保存連結會保留 t 憑證，解除付款方式後仍可顯示兩個付款按鈕
+ *  ・憑證只留在原瀏覽器，不寫入公開 Firebase 收據或分析網址
  *
  * 【2026-08-30】
  *  ・成功頁新增訂單已保留的安心提示，與 Worker 保存頁文字一致
@@ -2800,8 +2805,13 @@ async function 從網址載入訂單() {
     return false;
   }
 
+  // Worker 選擇 LINE Pay 後只把 orderKey 帶回網站，避免付款操作憑證出現在
+  // 網站網址與分析資料。原瀏覽器已把憑證安全留在 localStorage，這裡依訂單
+  // key 恢復；換裝置或只有查詢連結時仍維持只讀，不會憑空取得操作權限。
+  const savedPaymentActionToken = 讀取未付款訂單憑證_(key);
   currentOrderSummary = {
     orderKey: key,
+    paymentActionToken: savedPaymentActionToken,
     subtotal: Number(receipt.subtotal) || 0,
     shippingFee: Number(receipt.shippingFee) || 0,
     total: Number(receipt.total) || 0,
@@ -3003,6 +3013,15 @@ function 讀取未付款訂單() {
     儲存未付款訂單_(bounded);
     return bounded;
   } catch (e) { return []; }
+}
+
+function 讀取未付款訂單憑證_(orderKey) {
+  const key = String(orderKey || '');
+  if (!key) return '';
+  const record = 讀取未付款訂單().find(function (rec) {
+    return String(rec.key || '') === key;
+  });
+  return record ? String(record.token || '') : '';
 }
 
 function 儲存未付款訂單_(list) {
