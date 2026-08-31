@@ -1,11 +1,13 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-09-01 保存連結付款憑證修正版
+ * 版本：2026-09-01 付款狀態即時更新版
  *
  * 【2026-09-01】
  *  ・LINE Pay 返回成功頁時，從同一瀏覽器的未付款紀錄恢復付款操作憑證
  *  ・再次複製保存連結會保留 t 憑證，解除付款方式後仍可顯示兩個付款按鈕
  *  ・憑證只留在原瀏覽器，不寫入公開 Firebase 收據或分析網址
+ *  ・成功頁同步監看優惠收據與付款狀態，E／P 變更後不必手動重新整理
+ *  ・LINE Pay 選定後改顯示「等待核對」，避免已付款客人誤以為仍須匯款
  *
  * 【2026-08-30】
  *  ・成功頁新增訂單已保留的安心提示，與 Worker 保存頁文字一致
@@ -206,6 +208,9 @@ var paymentMode = 'payuni';
 // 目前成功頁正在顯示哪一筆訂單，以及它的付款狀態監聽
 var currentPayOrderKey = null;
 var payStatusRef = null;
+var orderReceiptRef = null;
+var latestPaymentState = null;
+var latestOrderReceiptSignature = '';
 
 /**
  * 產生訂單專屬的付款操作憑證。
@@ -2711,7 +2716,7 @@ async function verifyStockBeforeSubmit() {
  *   ・新增付款狀態讀取與訂閱
  *   ・金額仍然一律讀 currentOrderSummary，不讀 finalTotal（原因見下方註解）
  */
-function renderSuccessPage() {
+function renderSuccessPage(keepLivePaymentState) {
   if (!currentOrderSummary) return;
   const o = currentOrderSummary;
  
@@ -2770,13 +2775,23 @@ function renderSuccessPage() {
   // 💳 付款區：先用現有資料畫一次，再去 Firebase 撈實際狀態並持續訂閱。
   //    先畫是為了不讓畫面空白 —— 網路慢的時候那一秒很明顯。
   currentPayOrderKey = o.orderKey || null;
+  if (keepLivePaymentState) {
+    渲染付款區塊(latestPaymentState);
+    return;
+  }
+  latestPaymentState = null;
+  latestOrderReceiptSignature = '';
   渲染付款區塊(null);
- 
+
   if (currentPayOrderKey && paymentMode === 'payuni') {
     查詢付款狀態(currentPayOrderKey).then(pay => {
-      if (currentPayOrderKey === o.orderKey) 渲染付款區塊(pay);
+      if (currentPayOrderKey === o.orderKey && pay !== false) {
+        latestPaymentState = pay;
+        渲染付款區塊(pay);
+      }
     });
     訂閱付款狀態(currentPayOrderKey);
+    訂閱訂單收據(currentPayOrderKey);
   }
 }
 
@@ -3354,8 +3369,51 @@ function 訂閱付款狀態(orderKey) {
     payStatusRef.on('value', snap => {
       // 只在還停在成功頁、而且是同一筆訂單時才重繪
       if (currentPayOrderKey !== orderKey) return;
-      渲染付款區塊(snap.val());
+      latestPaymentState = snap.val();
+      渲染付款區塊(latestPaymentState);
     }, () => { /* 訂閱失敗就靠進頁時那次讀取，不影響功能 */ });
+  } catch (e) { /* SDK 沒載入就跳過 */ }
+}
+
+function 訂單收據狀態摘要_(receipt) {
+  if (!receipt) return '';
+  return JSON.stringify([
+    receipt.total, receipt.baseTotal, receipt.discountStatus, receipt.discountType,
+    receipt.discountAmount, receipt.reservationState, receipt.reservationExpiresAt,
+    receipt.updatedAt, receipt.discountDecidedAt, receipt.discountRequestedAt
+  ]);
+}
+
+function 套用訂單收據到成功頁_(receipt) {
+  if (!receipt || !currentOrderSummary || !receipt.row) return;
+  const signature = 訂單收據狀態摘要_(receipt);
+  if (signature && signature === latestOrderReceiptSignature) return;
+  latestOrderReceiptSignature = signature;
+
+  currentOrderSummary.subtotal = Number(receipt.subtotal) || 0;
+  currentOrderSummary.shippingFee = Number(receipt.shippingFee) || 0;
+  currentOrderSummary.total = Number(receipt.total) || 0;
+  currentOrderSummary.baseTotal = Number(receipt.baseTotal || receipt.total) || 0;
+  currentOrderSummary.discountStatus = String(receipt.discountStatus || '未申請');
+  currentOrderSummary.discountType = String(receipt.discountType || '');
+  currentOrderSummary.discountAmount = Number(receipt.discountAmount) || 0;
+  currentOrderSummary.discountOptions = receipt.discountOptions || {};
+  currentOrderSummary.boxCount = Number(receipt.boxCount) || 0;
+  if (receipt.items) currentOrderSummary.weight = String(receipt.items).replace(/、/g, '，');
+  if (receipt.shipping) currentOrderSummary.shipping = receipt.shipping;
+  renderSuccessPage(true);
+}
+
+/** E 欄優惠結果會寫入 orders 收據；與 payments 分開監看才不會漏掉。 */
+function 訂閱訂單收據(orderKey) {
+  停止訂閱訂單收據();
+  if (!orderKey || typeof firebase === 'undefined') return;
+  try {
+    orderReceiptRef = firebase.database().ref(FIREBASE_ORDERS_PATH + '/' + orderKey);
+    orderReceiptRef.on('value', snap => {
+      if (currentPayOrderKey !== orderKey) return;
+      套用訂單收據到成功頁_(snap.val());
+    }, () => { /* 失敗仍可重新開啟保存連結，不阻擋付款 */ });
   } catch (e) { /* SDK 沒載入就跳過 */ }
 }
  
@@ -3365,15 +3423,24 @@ function 停止訂閱付款狀態() {
     payStatusRef = null;
   }
 }
+
+function 停止訂閱訂單收據() {
+  if (orderReceiptRef) {
+    try { orderReceiptRef.off(); } catch (e) { /* 忽略 */ }
+    orderReceiptRef = null;
+  }
+}
  
  
 // ========================================
 // 🎨 付款區塊渲染
 // ========================================
  
-function 設定狀態列(current) {
+function 設定狀態列(current, middleLabel) {
   const steps = document.querySelectorAll('#pay-steps .pay-step');
   if (!steps.length) return;
+  const middle = steps[1] && steps[1].querySelector('.pay-step-label');
+  if (middle) middle.textContent = middleLabel || '待付款';
   steps.forEach((el, i) => {
     el.classList.toggle('is-done', i < current);
     el.classList.toggle('is-current', i === current);
@@ -3498,8 +3565,8 @@ function 渲染付款區塊(pay) {
 
   // ---------- 已選擇 LINE Pay（人工確認） ----------
   if (已選人工LINEPay) {
-    設定付款標題('請使用 LINE Pay 並聯絡我們確認', 'LINE PAY · MANUAL REVIEW');
-    設定狀態列(1);
+    設定付款標題('LINE Pay 等待核對', 'LINE PAY · MANUAL REVIEW');
+    設定狀態列(1, '等待核對');
     記住未付款訂單(orderKey,
       (currentOrderSummary && currentOrderSummary.total) || 0,
       付款操作憑證_());
@@ -3612,7 +3679,7 @@ function 渲染人工付款資訊(box, pay, emergencyMode) {
   const directUrl = 安全LINEPay付款連結_(c.linePayUrl || '');
   const isChoice = emergencyMode === false;
   const msg = isChoice
-    ? '您已選擇 LINE Pay。手機可直接開啟付款，或使用下方固定 QR，再透過官方 LINE 告知訂購姓名與金額。'
+    ? '您已選擇 LINE Pay。若尚未付款，可直接開啟付款或使用下方固定 QR；若已完成付款，請勿重複操作。'
     : (String(c.linePayMsg || '').trim() ||
       '目前採人工付款確認。您可直接開啟 LINE Pay、使用下方 QR，或聯絡官方 LINE 取得其他付款資訊。');
   const directBlock = directUrl
@@ -3644,7 +3711,7 @@ function 渲染人工付款資訊(box, pay, emergencyMode) {
     '</button>' +
     '<p class="pay-tail-note">' +
       (isChoice
-        ? '系統記錄的是您選擇 LINE Pay 的時間，不代表款項已完成；我們核對後才會更新付款狀態。'
+        ? '請透過官方 LINE 告知訂購姓名與付款金額；款項確認後，本頁會自動更新為付款完成。'
         : '使用 QR 完成付款後，請傳送訂購姓名與金額供我們核對；若要使用銀行轉帳，也請透過官方 LINE 取得帳戶資訊。') +
       '</p>';
 }
