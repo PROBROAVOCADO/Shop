@@ -1,6 +1,11 @@
 /*************************************************************
  * 波波酪梨 線上訂購系統 — 前端 script.js
- * 版本：2026-09-01 付款狀態即時更新版
+ * 版本：2026-09-08 付款返回資料核對版
+ *
+ * 【2026-09-08】
+ *  ・同一瀏覽器付款跳轉後，恢復姓名、電話、配送方式與實際收件地址／門市
+ *  ・核對資料只留在本機 48 小時，不寫入公開 Firebase 收據或 GA4
+ *  ・付款時間線的目前階段加入柔和呼吸提示
  *
  * 【2026-09-01】
  *  ・LINE Pay 返回成功頁時，從同一瀏覽器的未付款紀錄恢復付款操作憑證
@@ -2832,7 +2837,8 @@ async function 從網址載入訂單() {
   // Worker 選擇 LINE Pay 後只把 orderKey 帶回網站，避免付款操作憑證出現在
   // 網站網址與分析資料。原瀏覽器已把憑證安全留在 localStorage，這裡依訂單
   // key 恢復；換裝置或只有查詢連結時仍維持只讀，不會憑空取得操作權限。
-  const savedPaymentActionToken = 讀取未付款訂單憑證_(key);
+  const savedOrder = 讀取未付款訂單紀錄_(key);
+  const savedPaymentActionToken = savedOrder ? String(savedOrder.token || '') : '';
   currentOrderSummary = {
     orderKey: key,
     paymentActionToken: savedPaymentActionToken,
@@ -2845,10 +2851,12 @@ async function 從網址載入訂單() {
     discountAmount: Number(receipt.discountAmount) || 0,
     discountOptions: receipt.discountOptions || {},
     boxCount: Number(receipt.boxCount) || 0,
-    weight: String(receipt.items || '').replace(/、/g, '，'),
-    shipping: receipt.shipping || '',
-    address: '',   // 收據不含地址（個資），這一列會顯示空白
-    shippingMethod: ''
+    weight: (savedOrder && savedOrder.weight) || String(receipt.items || '').replace(/、/g, '，'),
+    name: (savedOrder && savedOrder.name) || '',
+    phone: (savedOrder && savedOrder.phone) || '',
+    shippingMethod: (savedOrder && savedOrder.shippingMethod) || '',
+    shipping: (savedOrder && savedOrder.shipping) || receipt.shipping || '',
+    address: (savedOrder && savedOrder.address) || (savedOrder && savedOrder.shipping) || ''
   };
 
   goToStep(5);
@@ -2962,6 +2970,7 @@ function handleLinePayDirect() {
 const PENDING_ORDER_KEY = 'probro_pending_orders_v2';
 const LEGACY_PENDING_ORDER_KEY = 'probro_pending_order';
 const PENDING_FALLBACK_MAX_MS = 48 * 60 * 60 * 1000;
+const LOCAL_ORDER_DETAILS_MAX_MS = 48 * 60 * 60 * 1000;
 const LINE_PAY_REMINDER_MAX_MS = 24 * 60 * 60 * 1000;
  
 /**
@@ -2977,16 +2986,41 @@ function 記住未付款訂單(orderKey, total, paymentActionToken) {
   if (!orderKey) return;
   try {
     const list = 讀取未付款訂單();
+    const summary = currentOrderSummary && String(currentOrderSummary.orderKey || '') === String(orderKey)
+      ? currentOrderSummary
+      : null;
+    const now = Date.now();
+    const hasLocalDetails = !!(summary && (
+      summary.name || summary.phone || summary.shippingMethod || summary.address || summary.shipping
+    ));
     const next = {
       key: orderKey,
       total: Number(total) || 0,
-      at: Date.now(),
-      token: String(paymentActionToken || '')
+      at: now,
+      token: String(paymentActionToken || ''),
+      name: summary ? String(summary.name || '').slice(0, 40) : '',
+      phone: summary ? String(summary.phone || '').slice(0, 20) : '',
+      shippingMethod: summary ? String(summary.shippingMethod || '').slice(0, 20) : '',
+      shipping: summary ? String(summary.shipping || '').slice(0, 120) : '',
+      address: summary ? String(summary.address || '').slice(0, 120) : '',
+      weight: summary ? String(summary.weight || '').slice(0, 500) : '',
+      detailsSavedAt: hasLocalDetails ? now : 0
     };
     const index = list.findIndex(function (rec) { return rec.key === orderKey; });
     if (index >= 0) {
       next.at = Number(list[index].at || next.at);
       if (!next.token) next.token = String(list[index].token || '');
+      const previousDetailsSavedAt = Number(list[index].detailsSavedAt) || 0;
+      if (previousDetailsSavedAt > 0) next.detailsSavedAt = previousDetailsSavedAt;
+      if (!hasLocalDetails && previousDetailsSavedAt > 0) {
+        next.name = String(list[index].name || '');
+        next.phone = String(list[index].phone || '');
+        next.shippingMethod = String(list[index].shippingMethod || '');
+        next.shipping = String(list[index].shipping || '');
+        next.address = String(list[index].address || '');
+        next.weight = String(list[index].weight || '');
+        next.detailsSavedAt = Number(list[index].detailsSavedAt) || 0;
+      }
       list[index] = next;
     } else {
       list.push(next);
@@ -3023,12 +3057,22 @@ function 讀取未付款訂單() {
     }
 
     const seen = {};
+    const now = Date.now();
     const list = parsed.filter(function (rec) {
       if (!rec || !rec.key || seen[rec.key]) return false;
       seen[rec.key] = true;
       rec.total = Number(rec.total) || 0;
       rec.at = Number(rec.at) || Date.now();
       rec.token = String(rec.token || '');
+      rec.detailsSavedAt = Number(rec.detailsSavedAt) || 0;
+      const detailsExpired = !rec.detailsSavedAt || now - rec.detailsSavedAt > LOCAL_ORDER_DETAILS_MAX_MS;
+      rec.name = detailsExpired ? '' : String(rec.name || '').slice(0, 40);
+      rec.phone = detailsExpired ? '' : String(rec.phone || '').slice(0, 20);
+      rec.shippingMethod = detailsExpired ? '' : String(rec.shippingMethod || '').slice(0, 20);
+      rec.shipping = detailsExpired ? '' : String(rec.shipping || '').slice(0, 120);
+      rec.address = detailsExpired ? '' : String(rec.address || '').slice(0, 120);
+      rec.weight = detailsExpired ? '' : String(rec.weight || '').slice(0, 500);
+      if (detailsExpired) rec.detailsSavedAt = 0;
       return true;
     }).sort(function (a, b) { return a.at - b.at; });
 
@@ -3040,12 +3084,16 @@ function 讀取未付款訂單() {
 }
 
 function 讀取未付款訂單憑證_(orderKey) {
-  const key = String(orderKey || '');
-  if (!key) return '';
-  const record = 讀取未付款訂單().find(function (rec) {
-    return String(rec.key || '') === key;
-  });
+  const record = 讀取未付款訂單紀錄_(orderKey);
   return record ? String(record.token || '') : '';
+}
+
+function 讀取未付款訂單紀錄_(orderKey) {
+  const key = String(orderKey || '');
+  if (!key) return null;
+  return 讀取未付款訂單().find(function (rec) {
+    return String(rec.key || '') === key;
+  }) || null;
 }
 
 function 儲存未付款訂單_(list) {

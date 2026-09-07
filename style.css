@@ -1997,11 +1997,27 @@ select:focus, input:focus, textarea:focus {
   background: var(--avo-accent);
   border-color: var(--avo-accent);
   box-shadow: 0 0 0 4px rgba(154, 126, 93, 0.16);
+  animation: pay-step-breathe 1.8s ease-in-out infinite;
 }
 .pay-step.is-current .pay-step-label {
   color: var(--avo-dark);
   font-weight: 700;
   opacity: 1;
+}
+
+@keyframes pay-step-breathe {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 4px rgba(154, 126, 93, 0.16);
+  }
+  50% {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 8px rgba(154, 126, 93, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pay-step.is-current .pay-step-dot { animation: none; }
 }
 
 @media screen and (max-width: 767px) {
