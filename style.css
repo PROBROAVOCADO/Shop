@@ -1316,6 +1316,23 @@ select:focus, input:focus, textarea:focus {
   font-variant-numeric: tabular-nums;
 }
 
+.order-confirm-note {
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  border-radius: var(--r-field);
+  background: rgba(220, 231, 205, 0.55);
+  color: var(--avo-dark);
+  font-size: 0.86rem;
+  line-height: 1.75;
+  text-align: left;
+}
+.order-confirm-note strong {
+  display: inline-block;
+  margin-right: 0.55em;
+  color: var(--herb-green-deep, var(--avo-dark));
+  letter-spacing: 0.08em;
+}
+
 .success-warm-text {
   color: var(--avo-accent) !important;
   font-size: 0.88rem !important;

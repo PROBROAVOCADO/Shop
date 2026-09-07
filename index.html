@@ -48,7 +48,7 @@
 
     <title>波波酪梨｜線上訂購</title>
     <!-- 2026-08-29：v16 優惠申請與審核狀態版面 -->
-    <link rel="stylesheet" href="style.css?v=19">
+    <link rel="stylesheet" href="style.css?v=20">
   </head>
 
   <body>
@@ -89,7 +89,7 @@
     送出訂單前請確認已閱讀
     <a href="refund-policy.html" target="_blank" rel="noopener">退換貨政策</a>
     與 <a href="privacy.html" target="_blank" rel="noopener">隱私權政策</a>。新鮮酪梨屬易於腐敗、保存期限較短的生鮮商品，
-    不適用七日無條件退貨；商品瑕疵或運送損壞仍依法協助處理。
+    不適用七日無條件退貨；請確認姓名、電話及收件資料正確，商品瑕疵或運送損壞仍依法協助處理。
   </p>
 
   <div class="button-group">
@@ -326,12 +326,7 @@
     </div>
   </div>
  
-  <!-- 💳 付款區。內容由 script.js 依 paymentMode 與付款狀態決定。 -->
-  <div class="info-block" id="pay-action-card">
-    <div id="pay-action-content"></div>
-  </div>
- 
-  <!-- 🧾 訂購內容。id 沿用舊版，renderSuccessPage 的骨架不用改。 -->
+  <!-- 🧾 付款前先確認訂購人與收件內容。 -->
   <div id="order-summary-card" class="info-block">
     <h3 class="section-title">🧾 本次訂購內容</h3>
     <div id="order-summary-content"></div>
@@ -339,6 +334,12 @@
       總金額：
       <span id="final-amount-display">$0</span>
     </div>
+    <p class="order-confirm-note"><strong>備註</strong>付款前請確認姓名、電話與收件資料。若因資料錯誤、無法聯繫、逾期未取或拒收造成退回或腐壞，且非本園出貨或商品瑕疵，恕不退款或免費補寄；資料有誤請先聯繫我們。</p>
+  </div>
+
+  <!-- 💳 確認訂購內容後再選擇付款。 -->
+  <div class="info-block" id="pay-action-card">
+    <div id="pay-action-content"></div>
   </div>
  
   <div class="info-block">
@@ -438,6 +439,6 @@
     <!-- 📊 GA4 追蹤模組。必須在 script.js「之前」 -->
     <script src="analytics.js?v=2.4"></script>
   <!-- 2026-08-30：v24 訂單安心提示與付款按鈕互動 -->
-  <script src="script.js?v=26"></script>
+  <script src="script.js?v=27"></script>
   </body>
 </html>

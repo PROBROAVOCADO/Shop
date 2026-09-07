@@ -8,6 +8,7 @@
  *  ・憑證只留在原瀏覽器，不寫入公開 Firebase 收據或分析網址
  *  ・成功頁同步監看優惠收據與付款狀態，E／P 變更後不必手動重新整理
  *  ・LINE Pay 選定後改顯示「等待核對」，避免已付款客人誤以為仍須匯款
+ *  ・付款區移到訂購摘要下方，新增姓名、電話及收件資料責任提醒
  *
  * 【2026-08-30】
  *  ・成功頁新增訂單已保留的安心提示，與 Worker 保存頁文字一致
@@ -2740,11 +2741,19 @@ function renderSuccessPage(keepLivePaymentState) {
   const 優惠列 = 優惠金額 > 0
     ? `<div class="order-summary-row is-discount"><span class="label">🎟️ 優惠折抵</span><span class="value">-$${優惠金額}</span></div>`
     : '';
+  const 姓名列 = o.name
+    ? `<div class="order-summary-row"><span class="label">👤 訂購人姓名</span><span class="value">${esc(o.name)}</span></div>`
+    : '';
+  const 電話列 = o.phone
+    ? `<div class="order-summary-row"><span class="label">📱 聯絡電話</span><span class="value">${esc(o.phone)}</span></div>`
+    : '';
  
   const summaryEl = document.getElementById('order-summary-content');
   if (summaryEl) {
     summaryEl.innerHTML = `
       <div class="order-summary-list">
+        ${姓名列}
+        ${電話列}
         <div class="order-summary-row"><span class="label">📦 規格細項</span><span class="value js-summary-weight"></span></div>
         ${箱數列}
         <div class="order-summary-row"><span class="label">🚚 配送方式</span><span class="value js-summary-shipping"></span></div>
