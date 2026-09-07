@@ -1343,6 +1343,12 @@ select:focus, input:focus, textarea:focus {
 }
 
 /* 訂購摘要 */
+.order-summary-groups {
+  display: grid;
+  gap: 14px;
+  margin: 20px auto;
+}
+
 .order-summary-list {
   background: rgba(237, 228, 211, 0.45);
   border: 1px solid var(--rule-soft);
@@ -1350,6 +1356,21 @@ select:focus, input:focus, textarea:focus {
   padding: 20px;
   margin: 20px auto;
   box-shadow: none;
+}
+
+.order-summary-groups .order-summary-list { margin: 0; }
+.order-summary-list--customer { background: rgba(220, 231, 205, 0.5); }
+
+.order-summary-heading {
+  margin: 0 0 14px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--rule-soft);
+  color: var(--avo-dark);
+  font-family: var(--heading-font);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-align: left;
 }
 
 .order-summary-row {
@@ -1369,6 +1390,7 @@ select:focus, input:focus, textarea:focus {
   flex-direction: column;
   gap: 10px;
 }
+#step5-payment-info .order-summary-groups .order-summary-row { margin-bottom: 0; }
 #step5-payment-info .order-summary-row {
   display: flex;
   justify-content: space-between;

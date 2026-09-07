@@ -6,6 +6,7 @@
  *  ・同一瀏覽器付款跳轉後，恢復姓名、電話、配送方式與實際收件地址／門市
  *  ・核對資料只留在本機 48 小時，不寫入公開 Firebase 收據或 GA4
  *  ・付款時間線的目前階段加入柔和呼吸提示
+ *  ・成功頁摘要拆分為「訂購人與收件資訊」及「訂購明細」兩個區塊
  *
  * 【2026-09-01】
  *  ・LINE Pay 返回成功頁時，從同一瀏覽器的未付款紀錄恢復付款操作憑證
@@ -2756,16 +2757,22 @@ function renderSuccessPage(keepLivePaymentState) {
   const summaryEl = document.getElementById('order-summary-content');
   if (summaryEl) {
     summaryEl.innerHTML = `
-      <div class="order-summary-list">
-        ${姓名列}
-        ${電話列}
-        <div class="order-summary-row"><span class="label">📦 規格細項</span><span class="value js-summary-weight"></span></div>
-        ${箱數列}
-        <div class="order-summary-row"><span class="label">🚚 配送方式</span><span class="value js-summary-shipping"></span></div>
-        <div class="order-summary-row"><span class="label">🏠 收件地址(門市)</span><span class="value js-summary-address"></span></div>
-        <div class="order-summary-row"><span class="label">💰 商品小計</span><span class="value">$${Number(o.subtotal) || 0}</span></div>
-        <div class="order-summary-row"><span class="label">🚛 運費</span><span class="value">$${Number(o.shippingFee) || 0}</span></div>
-        ${優惠列}
+      <div class="order-summary-groups">
+        <section class="order-summary-list order-summary-list--customer">
+          <h4 class="order-summary-heading">👤 訂購人與收件資訊</h4>
+          ${姓名列}
+          ${電話列}
+          <div class="order-summary-row"><span class="label">🚚 配送方式</span><span class="value js-summary-shipping"></span></div>
+          <div class="order-summary-row"><span class="label">🏠 收件地址(門市)</span><span class="value js-summary-address"></span></div>
+        </section>
+        <section class="order-summary-list order-summary-list--items">
+          <h4 class="order-summary-heading">📦 訂購明細</h4>
+          <div class="order-summary-row"><span class="label">規格細項</span><span class="value js-summary-weight"></span></div>
+          ${箱數列}
+          <div class="order-summary-row"><span class="label">💰 商品小計</span><span class="value">$${Number(o.subtotal) || 0}</span></div>
+          <div class="order-summary-row"><span class="label">🚛 運費</span><span class="value">$${Number(o.shippingFee) || 0}</span></div>
+          ${優惠列}
+        </section>
       </div>`;
   }
  
