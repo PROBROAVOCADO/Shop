@@ -161,6 +161,9 @@ var totalWeight = 0;
 var isSubmitting = false;
 var currentOrderKey = null;      // 同一筆訂單的重試共用同一組，防止重複下單
 var currentPaymentActionToken = null; // 同一筆訂單的付款操作憑證；只傳遞原文，後端只存雜湊
+var proofViewRecordedKey = '';
+var proofViewRequestBusy = false;
+var proofViewRetryCount = 0;
 var lastSnapshotStamp = null;    // 內容比對用
 var configLoaded = false;
 var firebaseLive = false;        // Firebase 是否連線中（決定即時層資料要信誰）
@@ -1011,7 +1014,7 @@ function updateOrderPageStopState() {
   if (submitBtn && !isSubmitting) {
     submitBtn.disabled = 停售;
     submitBtn.classList.toggle('is-disabled', 停售);
-    submitBtn.innerText = 停售 ? '🚫 暫停接單中' : '✅ 確認訂購';
+    submitBtn.innerText = 停售 ? '🚫 暫停接單中' : '資料正確，確認送出訂單';
   }
 }
 
@@ -2352,6 +2355,7 @@ async function submitOrder(e) {
   const addressDetailEl = document.getElementById('delivery-address');
   const storeEl = document.getElementById('store-name');
   const orderNoteEl = document.getElementById('order-note');
+  const dataConfirmEl = document.getElementById('order-data-confirm');
 
   if (!nEl || !pEl || !submitBtn) {
     customAlert('⚠️ 找不到必填欄位，請確認訂購頁已正確顯示！');
@@ -2446,6 +2450,12 @@ async function submitOrder(e) {
 
   if (fullAddress.length > 120) { customAlert('☝️ 地址長度超過限制，請簡化填寫內容'); return; }
 
+  if (!dataConfirmEl || !dataConfirmEl.checked) {
+    customAlert('請先確認姓名、電話與收件資料正確，再送出訂單');
+    if (dataConfirmEl) dataConfirmEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
   recalcTotalWeight();
 
   // 📦 總重限制已移除。這裡只做最後一道保險：單一規格不得超過單箱上限。
@@ -2482,7 +2492,7 @@ async function submitOrder(e) {
   const 收尾 = () => {
     isSubmitting = false;
     submitBtn.disabled = false;
-    submitBtn.innerText = '✅ 確認訂購';
+    submitBtn.innerText = '資料正確，確認送出訂單';
     resetTurnstile_();
     flushPendingControl();      // 補上送單期間延後的畫面更新
     updateOrderPageStopState(); // 期間若被停售，按鈕要維持灰色
@@ -2560,6 +2570,8 @@ async function submitOrder(e) {
     district: districtEl ? districtEl.value : '',
     splitShipping: splitShipping
   };
+  orderData.customerConfirmed = true;
+  orderData.confirmationVersion = '2026-09-08-v1';
 
   // 讓 GAS 只把憑證雜湊寫入收據。沒有安全亂數的極舊瀏覽器不帶此欄，
   // 該筆仍可使用 PAYUNi，但不開放 LINE Pay 人工狀態寫入。
@@ -2616,6 +2628,7 @@ async function submitOrder(e) {
       currentOrderSummary.discountAmount = Number(json.totals.discountAmount) || 0;
       currentOrderSummary.discountOptions = json.totals.discountOptions || {};
     }
+    if (json.proof) currentOrderSummary.proof = json.proof;
 
     // 本地先扣一次，避免回價目表看到舊數字（Firebase 推播通常 1 秒內就會蓋掉它）
     const stockMap = window.APP_CONFIG.stockMap || {};
@@ -2792,6 +2805,9 @@ function renderSuccessPage(keepLivePaymentState) {
     const rawMsg = (window.APP_CONFIG && window.APP_CONFIG.successMsg) || '謝謝您的支持！';
     msgEl.innerHTML = `<div class="success-warm-text">${esc(rawMsg)}</div>`;
   }
+
+  顯示訂單舉證摘要_(o.proof);
+  記錄成功頁首次載入_();
  
   // 💳 付款區：先用現有資料畫一次，再去 Firebase 撈實際狀態並持續訂閱。
   //    先畫是為了不讓畫面空白 —— 網路慢的時候那一秒很明顯。
@@ -2815,6 +2831,76 @@ function renderSuccessPage(keepLivePaymentState) {
     訂閱訂單收據(currentPayOrderKey);
   }
 }
+
+function 格式化台北時間_(value) {
+  const ms = Number(value) || 0;
+  if (!ms) return '';
+  try {
+    return new Intl.DateTimeFormat('zh-TW', {
+      timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    }).format(new Date(ms));
+  } catch (e) {
+    return new Date(ms).toLocaleString('zh-TW');
+  }
+}
+
+function 顯示訂單舉證摘要_(proof) {
+  const el = document.getElementById('order-proof-stamp');
+  if (!el || !proof || !Number(proof.createdAt) || !String(proof.digest || '')) return;
+  const shortCode = String(proof.digest).slice(0, 12).toUpperCase();
+  const viewed = Number(proof.firstViewedAt) > 0
+    ? `｜本頁首次載入 ${格式化台北時間_(proof.firstViewedAt)}`
+    : '';
+  el.textContent = `🔐 訂單確認紀錄已封存｜${格式化台北時間_(proof.createdAt)}｜驗證碼 ${shortCode}${viewed}`;
+  el.hidden = false;
+}
+
+function 記錄成功頁首次載入_() {
+  const o = currentOrderSummary || {};
+  const key = String(o.orderKey || '');
+  const token = String(o.paymentActionToken || '');
+  if (!key || !token || proofViewRecordedKey === key || proofViewRequestBusy) return;
+
+  proofViewRequestBusy = true;
+  fetch(PAY_WORKER_URL.replace(/\/+$/, '') + '/proof/viewed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ k: key, t: token }),
+    credentials: 'omit',
+    cache: 'no-store'
+  }).then(function (res) {
+    if (!res.ok) throw new Error('PROOF_VIEW_HTTP_' + res.status);
+    return res.json();
+  }).then(function (result) {
+    if (!result || result.ok !== true || !result.proof) throw new Error('PROOF_VIEW_FAILED');
+    proofViewRecordedKey = key;
+    proofViewRetryCount = 0;
+    o.proof = result.proof;
+    顯示訂單舉證摘要_(result.proof);
+  }).catch(function () {
+    proofViewRetryCount += 1;
+    if (proofViewRetryCount <= 3 && currentOrderSummary && currentOrderSummary.orderKey === key) {
+      setTimeout(記錄成功頁首次載入_, proofViewRetryCount * 1800);
+    }
+  }).finally(function () {
+    proofViewRequestBusy = false;
+  });
+}
+
+// 客人在勾選後若又修改重要資料，必須重新確認，避免舊勾選套用到新內容。
+['input', 'change'].forEach(function (eventName) {
+  document.addEventListener(eventName, function (event) {
+    const target = event.target;
+    if (!target || !target.id) return;
+    if ([
+      'cust-name', 'cust-phone', 'shipping-method', 'store-name',
+      'county', 'district', 'delivery-address'
+    ].indexOf(target.id) === -1) return;
+    const checkbox = document.getElementById('order-data-confirm');
+    if (checkbox) checkbox.checked = false;
+  });
+});
 
 
 // ========================================

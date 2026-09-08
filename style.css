@@ -1333,6 +1333,41 @@ select:focus, input:focus, textarea:focus {
   letter-spacing: 0.08em;
 }
 
+.order-data-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 18px 0 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-field);
+  background: rgba(220, 231, 205, 0.55);
+  color: var(--avo-dark);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.6;
+  cursor: pointer;
+}
+.order-data-confirm input {
+  width: 18px;
+  height: 18px;
+  margin: 3px 0 0;
+  accent-color: var(--herb-green);
+  flex: 0 0 auto;
+}
+
+.order-proof-stamp {
+  margin: 14px 0 0;
+  padding: 11px 14px;
+  border-radius: var(--r-field);
+  background: rgba(220, 231, 205, 0.55);
+  color: var(--avo-dark);
+  font-size: 0.78rem;
+  line-height: 1.65;
+  text-align: center;
+  letter-spacing: 0.35px;
+}
+
 .success-warm-text {
   color: var(--avo-accent) !important;
   font-size: 0.88rem !important;

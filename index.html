@@ -48,7 +48,7 @@
 
     <title>波波酪梨｜線上訂購</title>
     <!-- 2026-08-29：v16 優惠申請與審核狀態版面 -->
-    <link rel="stylesheet" href="style.css?v=22">
+    <link rel="stylesheet" href="style.css?v=23">
   </head>
 
   <body>
@@ -287,12 +287,17 @@
       placeholder="有特殊出貨需求可以告訴我們&#10;（例如指定分箱方式、想對我們說的話blabla...）"></textarea>
   </div>
 
+  <label class="order-data-confirm" for="order-data-confirm">
+    <input type="checkbox" id="order-data-confirm">
+    <span>我已確認姓名、電話與收件資料正確</span>
+  </label>
+
   <div id="turnstile-container" class="turnstile-container" style="display:none;"
        aria-label="人機驗證"></div>
 
   <div class="button-group">
     <button class="btn-secondary" onclick="goToStep(3)">🥑 返回價格表</button>
-    <button class="btn-primary" id="submit-btn" onclick="submitOrder()">✅ 確認訂購</button>
+    <button class="btn-primary" id="submit-btn" onclick="submitOrder()">資料正確，確認送出訂單</button>
   </div>
 </div>
 
@@ -334,6 +339,7 @@
       總金額：
       <span id="final-amount-display">$0</span>
     </div>
+    <p id="order-proof-stamp" class="order-proof-stamp" hidden></p>
     <p class="order-confirm-note"><strong>備註</strong>付款前請確認姓名、電話與收件資料。若因資料錯誤、無法聯繫、逾期未取或拒收造成退回或腐壞，且非本園出貨或商品瑕疵，恕不退款或免費補寄；資料有誤請先聯繫我們。</p>
   </div>
 
@@ -438,7 +444,7 @@
 
     <!-- 📊 GA4 追蹤模組。必須在 script.js「之前」 -->
     <script src="analytics.js?v=2.4"></script>
-  <!-- 2026-09-08：v29 付款返回資料核對、時間線呼吸提示與摘要分區 -->
-  <script src="script.js?v=29"></script>
+  <!-- 2026-09-08：v30 訂單原始快照封存與成功頁載入佐證 -->
+  <script src="script.js?v=30"></script>
   </body>
 </html>
