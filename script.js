@@ -3176,11 +3176,6 @@ function 讀取未付款訂單() {
   } catch (e) { return []; }
 }
 
-function 讀取未付款訂單憑證_(orderKey) {
-  const record = 讀取未付款訂單紀錄_(orderKey);
-  return record ? String(record.token || '') : '';
-}
-
 function 讀取未付款訂單紀錄_(orderKey) {
   const key = String(orderKey || '');
   if (!key) return null;
