@@ -608,12 +608,24 @@ async function fetchSnapshot(url) {
 // 下單成功時後端會把收據寫進 Firebase，所以這裡直接查 Firebase 就好。
 // 刻意不回頭問 GAS：那個時間點 GAS 正是最塞的，
 // 二十個人同時回去查只會讓壅塞更嚴重，等於自己人踩自己人。
-async function fetchOrderReceipt(orderKey) {
+async function fetchWithDeadline_(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+    // Read the body inside the deadline too; fetch alone only waits for headers.
+    const body = await response.text();
+    return { ok: response.ok, status: response.status, text: () => Promise.resolve(body),
+      json: () => Promise.resolve().then(() => JSON.parse(body)) };
+  } finally { clearTimeout(timer); }
+}
+
+async function fetchOrderReceipt(orderKey, timeoutMs) {
   if (!orderKey) return null;
   try {
-    const res = await fetch(
+    const res = await fetchWithDeadline_(
       `${FIREBASE_DB_URL}/${FIREBASE_ORDERS_PATH}/${encodeURIComponent(orderKey)}.json`,
-      { cache: 'no-store' }
+      { cache: 'no-store' }, Math.max(1, timeoutMs || 5000)
     );
     if (!res.ok) return null;
     const json = await res.json();
@@ -627,11 +639,14 @@ async function fetchOrderReceipt(orderKey) {
 // 訂單有可能還在 GAS 的佇列裡排隊，所以要給它一點時間。
 // 間隔帶隨機值，避免所有客人在同一秒一起查。
 async function waitForOrderReceipt(orderKey, onProgress) {
-  const 間隔 = [3000, 5000, 8000, 12000];
+  const until = Date.now() + 35000;
+  const 間隔 = [0, 3000, 5000, 8000, 12000];
   for (let i = 0; i < 間隔.length; i++) {
-    await new Promise(r => setTimeout(r, 間隔[i] + Math.random() * 1500));
+    const delay = i === 0 ? 0 : 間隔[i] + Math.random() * 1500;
+    if (Date.now() + delay >= until) break;
+    if (delay) await new Promise(r => setTimeout(r, delay));
     if (onProgress) onProgress(i + 1, 間隔.length);
-    const receipt = await fetchOrderReceipt(orderKey);
+    const receipt = await fetchOrderReceipt(orderKey, Math.min(5000, until - Date.now()));
     if (receipt) return receipt;
   }
   return null;
@@ -640,7 +655,7 @@ async function waitForOrderReceipt(orderKey, onProgress) {
 // 🔥 Firebase REST 備援：SDK 連不上時，用一般 HTTPS 抓即時層。
 // 這條路徑不佔用 realtime 的同時連線數，成本也極低（單次約 1 KB）。
 async function fetchControlViaRest() {
-  const res = await fetch(`${FIREBASE_DB_URL}/${FIREBASE_CONTROL_PATH}.json`, { cache: 'no-store' });
+  const res = await fetchWithDeadline_(`${FIREBASE_DB_URL}/${FIREBASE_CONTROL_PATH}.json`, { cache: 'no-store' }, 5000);
   if (!res.ok) throw new Error('控制節點讀取失敗，狀態碼 ' + res.status);
   const json = await res.json();
   if (!json || !json.json) throw new Error('控制節點內容為空');
@@ -2345,6 +2360,7 @@ function 套用收據並前往成功頁(receipt, 收尾) {
 async function submitOrder(e) {
   if (e) e.preventDefault();
   if (isSubmitting) return;
+  const submitStarted = Date.now();
 
   const nEl = document.getElementById('cust-name');
   const pEl = document.getElementById('cust-phone');
@@ -2490,6 +2506,7 @@ async function submitOrder(e) {
   submitBtn.disabled = true;
 
   const 收尾 = () => {
+    console.info('[order-timing]', JSON.stringify({ elapsedMs: Date.now() - submitStarted }));
     isSubmitting = false;
     submitBtn.disabled = false;
     submitBtn.innerText = '資料正確，確認送出訂單';
@@ -2594,11 +2611,11 @@ async function submitOrder(e) {
   currentOrderSummary = orderData;
 
   try {
-    const res = await fetch(ORDER_PROXY_URL, {
+    const res = await fetchWithDeadline_(ORDER_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(orderData)
-    });
+    }, 50000);
 
     // 尖峰擁擠或 Google 端逾時時，有機會回傳一頁 HTML 錯誤頁而不是 JSON。
     // 這種情況下訂單「有可能已經寫入成功」，不能直接跟客人說失敗。
@@ -2609,7 +2626,11 @@ async function submitOrder(e) {
 
     if (!json.success) {
       if (json.mayHaveSucceeded) throw new Error('SERVER_TIMEOUT_NON_JSON');
-      throw new Error(turnstileErrorText_(json.error) || json.error || '送單失敗');
+      // Only an explicit application rejection is certain. Transport failures retain the key.
+      if (res.status >= 500) throw new Error('SERVER_TIMEOUT_NON_JSON');
+      const rejected = new Error(turnstileErrorText_(json.error) || json.error || '送單失敗');
+      rejected.orderRejected = true;
+      throw rejected;
     }
 
     // 🔑 A2：成功頁改用後端實際成交的金額。
@@ -2645,7 +2666,7 @@ async function submitOrder(e) {
     goToStep(5);
 
   } catch (err) {
-    if (err.message === 'SERVER_TIMEOUT_NON_JSON') {
+    if (!err.orderRejected) {
       // ⚠️ 這是壓力測試裡最常見的情況：伺服器其實成功了，
       // 只是 Google 在壅塞時回傳 HTML 錯誤頁而不是 JSON。
       // 實測 60 併發時，三分之一的成功訂單會走到這裡。
