@@ -2358,13 +2358,13 @@ function 套用收據並前往成功頁(receipt, 收尾) {
 }
 
 // Opt-in diagnostic panel. textContent only; no order/customer data is retained.
-function 顯示完整下單耗時_(started, processingStarted, requestStarted, responseAt, worker, route) {
+function 顯示完整下單耗時_(started, processingStarted, requestStarted, responseAt, worker, route, gas) {
   try {
     if (new URLSearchParams(window.location.search).get('orderTiming') !== '1') return;
     const now = Date.now();
     const seconds = value => typeof value === 'number' && Number.isFinite(value) && value >= 0
       ? (value / 1000).toFixed(3) + ' 秒' : '未記錄';
-    const lines = ['完整下單耗時（e2e-v1）', '流程：' + route,
+    const lines = ['完整下單耗時（e2e-v2）', '流程：' + route,
       '按下送出 → 成功頁切換完成：' + seconds(now - started),
       '處理中 → 成功頁切換完成：' + seconds(processingStarted === null ? null : now - processingStarted),
       '瀏覽器請求往返：' + seconds(requestStarted === null || responseAt === null ? null : responseAt - requestStarted),
@@ -2372,6 +2372,15 @@ function 顯示完整下單耗時_(started, processingStarted, requestStarted, r
       'Worker 等待 Google 完整回應：' + seconds(worker && worker.gasMs),
       'Worker 舉證階段：' + seconds(worker && worker.proofMs),
       'Worker 合計：' + seconds(worker && worker.totalMs),
+      'GAS 入口驗證與前置處理：' + seconds(gas && gas.entryBeforeCoreMs),
+      'GAS 核心處理：' + seconds(gas && gas.coreMs),
+      'GAS 測速日誌與摘要儲存：' + seconds(gas && gas.diagnosticsMs),
+      'GAS 核心呼叫合計（含測速儲存）：' + seconds(gas && gas.coreCallMs),
+      'GAS 入口 → 建立回應前：' + seconds(gas && gas.beforeResponseMs),
+      'Google 往返扣除上述 GAS 時間：' + seconds(worker && gas &&
+        typeof worker.gasMs === 'number' && typeof gas.beforeResponseMs === 'number'
+          ? worker.gasMs - gas.beforeResponseMs : null),
+      '差額仍包含回應序列化／Google 傳送、網路、啟動等；不能全視為冷啟動。',
       '各層時間互相包含，不能全部相加。Google 往返包含 GAS 與傳輸／啟動等等待。',
       '量到成功頁同步切換完成，不含後續動畫、付款資料更新或螢幕實際繪製。',
       '救回／重試流程可能沒有 Worker 明細；舉證階段耗時不代表封存成功。'];
@@ -2698,7 +2707,7 @@ async function submitOrder(e) {
     收尾();
     goToStep(5);
     顯示完整下單耗時_(submitStarted, processingStarted, requestStarted, responseAt, json.orderTiming,
-      json.duplicate ? '原單已成立（重複攔截）' : '正常成功回應');
+      json.duplicate ? '原單已成立（重複攔截）' : '正常成功回應', json.gasTiming);
 
   } catch (err) {
     if (!err.orderRejected) {
