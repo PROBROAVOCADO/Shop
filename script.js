@@ -2364,12 +2364,14 @@ function 顯示完整下單耗時_(started, processingStarted, requestStarted, r
     const now = Date.now();
     const seconds = value => typeof value === 'number' && Number.isFinite(value) && value >= 0
       ? (value / 1000).toFixed(3) + ' 秒' : '未記錄';
-    const lines = ['完整下單耗時（e2e-v2）', '流程：' + route,
+    const lines = ['完整下單耗時（e2e-v3）', '流程：' + route,
       '按下送出 → 成功頁切換完成：' + seconds(now - started),
       '處理中 → 成功頁切換完成：' + seconds(processingStarted === null ? null : now - processingStarted),
       '瀏覽器請求往返：' + seconds(requestStarted === null || responseAt === null ? null : responseAt - requestStarted),
       'Worker 驗證：' + seconds(worker && worker.verifyMs),
       'Worker 等待 Google 完整回應：' + seconds(worker && worker.gasMs),
+      '　其中：等待最終回應標頭（含自動轉址）：' + seconds(worker && worker.gasHeadersMs),
+      '　其中：標頭後讀完回應內容：' + seconds(worker && worker.gasBodyMs),
       'Worker 舉證階段：' + seconds(worker && worker.proofMs),
       'Worker 合計：' + seconds(worker && worker.totalMs),
       'GAS 入口驗證與前置處理：' + seconds(gas && gas.entryBeforeCoreMs),
@@ -2382,6 +2384,7 @@ function 顯示完整下單耗時_(started, processingStarted, requestStarted, r
           ? worker.gasMs - gas.beforeResponseMs : null),
       '差額仍包含回應序列化／Google 傳送、網路、啟動等；不能全視為冷啟動。',
       '各層時間互相包含，不能全部相加。Google 往返包含 GAS 與傳輸／啟動等等待。',
+      '標頭與內容兩項已包含於 Google 完整回應；標頭等待不是純冷啟動，亦未拆開每次轉址。',
       '量到成功頁同步切換完成，不含後續動畫、付款資料更新或螢幕實際繪製。',
       '救回／重試流程可能沒有 Worker 明細；舉證階段耗時不代表封存成功。'];
     const page = document.getElementById('step5-payment-info');
