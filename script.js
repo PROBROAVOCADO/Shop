@@ -2357,10 +2357,39 @@ function 套用收據並前往成功頁(receipt, 收尾) {
   goToStep(5);
 }
 
+// Opt-in diagnostic panel. textContent only; no order/customer data is retained.
+function 顯示完整下單耗時_(started, processingStarted, requestStarted, responseAt, worker, route) {
+  try {
+    if (new URLSearchParams(window.location.search).get('orderTiming') !== '1') return;
+    const now = Date.now();
+    const seconds = value => typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? (value / 1000).toFixed(3) + ' 秒' : '未記錄';
+    const lines = ['完整下單耗時（e2e-v1）', '流程：' + route,
+      '按下送出 → 成功頁切換完成：' + seconds(now - started),
+      '處理中 → 成功頁切換完成：' + seconds(processingStarted === null ? null : now - processingStarted),
+      '瀏覽器請求往返：' + seconds(requestStarted === null || responseAt === null ? null : responseAt - requestStarted),
+      'Worker 驗證：' + seconds(worker && worker.verifyMs),
+      'Worker 等待 Google 完整回應：' + seconds(worker && worker.gasMs),
+      'Worker 舉證階段：' + seconds(worker && worker.proofMs),
+      'Worker 合計：' + seconds(worker && worker.totalMs),
+      '各層時間互相包含，不能全部相加。Google 往返包含 GAS 與傳輸／啟動等等待。',
+      '量到成功頁同步切換完成，不含後續動畫、付款資料更新或螢幕實際繪製。',
+      '救回／重試流程可能沒有 Worker 明細；舉證階段耗時不代表封存成功。'];
+    const page = document.getElementById('step5-payment-info');
+    if (!page) return;
+    let panel = document.getElementById('order-timing-panel');
+    if (!panel) { panel = document.createElement('pre'); panel.id = 'order-timing-panel';
+      panel.style.cssText = 'white-space:pre-wrap;text-align:left;padding:16px;background:#f4f6f4;font-size:14px;'; page.appendChild(panel); }
+    panel.textContent = lines.join('\n');
+  } catch (ignored) { /* 量測失敗不得影響成功頁 */ }
+}
+
 async function submitOrder(e) {
   if (e) e.preventDefault();
   if (isSubmitting) return;
   const submitStarted = Date.now();
+  let processingStarted = null, requestStarted = null, responseAt = null;
+  try { const old = document.getElementById('order-timing-panel'); if (old) old.remove(); } catch (ignored) {}
 
   const nEl = document.getElementById('cust-name');
   const pEl = document.getElementById('cust-phone');
@@ -2534,6 +2563,7 @@ async function submitOrder(e) {
     if (先前收據) {
       console.info('重試前查到收據，這筆先前已經成立（第 ' + 先前收據.row + ' 列）');
       套用收據並前往成功頁(先前收據, 收尾);
+      顯示完整下單耗時_(submitStarted, processingStarted, requestStarted, responseAt, null, '重試前找回原單');
       return;
     }
     submitBtn.innerText = '確認庫存中...';
@@ -2554,6 +2584,7 @@ async function submitOrder(e) {
   }
 
   submitBtn.innerText = '處理中...';
+  processingStarted = Date.now();
   calculateCartTotal();
 
   // 🔁 同一筆訂單的重試共用同一組 orderKey。
@@ -2611,6 +2642,7 @@ async function submitOrder(e) {
   currentOrderSummary = orderData;
 
   try {
+    requestStarted = Date.now();
     const res = await fetchWithDeadline_(ORDER_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
@@ -2620,6 +2652,7 @@ async function submitOrder(e) {
     // 尖峰擁擠或 Google 端逾時時，有機會回傳一頁 HTML 錯誤頁而不是 JSON。
     // 這種情況下訂單「有可能已經寫入成功」，不能直接跟客人說失敗。
     const rawText = await res.text();
+    responseAt = Date.now();
     let json;
     try { json = JSON.parse(rawText); }
     catch (parseErr) { throw new Error('SERVER_TIMEOUT_NON_JSON'); }
@@ -2664,6 +2697,8 @@ async function submitOrder(e) {
 
     收尾();
     goToStep(5);
+    顯示完整下單耗時_(submitStarted, processingStarted, requestStarted, responseAt, json.orderTiming,
+      json.duplicate ? '原單已成立（重複攔截）' : '正常成功回應');
 
   } catch (err) {
     if (!err.orderRejected) {
@@ -2680,6 +2715,7 @@ async function submitOrder(e) {
 
       if (receipt) {
         套用收據並前往成功頁(receipt, 收尾);
+        顯示完整下單耗時_(submitStarted, processingStarted, requestStarted, responseAt, null, '網路異常後找回收據');
         return;
       }
 
