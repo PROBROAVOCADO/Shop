@@ -815,7 +815,16 @@ window.onload = async function () {
     const 已進成功頁 = await 從網址載入訂單();
 
     // 🔔 沒有的話，檢查有沒有未完成付款的訂單要提醒
-    if (!已進成功頁) 檢查未付款訂單();
+    if (!已進成功頁) {
+      const pending = 讀取送單暫存_();
+      if (pending) {
+        const recovered = await 恢復未確認送單_(pending, false);
+        if (!recovered) {
+          customAlert('您有一筆訂單尚在確認中，請勿重新下單\n系統會自動查詢原訂單，查到後顯示訂單內容');
+          排程確認送單_();
+        }
+      } else 檢查未付款訂單();
+    }
     
     // 🖼️ 趁剩下的載入時間把後面幾頁的圖片先抓回來（不阻塞）。
     // 客人翻到品種頁、訂購頁、成功頁時就不會再等圖。
@@ -2355,11 +2364,17 @@ function 套用收據並前往成功頁(receipt, 收尾) {
   currentOrderKey = null;
   收尾();
   goToStep(5);
+  清除送單暫存_(currentOrderSummary && currentOrderSummary.orderKey);
 }
 
 async function submitOrder(e) {
   if (e) e.preventDefault();
   if (isSubmitting) return;
+  const pendingAttempt = 讀取送單暫存_();
+  if (pendingAttempt) {
+    await 恢復未確認送單_(pendingAttempt, true);
+    return;
+  }
 
   const nEl = document.getElementById('cust-name');
   const pEl = document.getElementById('cust-phone');
@@ -2561,6 +2576,13 @@ async function submitOrder(e) {
   // isRetry 讓後端知道要不要多查一次 Firebase 收據（A4）：
   // 後端的快取是可被驅逐的，尖峰時有機會失效；但只有重試才需要那道
   // 額外查詢，第一次下單不可能重複，就不必付那 150ms。
+  const otherAttempt = 讀取送單暫存_();
+  if (otherAttempt) {
+    收尾();
+    await 恢復未確認送單_(otherAttempt, false);
+    排程確認送單_();
+    return;
+  }
   const isRetry = !!currentOrderKey;
   if (!currentOrderKey) {
     currentOrderKey = makeOrderKey();
@@ -2609,6 +2631,8 @@ async function submitOrder(e) {
   currentOrderSummary = orderData;
 
   try {
+    // Save before transmission so reloads keep the same request and identity.
+    儲存送單暫存_(orderData);
     const res = await fetchWithDeadline_(ORDER_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
@@ -2626,7 +2650,10 @@ async function submitOrder(e) {
       if (json.mayHaveSucceeded) throw new Error('SERVER_TIMEOUT_NON_JSON');
       // Only an explicit application rejection is certain. Transport failures retain the key.
       if (res.status >= 500) throw new Error('SERVER_TIMEOUT_NON_JSON');
-      const rejected = new Error(turnstileErrorText_(json.error) || json.error || '送單失敗');
+      if (!turnstileErrorText_(json.error) && 安全送單提示_(json.error).startsWith('目前無法完成這次送出')) {
+        throw new Error('ORDER_RESULT_UNCONFIRMED');
+      }
+      const rejected = new Error(安全送單提示_(json.error));
       rejected.orderRejected = true;
       throw rejected;
     }
@@ -2662,6 +2689,7 @@ async function submitOrder(e) {
 
     收尾();
     goToStep(5);
+    清除送單暫存_(orderData.orderKey);
 
   } catch (err) {
     if (!err.orderRejected) {
@@ -2672,7 +2700,8 @@ async function submitOrder(e) {
       // 所以先別急著跟客人說失敗 —— 去 Firebase 查收據，
       // 查到就代表訂單真的成立，直接帶他到成功頁。
       submitBtn.innerText = '確認訂單中...';
-      const receipt = await waitForOrderReceipt(currentOrderKey, (n, total) => {
+      currentOrderKey = orderData.orderKey;
+      const receipt = await waitForOrderReceipt(orderData.orderKey, (n, total) => {
         submitBtn.innerText = `確認訂單中 (${n}/${total})...`;
       });
 
@@ -2687,10 +2716,12 @@ async function submitOrder(e) {
       // 所以就算庫存已經被這筆扣光，他也不會卡在「庫存不足」。
       // 這裡要明確鼓勵他再按一次，而不是讓他自己猜該怎麼辦 ——
       // 猶豫的客人多半就直接放棄了。
-      customAlert('⚠️ 系統目前比較忙碌，還在確認您的訂單。\n\n請稍等約一分鐘後「再按一次確認訂購」，\n系統會自動辨識，不會重複下單、也不會重複扣款。\n\n若仍然無法確認，請透過 LINE 或電話與我們聯繫，\n我們會直接為您查詢，謝謝您的耐心 🙏');
+      customAlert('正在確認您的訂單，請勿重新下單\n\n系統會繼續查詢原訂單，查到後自動顯示訂單內容\n若持續沒有結果，請透過 LINE 聯繫我們');
+      排程確認送單_();
       收尾();
       return;
     } else {
+      清除送單暫存_(orderData.orderKey);
       currentOrderKey = null; // 這是明確的失敗（例如庫存不足），下次是新的一筆
       currentPaymentActionToken = null;
       customAlert(err.message || '送單失敗，請稍後再試');
@@ -2705,6 +2736,96 @@ async function submitOrder(e) {
       return;
     }
   }
+}
+
+const ORDER_ATTEMPT_STORAGE = 'probro-order-attempt-v1';
+let orderAttemptTimer = 0;
+function 讀取送單暫存_() {
+  try {
+    const value = JSON.parse(localStorage.getItem(ORDER_ATTEMPT_STORAGE) || 'null');
+    if (!value || !value.order || !/^[0-9a-fA-F-]{36}$/.test(value.order.orderKey)) return null;
+    if (!Number.isFinite(Number(value.at)) || Number(value.at) <= 0 ||
+        Date.now() - Number(value.at) > 48 * 3600000) {
+      localStorage.removeItem(ORDER_ATTEMPT_STORAGE);
+      return null;
+    }
+    return value;
+  } catch { return null; }
+}
+function 儲存送單暫存_(order) {
+  const safe = { ...order };
+  delete safe.turnstileToken;
+  delete safe.gaClientId;
+  delete safe.gaSessionId;
+  try {
+    localStorage.setItem(ORDER_ATTEMPT_STORAGE, JSON.stringify({ at: Date.now(), order: safe }));
+  } catch {
+    const error = new Error('瀏覽器目前無法保存訂單確認資料，請開啟瀏覽器儲存功能後再試');
+    error.orderRejected = true;
+    throw error;
+  }
+}
+function 清除送單暫存_(key) {
+  try {
+    const saved = 讀取送單暫存_();
+    if (saved && saved.order.orderKey === key) localStorage.removeItem(ORDER_ATTEMPT_STORAGE);
+  } catch {}
+}
+function 安全送單提示_(error) {
+  const raw = String(error || '');
+  const turnstile = turnstileErrorText_(raw);
+  if (turnstile) return turnstile;
+  // Only recognized customer-facing validation messages may pass through.
+  if (/^(目前暫停接單|商品尚未開賣|購物車是空的|缺少收件人|配送方式不合法|系統目前非常忙碌|「.*」目前暫停服務)/.test(raw)) return raw;
+  return '目前無法完成這次送出，請確認資料與庫存；若仍有問題，請透過 LINE 聯繫我們';
+}
+function 排程確認送單_() {
+  clearTimeout(orderAttemptTimer);
+  if (!讀取送單暫存_()) return;
+  orderAttemptTimer = setTimeout(async function () {
+    const pending = 讀取送單暫存_();
+    if (pending && !document.hidden && !isSubmitting) await 恢復未確認送單_(pending, false);
+    排程確認送單_();
+  }, 10000 + Math.floor(Math.random() * 2000));
+}
+async function 恢復未確認送單_(pending, retry) {
+  if (isSubmitting) return false;
+  isSubmitting = true;
+  currentOrderKey = pending.order.orderKey;
+  currentPaymentActionToken = pending.order.paymentActionToken || '';
+  currentOrderSummary = pending.order;
+  try {
+    const receipt = await fetchOrderReceipt(currentOrderKey);
+    if (receipt) {
+      套用收據並前往成功頁(receipt, function () { isSubmitting = false; });
+      return true;
+    }
+    if (retry) {
+      let token = '';
+      try { token = window.turnstile && window.turnstile.getResponse(turnstileWidgetId); } catch {}
+      if (!token) {
+        customAlert('正在確認原訂單，請勿重新下單\n如需重試原訂單，請先完成人機驗證');
+        return false;
+      }
+      const res = await fetchWithDeadline_(ORDER_PROXY_URL, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ ...pending.order, isRetry: true, turnstileToken: token })
+      }, 50000);
+      const result = await res.json();
+      if (result.success) {
+        if (result.proof) currentOrderSummary.proof = result.proof;
+        套用收據並前往成功頁(result.totals || {}, function () { isSubmitting = false; });
+        return true;
+      }
+      // A rejection of this retry cannot prove the previous request failed.
+      customAlert('原訂單仍在確認中，請勿另建訂單\n若持續沒有結果，請透過 LINE 聯繫我們');
+    }
+  } catch { /* Continue read-only recovery after an uncertain response. */ }
+  finally {
+    isSubmitting = false;
+    if (retry) resetTurnstile_();
+  }
+  return false;
 }
 
 function 比對購物車庫存(latest) {
