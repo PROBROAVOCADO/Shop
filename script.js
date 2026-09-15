@@ -2383,6 +2383,7 @@ async function submitOrder(e) {
   const districtEl = document.getElementById('district');
   const zipcodeEl = document.getElementById('zipcode');
   const addressDetailEl = document.getElementById('delivery-address');
+  const storeEl = document.getElementById('store-name');
   const orderNoteEl = document.getElementById('order-note');
   const dataConfirmEl = document.getElementById('order-data-confirm');
 
@@ -2465,9 +2466,13 @@ async function submitOrder(e) {
 
     fullAddress = `${zipcodeEl.value || ''} ${countyEl.value}${districtEl.value}${addressDetailEl.value.trim()}`;
   } else if (shippingMethod === '711') {
-    // 門市改由 PAYUNi C2C 電子地圖選擇。此處只留待選標記，避免自由輸入
-    // 造成同名門市、錯字或漏填；PAYUNi 驗簽回傳後再覆寫試算表 L 欄。
-    fullAddress = '7-11 門市：待 PAYUNi 選店';
+    if (!storeEl || !storeEl.value.trim()) {
+      customAlert('☝️請填寫 7-11 門市名稱！');
+      if (storeEl) storeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    // 🏝️ v5：離島門市阻擋已移除（見檔案開頭的說明）。
+    fullAddress = `7-11 門市：${storeEl.value.trim()}`;
   } else {
     customAlert('☝️請選擇配送方式！');
     return;
@@ -2602,10 +2607,6 @@ async function submitOrder(e) {
     district: districtEl ? districtEl.value : '',
     splitShipping: splitShipping
   };
-  if (shippingMethod === '711') {
-    orderData.logisticsMode = 'payuni-c2c';
-    orderData.logisticsGoodsType = 1;
-  }
   orderData.customerConfirmed = true;
   orderData.confirmationVersion = '2026-09-08-v1';
 
@@ -2878,21 +2879,6 @@ async function verifyStockBeforeSubmit() {
 function renderSuccessPage(keepLivePaymentState) {
   if (!currentOrderSummary) return;
   const o = currentOrderSummary;
-
-  // 7-11 選店是付款流程的一部分。手機畫面若先放完整訂單摘要，
-  // 客人很容易在看見選店入口前就以為流程已經結束；因此只有 7-11
-  // 訂單把付款／選店卡移到摘要上方，其他配送方式維持原來順序。
-  const orderSummaryCard = document.getElementById('order-summary-card');
-  const payActionCard = document.getElementById('pay-action-card');
-  const isPayuniC2c = o.shippingMethod === '711' || o.logisticsMode === 'payuni-c2c';
-  if (orderSummaryCard && payActionCard && orderSummaryCard.parentNode === payActionCard.parentNode) {
-    const parent = orderSummaryCard.parentNode;
-    if (isPayuniC2c && orderSummaryCard.previousElementSibling !== payActionCard) {
-      parent.insertBefore(payActionCard, orderSummaryCard);
-    } else if (!isPayuniC2c && orderSummaryCard.nextElementSibling !== payActionCard) {
-      parent.insertBefore(payActionCard, orderSummaryCard.nextSibling);
-    }
-  }
  
   // 🔑 金額一律讀 currentOrderSummary，不要讀 finalTotal。
   //
@@ -3048,7 +3034,7 @@ function 記錄成功頁首次載入_() {
     const target = event.target;
     if (!target || !target.id) return;
     if ([
-      'cust-name', 'cust-phone', 'shipping-method',
+      'cust-name', 'cust-phone', 'shipping-method', 'store-name',
       'county', 'district', 'delivery-address'
     ].indexOf(target.id) === -1) return;
     const checkbox = document.getElementById('order-data-confirm');
@@ -3475,21 +3461,13 @@ function 付款操作憑證_() {
 
 function 付款開始表單(orderKey, paymentActionToken) {
   const action = PAY_WORKER_URL.replace(/\/+$/, '') + '/pay/start';
-  const isPayuniC2c = 是PAYUNi711訂單_();
   return '<form method="POST" action="' + esc(action) + '" autocomplete="off">' +
     '<input type="hidden" name="k" value="' + esc(orderKey) + '">' +
     (paymentActionToken
       ? '<input type="hidden" name="t" value="' + esc(paymentActionToken) + '">'
       : '') +
-    '<button type="submit" class="btn-primary pay-method-btn">' +
-      (isPayuniC2c ? '選擇 7-11 門市並前往付款' : '前往第三方支付 / ATM虛擬帳號') +
-    '</button>' +
+    '<button type="submit" class="btn-primary pay-method-btn">前往第三方支付 / ATM虛擬帳號</button>' +
     '</form>';
-}
-
-function 是PAYUNi711訂單_() {
-  const o = currentOrderSummary || {};
-  return o.shippingMethod === '711' || o.logisticsMode === 'payuni-c2c';
 }
 
 function LINEPay人工選擇表單(orderKey, paymentActionToken) {
@@ -3596,7 +3574,6 @@ function 付款安心提示_() {
 
 function 付款方式選擇區塊(orderKey) {
   const token = 付款操作憑證_();
-  const isPayuniC2c = 是PAYUNi711訂單_();
   const discountBlock = 優惠付款前區塊_(orderKey, token);
   if (優惠待審核_(String((currentOrderSummary && currentOrderSummary.discountStatus) || ''))) {
     return discountBlock;
@@ -3604,13 +3581,9 @@ function 付款方式選擇區塊(orderKey) {
   return discountBlock + '<div class="pay-choice-list">' +
     '<div class="pay-choice-item">' +
       付款開始表單(orderKey, token) +
-      '<p class="pay-choice-note">' +
-        (isPayuniC2c
-          ? '下一步將開啟 PAYUNi，請先用電子地圖選擇取貨門市，再選擇付款方式'
-          : '開啟 PAYUNi 統一付款頁，請依收銀台顯示選擇可用方式') +
-      '</p>' +
+      '<p class="pay-choice-note">開啟 PAYUNi 統一付款頁，請依收銀台顯示選擇可用方式</p>' +
     '</div>' +
-    (token && !isPayuniC2c
+    (token
       ? '<div class="pay-choice-separator"><span>或</span></div>' +
         '<div class="pay-choice-item">' +
           LINEPay人工選擇表單(orderKey, token) +
