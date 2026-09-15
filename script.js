@@ -2383,7 +2383,6 @@ async function submitOrder(e) {
   const districtEl = document.getElementById('district');
   const zipcodeEl = document.getElementById('zipcode');
   const addressDetailEl = document.getElementById('delivery-address');
-  const storeEl = document.getElementById('store-name');
   const orderNoteEl = document.getElementById('order-note');
   const dataConfirmEl = document.getElementById('order-data-confirm');
 
@@ -2466,13 +2465,9 @@ async function submitOrder(e) {
 
     fullAddress = `${zipcodeEl.value || ''} ${countyEl.value}${districtEl.value}${addressDetailEl.value.trim()}`;
   } else if (shippingMethod === '711') {
-    if (!storeEl || !storeEl.value.trim()) {
-      customAlert('☝️請填寫 7-11 門市名稱！');
-      if (storeEl) storeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-    // 🏝️ v5：離島門市阻擋已移除（見檔案開頭的說明）。
-    fullAddress = `7-11 門市：${storeEl.value.trim()}`;
+    // 門市改由 PAYUNi C2C 電子地圖選擇。此處只留待選標記，避免自由輸入
+    // 造成同名門市、錯字或漏填；PAYUNi 驗簽回傳後再覆寫試算表 L 欄。
+    fullAddress = '7-11 門市：待 PAYUNi 選店';
   } else {
     customAlert('☝️請選擇配送方式！');
     return;
@@ -2607,6 +2602,10 @@ async function submitOrder(e) {
     district: districtEl ? districtEl.value : '',
     splitShipping: splitShipping
   };
+  if (shippingMethod === '711') {
+    orderData.logisticsMode = 'payuni-c2c';
+    orderData.logisticsGoodsType = 1;
+  }
   orderData.customerConfirmed = true;
   orderData.confirmationVersion = '2026-09-08-v1';
 
@@ -3034,7 +3033,7 @@ function 記錄成功頁首次載入_() {
     const target = event.target;
     if (!target || !target.id) return;
     if ([
-      'cust-name', 'cust-phone', 'shipping-method', 'store-name',
+      'cust-name', 'cust-phone', 'shipping-method',
       'county', 'district', 'delivery-address'
     ].indexOf(target.id) === -1) return;
     const checkbox = document.getElementById('order-data-confirm');

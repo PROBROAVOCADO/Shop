@@ -257,7 +257,10 @@
 
     <div id="store-address-section" style="display:none;">
       <p class="form-label">🏪 7-11 取件門市</p>
-      <input type="text" id="store-name" placeholder="請填寫 7-11 門市名稱或門市編號" maxlength="60">
+      <div class="hint-warm-text">
+        門市不需要手動填寫。訂單成立後，請在 PAYUNi 結帳頁使用 7-11 電子地圖選店；
+        系統會自動保存門市代碼、名稱與地址。
+      </div>
     </div>
 
     <div id="post-address-section" style="display:none;">
@@ -289,7 +292,7 @@
 
   <label class="order-data-confirm" for="order-data-confirm">
     <input type="checkbox" id="order-data-confirm">
-    <span>我已確認姓名、電話與收件資料正確</span>
+    <span>我已確認姓名、電話與收件資料正確（7-11 門市於 PAYUNi 結帳頁選擇）</span>
   </label>
 
   <div id="turnstile-container" class="turnstile-container" style="display:none;"
