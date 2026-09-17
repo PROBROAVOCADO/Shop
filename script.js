@@ -1038,7 +1038,7 @@ function updateOrderPageStopState() {
   if (submitBtn && !isSubmitting) {
     submitBtn.disabled = 停售;
     submitBtn.classList.toggle('is-disabled', 停售);
-    submitBtn.innerText = 停售 ? '🚫 暫停接單中' : '資料正確，確認送出訂單';
+    submitBtn.innerText = 停售 ? '🚫 暫停接單中' : '送出訂單 👉';
   }
 }
 
@@ -1450,6 +1450,7 @@ function showLoadingError() {
 // 🧭 分頁切換
 // ========================================
 function goToStep(step) {
+  if (isSubmitting && step !== 5) return;
   document.querySelectorAll('.page-content').forEach(p => { p.style.display = 'none'; });
 
   const pageMap = {
@@ -2367,6 +2368,61 @@ function 套用收據並前往成功頁(receipt, 收尾) {
   清除送單暫存_(currentOrderSummary && currentOrderSummary.orderKey);
 }
 
+function warnBeforeOrderLeave_(event) {
+  if (!isSubmitting) return;
+  event.preventDefault();
+  event.returnValue = '';
+}
+
+let orderSubmittingMessageTimer = null;
+
+function stopOrderSubmittingMessages_() {
+  if (orderSubmittingMessageTimer !== null) clearInterval(orderSubmittingMessageTimer);
+  orderSubmittingMessageTimer = null;
+}
+
+function startOrderSubmittingMessages_(dialog) {
+  stopOrderSubmittingMessages_();
+  const note = document.getElementById('order-submitting-note');
+  if (!note) return;
+  const startedAt = Date.now();
+  const messages = [
+    '🥑 正在為您送出訂單，請稍候一下',
+    '🌿 請先停留在這裡，讓我們確認送單結果',
+    '💚 謝謝您的耐心，訂單仍在確認中',
+    '📋 確認完成後，會自動顯示訂單內容'
+  ];
+  note.textContent = messages[0];
+  orderSubmittingMessageTimer = setInterval(() => {
+    if (!dialog.open) { stopOrderSubmittingMessages_(); return; }
+    const elapsed = Date.now() - startedAt;
+    const message = elapsed >= 20000
+      ? '這次確認稍久一些，請先不要重複送出，我們仍在為您確認'
+      : messages[Math.floor(Math.max(0, elapsed) / 2000) % messages.length];
+    if (note.textContent !== message) note.textContent = message;
+    if (elapsed >= 20000) stopOrderSubmittingMessages_();
+  }, 2000);
+}
+
+function showOrderSubmitting_(show) {
+  const dialog = document.getElementById('order-submitting-dialog');
+  const back = document.getElementById('order-back-btn');
+  if (back) back.disabled = show;
+  if (show) {
+    window.addEventListener('beforeunload', warnBeforeOrderLeave_);
+    if (dialog && !dialog.open) {
+      dialog.oncancel = event => event.preventDefault();
+      dialog.onclose = stopOrderSubmittingMessages_;
+      dialog.showModal();
+      startOrderSubmittingMessages_(dialog);
+    }
+  } else {
+    stopOrderSubmittingMessages_();
+    window.removeEventListener('beforeunload', warnBeforeOrderLeave_);
+    if (dialog && dialog.open) dialog.close();
+  }
+}
+
 async function submitOrder(e) {
   if (e) e.preventDefault();
   if (isSubmitting) return;
@@ -2522,12 +2578,15 @@ async function submitOrder(e) {
   const 收尾 = () => {
     isSubmitting = false;
     submitBtn.disabled = false;
-    submitBtn.innerText = '資料正確，確認送出訂單';
+    submitBtn.innerText = '送出訂單 👉';
+    showOrderSubmitting_(false);
     resetTurnstile_();
     flushPendingControl();      // 補上送單期間延後的畫面更新
     updateOrderPageStopState(); // 期間若被停售，按鈕要維持灰色
   };
 
+  try {
+  showOrderSubmitting_(true);
   // 🔴 v5：重試的話，先查一次收據再說。
   //
   // 修的是這條死路：第一次送出其實成功了（Google 回了 HTML 錯誤頁，
@@ -2735,6 +2794,13 @@ async function submitOrder(e) {
       refreshRealtime();
       return;
     }
+  }
+  } catch (unexpectedError) {
+    // Preserve the original attempt and let receipt recovery resolve uncertainty.
+    if (讀取送單暫存_()) 排程確認送單_();
+    customAlert('暫時無法確認送單結果，請先不要重複下單\n請稍候查看畫面提示，或透過 LINE 聯繫我們協助確認');
+  } finally {
+    if (isSubmitting) 收尾();
   }
 }
 

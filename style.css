@@ -575,6 +575,49 @@ body::before {
 .button-group .btn-secondary, .button-group .btn-primary { flex: 1; }
 .button-group .btn-wide { flex: 2; }
 
+/* Compact checkout controls on both desktop and phones; keep a 44px tap target. */
+#step4-order-form .button-group > button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 8px !important;
+  font-size: 0.875rem !important;
+  line-height: 1.35;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#step4-order-form .button-group > button:disabled { cursor: wait !important; opacity: 0.65; }
+#order-submitting-dialog {
+  box-sizing: border-box;
+  width: min(420px, calc(100% - 32px));
+  max-height: calc(100dvh - 40px);
+  padding: 30px 22px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-card);
+  background: var(--creamy);
+  color: var(--avo-dark);
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(62, 76, 51, 0.16);
+}
+#order-submitting-dialog::backdrop { background: rgba(62, 76, 51, 0.42); }
+#order-submitting-dialog h2 { font-size: 1.25rem; margin: 14px 0; letter-spacing: 1px; }
+#order-submitting-dialog p { font-size: 0.95rem; line-height: 1.9; margin: 12px 0 0; }
+#order-submitting-note { min-height: 5.7em; display: grid; align-items: center; }
+#order-submitting-dialog .order-submitting-footnote { color: var(--clay-deep); font-size: 0.875rem; }
+.order-submitting-mark {
+  display: grid; place-items: center; width: 58px; height: 58px; margin: auto;
+  border-radius: 50%; background: var(--sage-mist); font-size: 1.8rem;
+  animation: order-submitting-bounce 1.8s ease-in-out infinite;
+}
+@keyframes order-submitting-bounce {
+  0%, 100% { transform: translateY(0); }
+  45% { transform: translateY(-8px); }
+  65% { transform: translateY(0); }
+  80% { transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) { .order-submitting-mark { animation: none; } }
+
 /* 📋 一鍵複製的小膠囊按鈕。
    ⚠️ v8 起有三處在用：虛擬帳號、繳費代碼、匯款帳號。不要刪。 */
 .btn-copy {
