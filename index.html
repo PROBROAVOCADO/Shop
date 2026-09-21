@@ -30,12 +30,10 @@
 
     <link rel="preconnect" href="https://lh3.googleusercontent.com">
     <link rel="preconnect" href="https://script.google.com">
-    <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://www.gstatic.com">
     <link rel="preconnect" href="https://challenges.cloudflare.com">
     <link rel="preconnect" href="https://probro-stock-default-rtdb.asia-southeast1.firebasedatabase.app">
 
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js" defer></script>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
 
     <!-- 🥑 Open Graph 社群分享預覽圖 -->
@@ -48,7 +46,7 @@
 
     <title>波波酪梨｜線上訂購</title>
     <!-- 2026-08-29：v16 優惠申請與審核狀態版面 -->
-    <link rel="stylesheet" href="style.css?v=26">
+    <link rel="stylesheet" href="style.css?v=27">
   </head>
 
   <body>
@@ -321,6 +319,13 @@
   <h2 class="main-title" id="pay-title">付款尚未完成</h2>
   <div class="sub-title" id="pay-subtitle">AWAITING PAYMENT</div>
   <div class="title-divider"></div>
+
+  <div class="order-success-mark" aria-hidden="true">
+    <svg viewBox="0 0 52 52" focusable="false">
+      <circle class="order-success-ring" cx="26" cy="26" r="21"></circle>
+      <path class="order-success-check" d="M16 27l7 7 14-16"></path>
+    </svg>
+  </div>
  
   <!-- 🔵 三階狀態列。目前位置用實心暖褐、已完成用山丘綠、未到是空心。 -->
   <div class="pay-steps" id="pay-steps">
@@ -364,6 +369,13 @@
       </a>
       <button type="button" onclick="goToStep(1)" class="btn-secondary">回首頁</button>
     </div>
+  </div>
+
+  <div id="mobile-payment-prompt" class="mobile-payment-prompt" aria-hidden="true">
+    <button type="button" aria-controls="pay-action-card" onclick="前往付款區_()">
+      <span>尚未完成付款</span>
+      <strong>前往付款 ↓</strong>
+    </button>
   </div>
 </div>
  
@@ -452,6 +464,6 @@
     <!-- 📊 GA4 追蹤模組。必須在 script.js「之前」 -->
     <script src="analytics.js?v=2.4"></script>
   <!-- 2026-09-08：v30 訂單原始快照封存與成功頁載入佐證 -->
-  <script src="script.js?v=39"></script>
+  <script src="script.js?v=40"></script>
   </body>
 </html>

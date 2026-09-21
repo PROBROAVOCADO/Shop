@@ -1512,12 +1512,134 @@ select:focus, input:focus, textarea:focus {
   text-align: right;
 }
 
-/* 🌿 訂購成功卡片｜溫和浮現（原本的彈跳縮放對紙感太吵） */
+/* 🌿 訂單建立完成：取代滿版彩帶，僅播放一次描繪、浮現與淡綠光暈。 */
+.order-success-mark {
+  width: 48px;
+  height: 48px;
+  margin: -2px auto 16px;
+  color: var(--herb-green);
+}
+
+.order-success-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.order-success-ring,
+.order-success-check {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.order-success-ring {
+  stroke-width: 2;
+  stroke-dasharray: 132;
+  stroke-dashoffset: 132;
+  opacity: 0.42;
+}
+
+.order-success-check {
+  stroke-width: 3.2;
+  stroke-dasharray: 34;
+  stroke-dashoffset: 34;
+}
+
+.success-entered .order-success-ring {
+  animation: success-ring-draw 620ms ease-out forwards;
+}
+
+.success-entered .order-success-check {
+  animation: success-check-draw 420ms 430ms ease-out forwards;
+}
+
+@keyframes success-ring-draw { to { stroke-dashoffset: 0; } }
+@keyframes success-check-draw { to { stroke-dashoffset: 0; } }
+
 @keyframes successFloat {
   0%   { opacity: 0; transform: translateY(10px); }
   100% { opacity: 1; transform: translateY(0); }
 }
-.success-animate { animation: successFloat 0.6s ease-out; }
+
+@keyframes successGlow {
+  0% { box-shadow: 0 0 0 0 rgba(111, 138, 84, 0); }
+  38% { box-shadow: 0 0 0 12px rgba(111, 138, 84, 0.13); }
+  100% { box-shadow: 0 0 0 24px rgba(111, 138, 84, 0); }
+}
+
+#order-summary-card.success-animate {
+  animation: successFloat 0.65s ease-out, successGlow 1.35s ease-out;
+}
+
+/* 手機成功頁的付款捷徑：只在尚需付款、且付款卡片不在視窗內時顯示。 */
+.mobile-payment-prompt { display: none; }
+
+@media screen and (max-width: 767px) {
+  #step5-payment-info.has-mobile-payment-prompt { padding-bottom: 92px; }
+
+  .mobile-payment-prompt {
+    display: block;
+    position: fixed;
+    z-index: 9000;
+    left: 50%;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: min(500px, calc(100% - 24px));
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translate(-50%, 14px);
+    transition: opacity 220ms ease, transform 220ms ease, visibility 220ms;
+  }
+
+  .mobile-payment-prompt.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translate(-50%, 0);
+  }
+
+  .mobile-payment-prompt button {
+    width: 100%;
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+    background: linear-gradient(135deg, #78975f, #637e49);
+    color: #fffdf8;
+    box-shadow: 0 9px 24px rgba(50, 65, 39, 0.25);
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .mobile-payment-prompt span {
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    opacity: 0.92;
+  }
+
+  .mobile-payment-prompt strong {
+    font-size: 0.94rem;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .order-success-ring,
+  .order-success-check { stroke-dashoffset: 0; }
+  .success-entered .order-success-ring,
+  .success-entered .order-success-check,
+  #order-summary-card.success-animate { animation: none; }
+  .mobile-payment-prompt { transition: none; }
+}
 
 /* ------------------------ */
 /* 浮動購物車 */

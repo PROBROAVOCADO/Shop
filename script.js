@@ -221,6 +221,9 @@ var payStatusRef = null;
 var orderReceiptRef = null;
 var latestPaymentState = null;
 var latestOrderReceiptSignature = '';
+var mobilePaymentPromptEligible = false;
+var mobilePaymentCardVisible = false;
+var mobilePaymentPromptObserver = null;
 
 /**
  * 產生訂單專屬的付款操作憑證。
@@ -1463,10 +1466,19 @@ function goToStep(step) {
   if (step === 5) {
     renderSuccessPage();
     setTimeout(() => {
-      const card = document.querySelector('#step5-payment-info .info-block');
-      if (card) card.classList.add('success-animate');
+      const page = document.getElementById('step5-payment-info');
+      const card = document.getElementById('order-summary-card');
+      if (page) {
+        page.classList.remove('success-entered');
+        void page.offsetWidth;
+        page.classList.add('success-entered');
+      }
+      if (card) {
+        card.classList.remove('success-animate');
+        void card.offsetWidth;
+        card.classList.add('success-animate');
+      }
     }, 100);
-    setTimeout(fireConfetti, 200);
   }
   if (step === 3) renderPriceMenu();
   if (step === 4) {
@@ -3212,17 +3224,6 @@ function showLightbox(s) {
   document.getElementById('lightbox-overlay').style.display = 'flex';
 }
 
-// confetti 是第三方 CDN 且用 defer 載入，掛掉時原本會丟 ReferenceError
-function fireConfetti() {
-  if (typeof confetti !== 'function') return;
-  const end = Date.now() + 2000;
-  (function frame() {
-    confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0, y: 0.8 } });
-    confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1, y: 0.8 } });
-    if (Date.now() < end) requestAnimationFrame(frame);
-  }());
-}
-
 function handleLineJump() {
   const targetUrl = String(
     (window.APP_CONFIG && window.APP_CONFIG.lineOfficialUrl) || ''
@@ -3805,6 +3806,52 @@ function 設定付款標題(title, sub) {
   if (s) s.textContent = sub;
 }
 
+function 付款卡片目前可見_() {
+  const card = document.getElementById('pay-action-card');
+  if (!card) return false;
+  const rect = card.getBoundingClientRect();
+  const visibleHeight = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+  return visibleHeight >= Math.min(64, Math.max(1, rect.height * 0.08));
+}
+
+function 更新手機付款提醒_() {
+  const prompt = document.getElementById('mobile-payment-prompt');
+  const page = document.getElementById('step5-payment-info');
+  if (!prompt || !page) return;
+  const isMobile = window.matchMedia('(max-width: 767px)').matches;
+  const pageVisible = window.getComputedStyle(page).display !== 'none';
+  const show = isMobile && pageVisible && mobilePaymentPromptEligible && !mobilePaymentCardVisible;
+  prompt.classList.toggle('is-visible', show);
+  page.classList.toggle('has-mobile-payment-prompt', show);
+  prompt.setAttribute('aria-hidden', show ? 'false' : 'true');
+}
+
+function 設定手機付款提醒_(eligible) {
+  mobilePaymentPromptEligible = !!eligible;
+  mobilePaymentCardVisible = 付款卡片目前可見_();
+  const card = document.getElementById('pay-action-card');
+  if (card && !mobilePaymentPromptObserver && 'IntersectionObserver' in window) {
+    mobilePaymentPromptObserver = new IntersectionObserver(function (entries) {
+      const entry = entries[0];
+      mobilePaymentCardVisible = !!(entry && entry.isIntersecting && entry.intersectionRatio >= 0.08);
+      更新手機付款提醒_();
+    }, { threshold: [0, 0.08, 0.25] });
+    mobilePaymentPromptObserver.observe(card);
+    window.addEventListener('resize', function () {
+      mobilePaymentCardVisible = 付款卡片目前可見_();
+      更新手機付款提醒_();
+    }, { passive: true });
+  }
+  更新手機付款提醒_();
+}
+
+function 前往付款區_() {
+  const card = document.getElementById('pay-action-card');
+  if (!card) return;
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  card.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+}
+
 /**
  * 依付款狀態渲染中間那張卡片。主要有六種樣貌：
  *   manual    → LINE Pay QR + LINE 官方帳號（人工確認）
@@ -3816,6 +3863,7 @@ function 設定付款標題(title, sub) {
 function 渲染付款區塊(pay) {
   const box = document.getElementById('pay-action-content');
   if (!box) return;
+  設定手機付款提醒_(false);
  
   const orderKey = currentPayOrderKey;
  
@@ -3824,6 +3872,7 @@ function 渲染付款區塊(pay) {
     渲染人工付款資訊(box);
     設定付款標題('請聯絡我們確認付款', 'MANUAL PAYMENT');
     設定狀態列(1);
+    設定手機付款提醒_(true);
     return;
   }
  
@@ -3940,6 +3989,7 @@ function 渲染付款區塊(pay) {
       付款方式選擇區塊(orderKey) +
       保存連結區塊(orderKey) +
       '<p class="pay-tail-note">重新付款時可以改選其他可用的付款方式。</p>';
+    設定手機付款提醒_(true);
     return;
   }
  
@@ -3986,6 +4036,7 @@ function 渲染付款區塊(pay) {
       '</p>' +
       保存連結區塊(orderKey) +
       '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡查看，訂單不會消失</p>';
+    設定手機付款提醒_(true);
     return;
   }
  
@@ -4001,6 +4052,7 @@ function 渲染付款區塊(pay) {
     付款方式選擇區塊(orderKey) +
     保存連結區塊(orderKey) +
     '<p class="pay-tail-note">若您中途離開，可以隨時回到這裡重新付款，訂單不會消失</p>';
+  設定手機付款提醒_(true);
 }
  
 function 保存連結區塊(orderKey) {
