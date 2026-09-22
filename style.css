@@ -601,6 +601,8 @@ body::before {
   box-shadow: 0 16px 48px rgba(62, 76, 51, 0.16);
 }
 #order-submitting-dialog::backdrop { background: rgba(62, 76, 51, 0.42); }
+#order-submitting-dialog:focus,
+#order-submitting-dialog h2:focus { outline: none; }
 #order-submitting-dialog h2 { font-size: 1.25rem; margin: 14px 0; letter-spacing: 1px; }
 #order-submitting-dialog p { font-size: 0.95rem; line-height: 1.9; margin: 12px 0 0; }
 #order-submitting-note { min-height: 5.7em; display: grid; align-items: center; }
@@ -922,12 +924,15 @@ select:focus, input:focus, textarea:focus {
 @media screen and (max-width: 380px) {
   .address-grid { gap: 4px; }
   .address-grid select, .address-grid input {
-    font-size: 0.85rem !important;
+    font-size: 1rem !important;
     padding: 14px 8px !important;
   }
 }
 
 @media screen and (max-width: 767px) {
+  /* iOS Safari 會在聚焦小於 16px 的表單欄位時自動放大整頁。 */
+  input, select, textarea { font-size: 1rem !important; }
+
   .main-wrapper { width: 100% !important; margin: 0 auto !important; }
 
   .info-block {
