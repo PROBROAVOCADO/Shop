@@ -1579,8 +1579,48 @@ select:focus, input:focus, textarea:focus {
   animation: successFloat 0.65s ease-out, successGlow 1.35s ease-out;
 }
 
-/* 手機成功頁的付款捷徑：只在尚需付款、且付款卡片不在視窗內時顯示。 */
+/* 成功頁付款捷徑：桌機右下角小按鈕、手機底部橫幅；付款卡片可見時隱藏。 */
 .mobile-payment-prompt { display: none; }
+
+@media screen and (min-width: 768px) {
+  .mobile-payment-prompt {
+    display: block;
+    position: fixed;
+    z-index: 9000;
+    right: 24px;
+    bottom: 24px;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(12px);
+    transition: opacity 220ms ease, transform 220ms ease, visibility 220ms;
+  }
+
+  .mobile-payment-prompt.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .mobile-payment-prompt button {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    padding: 10px 17px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+    background: linear-gradient(135deg, #78975f, #637e49);
+    box-shadow: 0 7px 18px rgba(50, 65, 39, 0.2);
+    color: #fffdf8;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .mobile-payment-prompt span { font-size: 0.78rem; font-weight: 500; }
+  .mobile-payment-prompt strong { font-size: 0.86rem; white-space: nowrap; }
+}
 
 @media screen and (max-width: 767px) {
   #step5-payment-info.has-mobile-payment-prompt { padding-bottom: 92px; }

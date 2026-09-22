@@ -3820,9 +3820,9 @@ function 更新手機付款提醒_() {
   if (!prompt || !page) return;
   const isMobile = window.matchMedia('(max-width: 767px)').matches;
   const pageVisible = window.getComputedStyle(page).display !== 'none';
-  const show = isMobile && pageVisible && mobilePaymentPromptEligible && !mobilePaymentCardVisible;
+  const show = pageVisible && mobilePaymentPromptEligible && !mobilePaymentCardVisible;
   prompt.classList.toggle('is-visible', show);
-  page.classList.toggle('has-mobile-payment-prompt', show);
+  page.classList.toggle('has-mobile-payment-prompt', show && isMobile);
   prompt.setAttribute('aria-hidden', show ? 'false' : 'true');
 }
 
