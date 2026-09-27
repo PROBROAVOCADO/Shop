@@ -1150,6 +1150,15 @@ select:focus, input:focus, textarea:focus {
 }
 .shipping-title:first-of-type { margin-top: 2px; }
 
+.shipping-payment-note {
+  display: inline-block;
+  margin-left: 9px;
+  color: var(--avo-accent);
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
 .shipping-row {
   display: flex;
   align-items: baseline;
