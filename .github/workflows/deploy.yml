@@ -27,9 +27,38 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
+        id: upload
         uses: actions/upload-pages-artifact@v4
         with:
           path: '.'
+
+      - name: Wait for uploaded Pages artifact
+        env:
+          PAGES_ARTIFACT_ID: ${{ steps.upload.outputs.artifact_id }}
+        shell: bash
+        run: |
+          if [[ ! "$PAGES_ARTIFACT_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Pages upload did not return an artifact ID"
+            exit 1
+          fi
+
+          artifact_url="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=github-pages"
+          for attempt in {1..6}; do
+            echo "Checking Pages artifact $PAGES_ARTIFACT_ID (attempt $attempt/6)"
+            if artifacts=$(curl --fail --silent --show-error --max-time 10 "$artifact_url") &&
+               jq -e --arg id "$PAGES_ARTIFACT_ID" '.artifacts | any(.name == "github-pages" and (.id | tostring) == $id and .expired == false)' <<< "$artifacts" >/dev/null; then
+              echo "GitHub REST API can see Pages artifact $PAGES_ARTIFACT_ID"
+              sleep 10
+              exit 0
+            fi
+
+            if (( attempt < 6 )); then
+              sleep 10
+            fi
+          done
+
+          echo "::error::GitHub REST API did not list this run's uploaded Pages artifact"
+          exit 1
 
       - name: Deploy to GitHub Pages
         id: deployment
